@@ -31,10 +31,12 @@ EPISODE_FIELDS: tuple[str, ...] = (
     "terminated",
     "truncated",
     "success_reason",
+    "episode_success_reason",
     "failure_reason",
     "time_limit_reached",
     "episode_steps",
     "contact_count",
+    "successful_bounce_count",
     "first_contact_step",
     "reward_total_sum",
     "reward_height_sum",
@@ -57,9 +59,12 @@ STEP_FIELDS: tuple[str, ...] = (
     "truncated",
     "time_limit_reached",
     "success_reason",
+    "episode_success_reason",
     "failure_reason",
+    "successful_bounce_count",
     "racket_contact",
     "contact_observed_during_step",
+    "contact_event_during_step",
     "contact_substep",
     "ball_velocity_x",
     "ball_velocity_y",
@@ -209,9 +214,12 @@ def run_episode(
                 "truncated": bool(info["truncated"]),
                 "time_limit_reached": bool(info["time_limit_reached"]),
                 "success_reason": _normalize_reason(info["success_reason"]),
+                "episode_success_reason": _normalize_reason(info.get("episode_success_reason")),
                 "failure_reason": _normalize_reason(info["failure_reason"]),
+                "successful_bounce_count": int(info.get("successful_bounce_count", 0)),
                 "racket_contact": bool(info["racket_contact"]),
                 "contact_observed_during_step": bool(info["contact_observed_during_step"]),
+                "contact_event_during_step": bool(info.get("contact_event_during_step", False)),
                 "contact_substep": info["contact_substep"],
                 "ball_velocity_x": float(info["ball_velocity_x"]),
                 "ball_velocity_y": float(info["ball_velocity_y"]),
@@ -224,7 +232,7 @@ def run_episode(
             }
         )
 
-        if info["contact_observed_during_step"]:
+        if info.get("contact_event_during_step", False):
             if first_contact_step is None:
                 first_contact_step = int(info["episode_steps"])
             contact_rows.append(
@@ -251,10 +259,12 @@ def run_episode(
                     "terminated": terminated,
                     "truncated": truncated,
                     "success_reason": _normalize_reason(info["success_reason"]),
+                    "episode_success_reason": _normalize_reason(info.get("episode_success_reason")),
                     "failure_reason": _normalize_reason(info["failure_reason"]),
                     "time_limit_reached": bool(info["time_limit_reached"]),
                     "episode_steps": int(info["episode_steps"]),
                     "contact_count": len(contact_rows),
+                    "successful_bounce_count": int(info.get("successful_bounce_count", 0)),
                     "first_contact_step": first_contact_step if first_contact_step is not None else "",
                     **reward_sums,
                 },
@@ -268,7 +278,7 @@ def build_summary(
     contact_rows: Sequence[dict[str, object]],
     args: argparse.Namespace,
 ) -> dict[str, object]:
-    success_counter = Counter(str(row["success_reason"]) for row in episode_rows if row["success_reason"])
+    success_counter = Counter(str(row["episode_success_reason"]) for row in episode_rows if row["episode_success_reason"])
     failure_counter = Counter(str(row["failure_reason"]) for row in episode_rows if row["failure_reason"])
     contact_velocity_x = [float(row["ball_velocity_x"]) for row in contact_rows if row["ball_velocity_x"] is not None]
     contact_velocity_y = [float(row["ball_velocity_y"]) for row in contact_rows if row["ball_velocity_y"] is not None]
@@ -281,7 +291,7 @@ def build_summary(
         for row in episode_rows
     )
     survival_without_success_episodes = sum(
-        (not bool(row["truncated"])) and row["success_reason"] == "" and float(row["reward_height_sum"]) > 0.0
+        (not bool(row["truncated"])) and row["episode_success_reason"] == "" and float(row["reward_height_sum"]) > 0.0
         for row in episode_rows
     )
 
@@ -301,9 +311,11 @@ def build_summary(
             "successes": int(sum(success_counter.values())),
             "failures": int(sum(failure_counter.values())),
             "contacts": len(contact_rows),
+            "episodes_with_bounces": sum(int(row["successful_bounce_count"]) > 0 for row in episode_rows),
         },
         "success_reason_counts": dict(success_counter),
         "failure_reason_counts": dict(failure_counter),
+        "bounce_count_stats": _episode_metric_stats(episode_rows, "successful_bounce_count"),
         "reward_sum_stats": {
             "reward_total_sum": _episode_metric_stats(episode_rows, "reward_total_sum"),
             "reward_height_sum": _episode_metric_stats(episode_rows, "reward_height_sum"),

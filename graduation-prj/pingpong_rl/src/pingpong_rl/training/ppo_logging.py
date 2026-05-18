@@ -16,10 +16,12 @@ EPISODE_FIELDS: tuple[str, ...] = (
     "terminated",
     "truncated",
     "success_reason",
+    "episode_success_reason",
     "failure_reason",
     "time_limit_reached",
     "episode_steps",
     "contact_count",
+    "successful_bounce_count",
     "first_contact_step",
     "reward_total_sum",
     "reward_height_sum",
@@ -42,9 +44,12 @@ STEP_FIELDS: tuple[str, ...] = (
     "truncated",
     "time_limit_reached",
     "success_reason",
+    "episode_success_reason",
     "failure_reason",
+    "successful_bounce_count",
     "racket_contact",
     "contact_observed_during_step",
+    "contact_event_during_step",
     "contact_substep",
     "ball_velocity_x",
     "ball_velocity_y",
@@ -99,7 +104,7 @@ def build_training_summary(
     contact_rows: Sequence[dict[str, object]],
     config: dict[str, object],
 ) -> dict[str, object]:
-    success_counter = Counter(str(row["success_reason"]) for row in episode_rows if row["success_reason"])
+    success_counter = Counter(str(row["episode_success_reason"]) for row in episode_rows if row["episode_success_reason"])
     failure_counter = Counter(str(row["failure_reason"]) for row in episode_rows if row["failure_reason"])
     contact_velocity_x = [float(row["ball_velocity_x"]) for row in contact_rows if row["ball_velocity_x"] is not None]
     contact_velocity_y = [float(row["ball_velocity_y"]) for row in contact_rows if row["ball_velocity_y"] is not None]
@@ -112,7 +117,7 @@ def build_training_summary(
         for row in episode_rows
     )
     survival_without_success_episodes = sum(
-        (not bool(row["truncated"])) and row["success_reason"] == "" and float(row["reward_height_sum"]) > 0.0
+        (not bool(row["truncated"])) and row["episode_success_reason"] == "" and float(row["reward_height_sum"]) > 0.0
         for row in episode_rows
     )
     return {
@@ -124,9 +129,11 @@ def build_training_summary(
             "successes": int(sum(success_counter.values())),
             "failures": int(sum(failure_counter.values())),
             "contacts": len(contact_rows),
+            "episodes_with_bounces": sum(int(row["successful_bounce_count"]) > 0 for row in episode_rows),
         },
         "success_reason_counts": dict(success_counter),
         "failure_reason_counts": dict(failure_counter),
+        "bounce_count_stats": _episode_metric_stats(episode_rows, "successful_bounce_count"),
         "reward_sum_stats": {
             "reward_total_sum": _episode_metric_stats(episode_rows, "reward_total_sum"),
             "reward_height_sum": _episode_metric_stats(episode_rows, "reward_height_sum"),
@@ -173,6 +180,7 @@ class PPOLoggingCallback(BaseCallback):
     def _empty_episode_state(self) -> dict[str, object]:
         return {
             "contact_count": 0,
+            "successful_bounce_count": 0,
             "first_contact_step": None,
             "reward_total_sum": 0.0,
             "reward_height_sum": 0.0,
@@ -212,9 +220,12 @@ class PPOLoggingCallback(BaseCallback):
             "truncated": bool(info["truncated"]),
             "time_limit_reached": bool(info["time_limit_reached"]),
             "success_reason": _normalize_reason(info["success_reason"]),
+            "episode_success_reason": _normalize_reason(info.get("episode_success_reason")),
             "failure_reason": _normalize_reason(info["failure_reason"]),
+            "successful_bounce_count": int(info.get("successful_bounce_count", 0)),
             "racket_contact": bool(info["racket_contact"]),
             "contact_observed_during_step": bool(info["contact_observed_during_step"]),
+            "contact_event_during_step": bool(info.get("contact_event_during_step", False)),
             "contact_substep": info["contact_substep"],
             "ball_velocity_x": float(info["ball_velocity_x"]),
             "ball_velocity_y": float(info["ball_velocity_y"]),
@@ -248,10 +259,12 @@ class PPOLoggingCallback(BaseCallback):
             "terminated": bool(info["terminated"]),
             "truncated": bool(info["truncated"]),
             "success_reason": _normalize_reason(info["success_reason"]),
+            "episode_success_reason": _normalize_reason(info.get("episode_success_reason")),
             "failure_reason": _normalize_reason(info["failure_reason"]),
             "time_limit_reached": bool(info["time_limit_reached"]),
             "episode_steps": int(info["episode_steps"]),
             "contact_count": int(episode_state["contact_count"]),
+            "successful_bounce_count": int(episode_state["successful_bounce_count"]),
             "first_contact_step": episode_state["first_contact_step"] or "",
             "reward_total_sum": float(episode_state["reward_total_sum"]),
             "reward_height_sum": float(episode_state["reward_height_sum"]),
@@ -272,6 +285,7 @@ class PPOLoggingCallback(BaseCallback):
             "reward_failure_sum",
             "episode_steps",
             "contact_count",
+            "successful_bounce_count",
         ):
             self._summary_writer.add_scalar(field_name, float(episode_row[field_name]), episode_index)
         self._summary_writer.add_scalar("terminated", float(bool(episode_row["terminated"])), episode_index)
@@ -281,9 +295,9 @@ class PPOLoggingCallback(BaseCallback):
             float(bool(episode_row["time_limit_reached"])),
             episode_index,
         )
-        if episode_row["success_reason"]:
+        if episode_row["episode_success_reason"]:
             self._summary_writer.add_scalar(
-                f"success_reason/{episode_row['success_reason']}",
+                f"success_reason/{episode_row['episode_success_reason']}",
                 1.0,
                 episode_index,
             )
@@ -307,7 +321,11 @@ class PPOLoggingCallback(BaseCallback):
             episode_state["reward_contact_sum"] += float(info["reward_contact"])
             episode_state["reward_success_sum"] += float(info["reward_success"])
             episode_state["reward_failure_sum"] += float(info["reward_failure"])
-            if bool(info["contact_observed_during_step"]):
+            episode_state["successful_bounce_count"] = max(
+                int(episode_state["successful_bounce_count"]),
+                int(info.get("successful_bounce_count", 0)),
+            )
+            if bool(info.get("contact_event_during_step", False)):
                 episode_state["contact_count"] += 1
                 if episode_state["first_contact_step"] is None:
                     episode_state["first_contact_step"] = int(info["episode_steps"])

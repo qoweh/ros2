@@ -8,6 +8,8 @@
 - 제어기와 RL 환경 코드
 - 바로 실행하는 스크립트
 
+현재 목표는 `탁구 경기`가 아니다. 로봇팔이 라켓으로 공을 바닥에 떨어뜨리지 않고 계속 튕기도록 만드는 `keep-up` 과제가 현재 기준 목표다.
+
 이 순서대로 읽으면 훨씬 덜 헷갈린다.
 
 ## 가장 간단한 구분
@@ -15,11 +17,13 @@
 `run_bounce_baseline.py`와 `run_ppo_baseline.py`는 역할이 완전히 다르다.
 
 - `run_bounce_baseline.py`: 학습하지 않는다. 공을 떨어뜨리고 MuJoCo를 step 하면서 공이 라켓에 먼저 맞는지, 바닥에 먼저 닿는지를 보는 물리 sanity check다.
+- `run_keepup_baseline.py`: 학습하지 않는다. 현재 공 위치와 속도로부터 라켓 목표점을 계산해서, 공을 계속 살려 두는 heuristic baseline을 실행한다.
 - `run_ppo_baseline.py`: 학습한다. EE delta 환경을 Gymnasium 형식으로 감싸서 PPO 정책을 학습한다.
 
 짧게 말하면:
 
 - `bounce_baseline` = 물리/장면 점검용
+- `keepup_baseline` = 학습 없는 heuristic keep-up 기준선
 - `ppo_baseline` = RL 학습 실행용
 
 ## `ppo_smoke`는 무엇인가
@@ -62,6 +66,7 @@
 
 - `scripts/run_viewer.py`: viewer를 열고 hold/joint/EE 데모를 실행한다.
 - `scripts/run_bounce_baseline.py`: 학습 없는 bounce sanity check를 실행한다.
+- `scripts/run_keepup_baseline.py`: heuristic keep-up baseline을 실행한다.
 - `scripts/run_ppo_baseline.py`: PPO 학습을 실행한다.
 - `scripts/run_ppo_render.py`: 저장된 PPO 모델을 viewer에서 재생한다.
 - `scripts/run_ee_rollout_analysis.py`: constant action rollout을 돌리고 CSV/JSON 분석 파일을 만든다.
@@ -77,6 +82,7 @@
 ```bash
 mjpython pingpong_rl/scripts/run_viewer.py
 python pingpong_rl/scripts/run_bounce_baseline.py
+python pingpong_rl/scripts/run_keepup_baseline.py
 python pingpong_rl/scripts/run_ppo_baseline.py
 mjpython pingpong_rl/scripts/run_ppo_render.py
 python -m unittest discover -s pingpong_rl/tests -p 'test_scene_load.py'
@@ -92,6 +98,13 @@ python -m unittest discover -s pingpong_rl/tests -p 'test_scene_load.py'
 - 공 시작 높이를 바꿔볼 때
 - PPO rollout 길이를 바꿔볼 때
 - 기본 모델이 아닌 다른 저장 모델을 렌더링할 때
+- 학습 장치를 명시적으로 바꾸고 싶을 때
+
+현재 `run_ppo_baseline.py`의 기본 `--device`는 `cpu`다. 필요하면 다른 장치를 직접 지정할 수 있지만, 현재 기본 워크플로는 그냥 CPU 기준으로 보면 된다.
+
+```bash
+python pingpong_rl/scripts/run_ppo_baseline.py --device cpu
+```
 
 ## `python -m mujoco.viewer`로 보면 왜 자세가 다르나
 
@@ -130,6 +143,7 @@ python -m unittest discover -s pingpong_rl/tests -p 'test_scene_load.py'
 
 1. viewer를 실행해서 장면이 살아 있는지 확인한다.
 2. `run_bounce_baseline.py`로 공과 라켓의 기본 접촉이 이상하지 않은지 확인한다.
-3. `run_ppo_baseline.py`로 학습한다.
-4. `run_ppo_render.py`로 저장된 모델을 본다.
-5. `docs/etc/ppo_runs/ppo_baseline/ppo_baseline_training_summary.json`을 열어 결과를 확인한다.
+3. `run_keepup_baseline.py`로 학습 없는 기준선이 어느 정도 공을 살려 두는지 본다.
+4. `run_ppo_baseline.py`로 학습한다.
+5. `run_ppo_render.py`로 저장된 모델을 본다.
+6. `docs/etc/ppo_runs/ppo_baseline/ppo_baseline_training_summary.json`을 열어 결과를 확인한다.
