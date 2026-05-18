@@ -512,7 +512,7 @@ class PingPongSimTest(unittest.TestCase):
         self.assertTrue(success_info["contact_observed_during_step"])
         self.assertTrue(success_info["contact_event_during_step"])
         self.assertEqual(float(success_info["reward_success"]), env.success_bonus)
-        self.assertLess(float(success_info["reward_lift_term"]), 0.0)
+        self.assertGreater(float(success_info["reward_lift_term"]), 0.0)
 
     def test_ee_delta_env_height_reward_prefers_target_band_over_excessive_height(self) -> None:
         class FakeSim:
@@ -578,6 +578,42 @@ class PingPongSimTest(unittest.TestCase):
         self.assertLess(weak_lift_reward, 0.0)
         self.assertGreater(target_lift_reward, weak_lift_reward)
         self.assertGreater(target_lift_reward, overshoot_lift_reward)
+
+    def test_ee_delta_env_pre_contact_reward_prefers_upward_racket_motion_in_strike_zone(self) -> None:
+        class FakeSim:
+            def __init__(self) -> None:
+                self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
+                self._ball_position = np.array([0.56, 0.13, 0.82], dtype=float)
+                self._ball_velocity = np.array([0.0, 0.0, -0.35], dtype=float)
+                self._racket_velocity = np.array([0.0, 0.0, 0.18], dtype=float)
+
+            @property
+            def racket_position(self) -> np.ndarray:
+                return self._racket_position.copy()
+
+            @property
+            def ball_position(self) -> np.ndarray:
+                return self._ball_position.copy()
+
+            @property
+            def ball_velocity(self) -> np.ndarray:
+                return self._ball_velocity.copy()
+
+            @property
+            def racket_velocity(self) -> np.ndarray:
+                return self._racket_velocity.copy()
+
+        env = PingPongEEDeltaEnv()
+        fake_sim = FakeSim()
+        env.sim = fake_sim
+
+        upward_term = env._active_hit_term(False, None)
+        fake_sim._racket_velocity = np.array([0.0, 0.0, -0.18], dtype=float)
+        downward_term = env._active_hit_term(False, None)
+
+        self.assertGreater(upward_term, 0.0)
+        self.assertLess(downward_term, upward_term)
+        self.assertLess(downward_term, 0.0)
 
     def test_ee_delta_env_persistent_contact_counts_once_and_penalizes_stale_contact(self) -> None:
         class FakeSim:

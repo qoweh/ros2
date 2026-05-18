@@ -114,13 +114,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reset-xy-range",
         type=float,
-        default=0.04,
+        default=0.015,
         help="Uniform reset XY offset range around racket_center. Use 0 to disable.",
     )
     parser.add_argument(
         "--reset-velocity-xy-range",
         type=float,
-        default=0.02,
+        default=0.01,
         help="Uniform reset XY velocity range. Use 0 to disable.",
     )
     parser.add_argument(
@@ -128,7 +128,7 @@ def parse_args() -> argparse.Namespace:
         type=float,
         nargs=2,
         metavar=("MIN", "MAX"),
-        default=(-0.05, 0.02),
+        default=(-0.02, 0.01),
         help="Uniform reset vertical velocity range.",
     )
     parser.add_argument("--n-steps", type=int, default=DEFAULT_PPO_N_STEPS, help="PPO rollout length per update.")

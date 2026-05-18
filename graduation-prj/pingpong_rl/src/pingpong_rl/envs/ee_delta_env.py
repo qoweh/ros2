@@ -44,26 +44,31 @@ class PingPongEEDeltaEnv:
         stale_contact_penalty: float = -0.25,
         success_bonus: float = 12.0,
         rally_progress_bonus: float = 6.0,
-        target_ball_height: float = 0.28,
-        height_tolerance: float = 0.12,
-        height_reward_weight: float = 0.15,
-        height_overshoot_penalty_weight: float = 1.0,
-        useful_contact_velocity_z: float = 1.0,
-        target_contact_velocity_z: float = 1.8,
-        lift_reward_weight: float = 6.0,
-        lift_overshoot_penalty_weight: float = 3.0,
-        min_active_racket_velocity_z: float = 0.08,
-        target_active_racket_velocity_z: float = 0.50,
-        min_active_racket_acceleration_z: float = 1.0,
-        target_active_racket_acceleration_z: float = 8.0,
-        active_hit_reward_weight: float = 4.0,
-        passive_contact_penalty: float = -2.0,
+        target_ball_height: float = 0.30,
+        height_tolerance: float = 0.10,
+        height_reward_weight: float = 0.25,
+        height_overshoot_penalty_weight: float = 1.5,
+        useful_contact_velocity_z: float = 0.70,
+        target_contact_velocity_z: float = 1.40,
+        lift_reward_weight: float = 8.0,
+        lift_overshoot_penalty_weight: float = 4.0,
+        min_active_racket_velocity_z: float = 0.04,
+        target_active_racket_velocity_z: float = 0.25,
+        min_active_racket_acceleration_z: float = 0.5,
+        target_active_racket_acceleration_z: float = 4.0,
+        active_hit_reward_weight: float = 6.0,
+        passive_contact_penalty: float = -2.5,
+        preparation_reward_weight: float = 2.5,
+        downward_motion_penalty_weight: float = 1.5,
+        descending_ball_velocity_threshold: float = -0.05,
+        strike_zone_xy_radius: float = 0.10,
+        strike_zone_height_tolerance: float = 0.16,
         xy_alignment_weight: float = 0.75,
         floor_penalty: float = -8.0,
         failure_penalty: float = -5.0,
-        reset_xy_range: float = 0.0,
-        reset_velocity_xy_range: float = 0.0,
-        reset_velocity_z_range: tuple[float, float] = (0.0, 0.0),
+        reset_xy_range: float = 0.015,
+        reset_velocity_xy_range: float = 0.01,
+        reset_velocity_z_range: tuple[float, float] = (-0.02, 0.01),
         target_offset_low: Sequence[float] = (-0.24, -0.24, -0.08),
         target_offset_high: Sequence[float] = (0.24, 0.24, 0.18),
     ) -> None:
@@ -90,6 +95,11 @@ class PingPongEEDeltaEnv:
         self.target_active_racket_acceleration_z = float(target_active_racket_acceleration_z)
         self.active_hit_reward_weight = float(active_hit_reward_weight)
         self.passive_contact_penalty = float(passive_contact_penalty)
+        self.preparation_reward_weight = float(preparation_reward_weight)
+        self.downward_motion_penalty_weight = float(downward_motion_penalty_weight)
+        self.descending_ball_velocity_threshold = float(descending_ball_velocity_threshold)
+        self.strike_zone_xy_radius = float(strike_zone_xy_radius)
+        self.strike_zone_height_tolerance = float(strike_zone_height_tolerance)
         self.xy_alignment_weight = float(xy_alignment_weight)
         self.floor_penalty = float(floor_penalty)
         self.failure_penalty = float(failure_penalty)
@@ -121,6 +131,12 @@ class PingPongEEDeltaEnv:
             raise ValueError(
                 "target_active_racket_acceleration_z must be greater than or equal to "
                 "min_active_racket_acceleration_z."
+            )
+        if self.strike_zone_xy_radius <= 0.0:
+            raise ValueError(f"strike_zone_xy_radius must be positive, got {self.strike_zone_xy_radius}.")
+        if self.strike_zone_height_tolerance <= 0.0:
+            raise ValueError(
+                f"strike_zone_height_tolerance must be positive, got {self.strike_zone_height_tolerance}."
             )
         if self.reset_xy_range < 0.0:
             raise ValueError(f"reset_xy_range must be non-negative, got {self.reset_xy_range}.")
@@ -209,8 +225,6 @@ class PingPongEEDeltaEnv:
         try:
             self.sim.reset(ball_height=spawn_height, ball_velocity=spawn_velocity, ball_xy_offset=spawn_xy_offset)
         except TypeError:
-            if np.linalg.norm(spawn_xy_offset) > 0.0:
-                raise
             self.sim.reset(ball_height=spawn_height, ball_velocity=spawn_velocity)
         self.controller.reset()
         self.step_count = 0
@@ -478,12 +492,58 @@ class PingPongEEDeltaEnv:
         return max(velocity_score, acceleration_score)
 
     def _active_hit_term(self, contact_event: bool, contact_trace: dict[str, object] | None) -> float:
+        preparation_term = self._pre_contact_upward_term(contact_event)
         if not contact_event:
-            return 0.0
+            return preparation_term
         active_hit_score = self._active_hit_score(contact_trace)
         if active_hit_score <= 0.0:
-            return self.passive_contact_penalty
-        return self.active_hit_reward_weight * active_hit_score
+            return preparation_term + self.passive_contact_penalty
+        return preparation_term + self.active_hit_reward_weight * active_hit_score
+
+    def _pre_contact_upward_term(self, contact_event: bool) -> float:
+        if contact_event:
+            return 0.0
+
+        strike_zone_score = self._strike_zone_score()
+        if strike_zone_score <= 0.0:
+            return 0.0
+
+        racket_velocity_z = float(self._racket_velocity()[2])
+        upward_motion_score = self._range_score(
+            racket_velocity_z,
+            0.0,
+            self.target_active_racket_velocity_z,
+        )
+        downward_motion_score = self._range_score(
+            -racket_velocity_z,
+            0.0,
+            self.target_active_racket_velocity_z,
+        )
+        return (
+            self.preparation_reward_weight * strike_zone_score * upward_motion_score
+            - self.downward_motion_penalty_weight * strike_zone_score * downward_motion_score
+        )
+
+    def _strike_zone_score(self) -> float:
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return 0.0
+
+        ball_height_above_racket = self._ball_height_above_racket()
+        if ball_height_above_racket < 0.0:
+            return 0.0
+
+        xy_alignment_error = float(np.linalg.norm(self.sim.ball_position[:2] - self.sim.racket_position[:2]))
+        xy_score = max(1.0 - xy_alignment_error / self.strike_zone_xy_radius, 0.0)
+        height_score = max(
+            1.0 - abs(ball_height_above_racket - self.target_ball_height) / self.strike_zone_height_tolerance,
+            0.0,
+        )
+        descent_speed_score = self._range_score(
+            -float(self.sim.ball_velocity[2]),
+            abs(self.descending_ball_velocity_threshold),
+            self.useful_contact_velocity_z,
+        )
+        return xy_score * height_score * descent_speed_score
 
     def _lift_term(self, contact_event: bool, contact_trace: dict[str, object] | None) -> float:
         if not contact_event:
