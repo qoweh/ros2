@@ -75,6 +75,62 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional penalty weight for overpowered upward contacts.",
     )
+    parser.add_argument(
+        "--min-active-racket-velocity-z",
+        type=float,
+        default=None,
+        help="Optional minimum upward racket velocity required for active-hit reward/success.",
+    )
+    parser.add_argument(
+        "--target-active-racket-velocity-z",
+        type=float,
+        default=None,
+        help="Optional target upward racket velocity for full active-hit reward.",
+    )
+    parser.add_argument(
+        "--min-active-racket-acceleration-z",
+        type=float,
+        default=None,
+        help="Optional minimum upward racket acceleration required for active-hit reward/success.",
+    )
+    parser.add_argument(
+        "--target-active-racket-acceleration-z",
+        type=float,
+        default=None,
+        help="Optional target upward racket acceleration for full active-hit reward.",
+    )
+    parser.add_argument(
+        "--active-hit-reward-weight",
+        type=float,
+        default=None,
+        help="Optional weight for active upward racket motion at contact.",
+    )
+    parser.add_argument(
+        "--passive-contact-penalty",
+        type=float,
+        default=None,
+        help="Optional penalty applied when the ball contacts a non-active racket.",
+    )
+    parser.add_argument(
+        "--reset-xy-range",
+        type=float,
+        default=0.04,
+        help="Uniform reset XY offset range around racket_center. Use 0 to disable.",
+    )
+    parser.add_argument(
+        "--reset-velocity-xy-range",
+        type=float,
+        default=0.02,
+        help="Uniform reset XY velocity range. Use 0 to disable.",
+    )
+    parser.add_argument(
+        "--reset-velocity-z-range",
+        type=float,
+        nargs=2,
+        metavar=("MIN", "MAX"),
+        default=(-0.05, 0.02),
+        help="Uniform reset vertical velocity range.",
+    )
     parser.add_argument("--n-steps", type=int, default=DEFAULT_PPO_N_STEPS, help="PPO rollout length per update.")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_PPO_BATCH_SIZE, help="PPO minibatch size.")
     parser.add_argument("--learning-rate", type=float, default=DEFAULT_PPO_LEARNING_RATE, help="PPO learning rate.")
@@ -157,6 +213,21 @@ def main() -> None:
             env_kwargs["lift_reward_weight"] = args.lift_reward_weight
         if args.lift_overshoot_penalty_weight is not None:
             env_kwargs["lift_overshoot_penalty_weight"] = args.lift_overshoot_penalty_weight
+        if args.min_active_racket_velocity_z is not None:
+            env_kwargs["min_active_racket_velocity_z"] = args.min_active_racket_velocity_z
+        if args.target_active_racket_velocity_z is not None:
+            env_kwargs["target_active_racket_velocity_z"] = args.target_active_racket_velocity_z
+        if args.min_active_racket_acceleration_z is not None:
+            env_kwargs["min_active_racket_acceleration_z"] = args.min_active_racket_acceleration_z
+        if args.target_active_racket_acceleration_z is not None:
+            env_kwargs["target_active_racket_acceleration_z"] = args.target_active_racket_acceleration_z
+        if args.active_hit_reward_weight is not None:
+            env_kwargs["active_hit_reward_weight"] = args.active_hit_reward_weight
+        if args.passive_contact_penalty is not None:
+            env_kwargs["passive_contact_penalty"] = args.passive_contact_penalty
+        env_kwargs["reset_xy_range"] = args.reset_xy_range
+        env_kwargs["reset_velocity_xy_range"] = args.reset_velocity_xy_range
+        env_kwargs["reset_velocity_z_range"] = tuple(args.reset_velocity_z_range)
         return PingPongEEDeltaGymEnv(
             **env_kwargs,
         )
@@ -191,6 +262,27 @@ def main() -> None:
             "lift_overshoot_penalty_weight": None
             if args.lift_overshoot_penalty_weight is None
             else float(args.lift_overshoot_penalty_weight),
+            "min_active_racket_velocity_z": None
+            if args.min_active_racket_velocity_z is None
+            else float(args.min_active_racket_velocity_z),
+            "target_active_racket_velocity_z": None
+            if args.target_active_racket_velocity_z is None
+            else float(args.target_active_racket_velocity_z),
+            "min_active_racket_acceleration_z": None
+            if args.min_active_racket_acceleration_z is None
+            else float(args.min_active_racket_acceleration_z),
+            "target_active_racket_acceleration_z": None
+            if args.target_active_racket_acceleration_z is None
+            else float(args.target_active_racket_acceleration_z),
+            "active_hit_reward_weight": None
+            if args.active_hit_reward_weight is None
+            else float(args.active_hit_reward_weight),
+            "passive_contact_penalty": None
+            if args.passive_contact_penalty is None
+            else float(args.passive_contact_penalty),
+            "reset_xy_range": float(args.reset_xy_range),
+            "reset_velocity_xy_range": float(args.reset_velocity_xy_range),
+            "reset_velocity_z_range": [float(value) for value in args.reset_velocity_z_range],
             "n_steps": int(args.n_steps),
             "batch_size": int(args.batch_size),
             "learning_rate": float(args.learning_rate),

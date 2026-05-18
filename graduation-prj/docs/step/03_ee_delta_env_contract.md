@@ -49,21 +49,23 @@
 
 public observation은 flat vector 하나로 고정한다.
 
-- `observation.shape == (26,)`
+- `observation.shape == (29,)`
 
 현재 순서는 아래와 같다.
 
 - `observation[0:7]`: `joint_positions`
 - `observation[7:14]`: `joint_velocities`
 - `observation[14:17]`: `racket_position`
-- `observation[17:20]`: `target_position`
-- `observation[20:23]`: `ball_position`
-- `observation[23:26]`: `ball_velocity`
+- `observation[17:20]`: `racket_velocity`
+- `observation[20:23]`: `target_position`
+- `observation[23:26]`: `ball_position`
+- `observation[26:29]`: `ball_velocity`
 
 `target_position`을 추가한 이유:
 - 현재 env는 delta action을 controller 내부의 `target_position`에 누적한다.
 - 이 값이 observation에 없으면 같은 `racket_position`이라도 다음 transition이 달라질 수 있다.
 - 즉 RL 관점에서 state를 닫으려면 `target_position`을 같이 관측해야 한다.
+- contact 순간의 active hit를 판단하기 위해 `racket_velocity`도 관측한다.
 
 디버그가 필요할 때는 다음 helper를 사용한다.
 
@@ -125,7 +127,7 @@ public observation은 flat vector 하나로 고정한다.
 	- `contact_ball_velocity_z`
 	- `contact_ball_speed_norm`
 
-현재 `reward_distance`, `reward_success`는 schema 고정용 placeholder라 `0.0`이다.
+현재 reward logging에는 active hit 분해값도 포함한다.
 
 ## 5. 현재 reward draft
 
@@ -133,6 +135,7 @@ public observation은 flat vector 하나로 고정한다.
 
 - `contact_bonus`
 - `height_term`
+- `active_hit_term`
 - `failure_penalty`
 
 이건 아직 최종 shaping이 아니라, `step()` 반환 형식이 성립하는지 확인하려는 임시 초안이다.

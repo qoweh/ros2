@@ -34,6 +34,7 @@ class PingPongSim:
         self._home_ctrl = self.model.key_ctrl[0].copy()
         self._home_joint_targets = self._home_ctrl[:7].copy()
         self._default_ball_height = DEFAULT_BALL_HEIGHT
+        self._racket_jacobian = np.zeros((3, self.model.nv), dtype=float)
         self.reset()
 
     @property
@@ -61,6 +62,17 @@ class PingPongSim:
         return self.data.site_xpos[self.racket_site_id].copy()
 
     @property
+    def racket_velocity(self) -> np.ndarray:
+        mujoco.mj_jacSite(
+            self.model,
+            self.data,
+            self._racket_jacobian,
+            None,
+            self.racket_site_id,
+        )
+        return self._racket_jacobian @ self.data.qvel
+
+    @property
     def racket_grip_position(self) -> np.ndarray:
         return self.data.xpos[self.racket_body_id].copy()
 
@@ -73,6 +85,7 @@ class PingPongSim:
         ball_position: Sequence[float] | None = None,
         ball_velocity: Sequence[float] = (0.0, 0.0, 0.0),
         ball_height: float | None = None,
+        ball_xy_offset: Sequence[float] = (0.0, 0.0),
     ) -> mujoco.MjData:
         mujoco.mj_resetDataKeyframe(self.model, self.data, 0)
         self.data.ctrl[:] = self._home_ctrl
@@ -80,7 +93,7 @@ class PingPongSim:
 
         if ball_position is None:
             spawn_height = self._default_ball_height if ball_height is None else float(ball_height)
-            self.reset_ball_above_racket(height=spawn_height, velocity=ball_velocity)
+            self.reset_ball_above_racket(height=spawn_height, xy_offset=ball_xy_offset, velocity=ball_velocity)
         else:
             self.spawn_ball(ball_position, ball_velocity)
 
@@ -219,9 +232,21 @@ class PingPongSim:
             "contact_ball_velocity_y": None,
             "contact_ball_velocity_z": None,
             "contact_ball_speed_norm": None,
+            "contact_racket_velocity_x": None,
+            "contact_racket_velocity_y": None,
+            "contact_racket_velocity_z": None,
+            "contact_racket_speed_norm": None,
+            "contact_racket_acceleration_x": None,
+            "contact_racket_acceleration_y": None,
+            "contact_racket_acceleration_z": None,
+            "contact_racket_acceleration_norm": None,
         }
+        previous_racket_velocity = self.racket_velocity
         for substep_index in range(1, step_count + 1):
             mujoco.mj_step(self.model, self.data)
+            racket_velocity = self.racket_velocity
+            racket_acceleration = (racket_velocity - previous_racket_velocity) / self.model.opt.timestep
+            previous_racket_velocity = racket_velocity
             if contact_trace["contact_observed"]:
                 continue
             if target_pair not in self.contact_pairs():
@@ -235,5 +260,13 @@ class PingPongSim:
                 "contact_ball_velocity_y": float(ball_velocity[1]),
                 "contact_ball_velocity_z": float(ball_velocity[2]),
                 "contact_ball_speed_norm": float(np.linalg.norm(ball_velocity)),
+                "contact_racket_velocity_x": float(racket_velocity[0]),
+                "contact_racket_velocity_y": float(racket_velocity[1]),
+                "contact_racket_velocity_z": float(racket_velocity[2]),
+                "contact_racket_speed_norm": float(np.linalg.norm(racket_velocity)),
+                "contact_racket_acceleration_x": float(racket_acceleration[0]),
+                "contact_racket_acceleration_y": float(racket_acceleration[1]),
+                "contact_racket_acceleration_z": float(racket_acceleration[2]),
+                "contact_racket_acceleration_norm": float(np.linalg.norm(racket_acceleration)),
             }
         return contact_trace

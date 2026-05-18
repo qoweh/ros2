@@ -38,7 +38,7 @@
 
 즉:
 
-- `ppo_baseline` = 일반 baseline 학습 run
+- `ppo_active_hit` = 현재 기본 학습 run. 라켓의 upward velocity/acceleration이 있는 contact만 active hit로 보상한다.
 - `ppo_smoke` = 아주 짧은 확인용 run
 
 ## 권장 읽기 순서
@@ -146,4 +146,4 @@ python pingpong_rl/scripts/run_ppo_baseline.py --device cpu
 3. `run_keepup_baseline.py`로 학습 없는 기준선이 어느 정도 공을 살려 두는지 본다.
 4. `run_ppo_baseline.py`로 학습한다.
 5. `run_ppo_render.py`로 저장된 모델을 본다.
-6. `docs/etc/ppo_runs/ppo_baseline/ppo_baseline_training_summary.json`을 열어 결과를 확인한다.
+6. `docs/etc/ppo_runs/ppo_active_hit/ppo_active_hit_training_summary.json`을 열어 결과를 확인한다.

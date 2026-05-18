@@ -35,10 +35,17 @@ class PingPongEEDeltaGymEnv(gym.Env[np.ndarray, np.ndarray]):
         options: dict[str, object] | None = None,
     ) -> tuple[np.ndarray, dict[str, object]]:
         super().reset(seed=seed)
+        if seed is not None:
+            self.base_env.seed(seed)
         options = {} if options is None else dict(options)
         ball_height = options.get("ball_height")
-        ball_velocity = options.get("ball_velocity", (0.0, 0.0, 0.0))
-        observation, info = self.base_env.reset(ball_height=ball_height, ball_velocity=ball_velocity)
+        ball_velocity = options.get("ball_velocity")
+        ball_xy_offset = options.get("ball_xy_offset")
+        observation, info = self.base_env.reset(
+            ball_height=ball_height,
+            ball_velocity=ball_velocity,
+            ball_xy_offset=ball_xy_offset,
+        )
         return observation.astype(np.float32, copy=False), info
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, object]]:

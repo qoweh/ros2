@@ -213,7 +213,15 @@ class PingPongSimTest(unittest.TestCase):
         self.assertEqual(observation.shape, (env.observation_size,))
         self.assertEqual(
             set(unpacked_observation),
-            {"joint_positions", "joint_velocities", "racket_position", "target_position", "ball_position", "ball_velocity"},
+            {
+                "joint_positions",
+                "joint_velocities",
+                "racket_position",
+                "racket_velocity",
+                "target_position",
+                "ball_position",
+                "ball_velocity",
+            },
         )
         self.assertIsNone(reset_info["failure_reason"])
         self.assertIsNone(reset_info["success_reason"])
@@ -243,6 +251,7 @@ class PingPongSimTest(unittest.TestCase):
         self.assertEqual(next_unpacked_observation["joint_positions"].shape, (7,))
         self.assertEqual(next_unpacked_observation["joint_velocities"].shape, (7,))
         self.assertEqual(next_unpacked_observation["racket_position"].shape, (3,))
+        self.assertEqual(next_unpacked_observation["racket_velocity"].shape, (3,))
         self.assertEqual(next_unpacked_observation["target_position"].shape, (3,))
         self.assertEqual(next_unpacked_observation["ball_position"].shape, (3,))
         self.assertEqual(next_unpacked_observation["ball_velocity"].shape, (3,))
@@ -348,6 +357,25 @@ class PingPongSimTest(unittest.TestCase):
                 self._racket_contact = True
                 self._ball_velocity = np.array([0.02, 0.0, 0.8], dtype=float)
 
+            def step_with_contact_trace(self, joint_targets: np.ndarray | None = None, n_substeps: int | None = None) -> dict[str, object]:
+                self.step(joint_targets=joint_targets, n_substeps=n_substeps)
+                return {
+                    "contact_observed": True,
+                    "contact_substep": 1,
+                    "contact_ball_velocity_x": 0.02,
+                    "contact_ball_velocity_y": 0.0,
+                    "contact_ball_velocity_z": 0.8,
+                    "contact_ball_speed_norm": 0.8,
+                    "contact_racket_velocity_x": 0.0,
+                    "contact_racket_velocity_y": 0.0,
+                    "contact_racket_velocity_z": 0.3,
+                    "contact_racket_speed_norm": 0.3,
+                    "contact_racket_acceleration_x": 0.0,
+                    "contact_racket_acceleration_y": 0.0,
+                    "contact_racket_acceleration_z": 4.0,
+                    "contact_racket_acceleration_norm": 4.0,
+                }
+
             def failure_reason(self) -> None:
                 return None
 
@@ -436,6 +464,14 @@ class PingPongSimTest(unittest.TestCase):
                     "contact_ball_velocity_y": 0.0,
                     "contact_ball_velocity_z": 0.8,
                     "contact_ball_speed_norm": 0.8,
+                    "contact_racket_velocity_x": 0.0,
+                    "contact_racket_velocity_y": 0.0,
+                    "contact_racket_velocity_z": 0.3,
+                    "contact_racket_speed_norm": 0.3,
+                    "contact_racket_acceleration_x": 0.0,
+                    "contact_racket_acceleration_y": 0.0,
+                    "contact_racket_acceleration_z": 4.0,
+                    "contact_racket_acceleration_norm": 4.0,
                 }
 
             def failure_reason(self) -> None:
@@ -530,10 +566,14 @@ class PingPongSimTest(unittest.TestCase):
 
         env = PingPongEEDeltaEnv()
         env.sim = FakeSim()
+        active_trace = {
+            "contact_racket_velocity_z": env.target_active_racket_velocity_z,
+            "contact_racket_acceleration_z": env.target_active_racket_acceleration_z,
+        }
 
-        weak_lift_reward = env._lift_term(True, {"contact_ball_velocity_z": 0.4})
-        target_lift_reward = env._lift_term(True, {"contact_ball_velocity_z": env.target_contact_velocity_z})
-        overshoot_lift_reward = env._lift_term(True, {"contact_ball_velocity_z": 4.5})
+        weak_lift_reward = env._lift_term(True, {"contact_ball_velocity_z": 0.4, **active_trace})
+        target_lift_reward = env._lift_term(True, {"contact_ball_velocity_z": env.target_contact_velocity_z, **active_trace})
+        overshoot_lift_reward = env._lift_term(True, {"contact_ball_velocity_z": 4.5, **active_trace})
 
         self.assertLess(weak_lift_reward, 0.0)
         self.assertGreater(target_lift_reward, weak_lift_reward)
@@ -582,6 +622,14 @@ class PingPongSimTest(unittest.TestCase):
                     "contact_ball_velocity_y": 0.0,
                     "contact_ball_velocity_z": 0.9,
                     "contact_ball_speed_norm": 0.9,
+                    "contact_racket_velocity_x": 0.0,
+                    "contact_racket_velocity_y": 0.0,
+                    "contact_racket_velocity_z": 0.3,
+                    "contact_racket_speed_norm": 0.3,
+                    "contact_racket_acceleration_x": 0.0,
+                    "contact_racket_acceleration_y": 0.0,
+                    "contact_racket_acceleration_z": 4.0,
+                    "contact_racket_acceleration_norm": 4.0,
                 }
 
             def failure_reason(self) -> None:
@@ -676,6 +724,14 @@ class PingPongSimTest(unittest.TestCase):
                         "contact_ball_velocity_y": 0.0,
                         "contact_ball_velocity_z": 0.9,
                         "contact_ball_speed_norm": 0.9,
+                        "contact_racket_velocity_x": 0.0,
+                        "contact_racket_velocity_y": 0.0,
+                        "contact_racket_velocity_z": 0.3,
+                        "contact_racket_speed_norm": 0.3,
+                        "contact_racket_acceleration_x": 0.0,
+                        "contact_racket_acceleration_y": 0.0,
+                        "contact_racket_acceleration_z": 4.0,
+                        "contact_racket_acceleration_norm": 4.0,
                     }
                 if self._step_index == 2:
                     self._ball_velocity = np.array([0.0, 0.0, -0.2], dtype=float)
@@ -695,6 +751,14 @@ class PingPongSimTest(unittest.TestCase):
                     "contact_ball_velocity_y": 0.0,
                     "contact_ball_velocity_z": 1.0,
                     "contact_ball_speed_norm": 1.0,
+                    "contact_racket_velocity_x": 0.0,
+                    "contact_racket_velocity_y": 0.0,
+                    "contact_racket_velocity_z": 0.3,
+                    "contact_racket_speed_norm": 0.3,
+                    "contact_racket_acceleration_x": 0.0,
+                    "contact_racket_acceleration_y": 0.0,
+                    "contact_racket_acceleration_z": 4.0,
+                    "contact_racket_acceleration_norm": 4.0,
                 }
 
             def failure_reason(self) -> None:

@@ -42,6 +42,7 @@ EPISODE_FIELDS: tuple[str, ...] = (
     "reward_height_sum",
     "reward_distance_sum",
     "reward_contact_sum",
+    "reward_active_hit_sum",
     "reward_success_sum",
     "reward_failure_sum",
 )
@@ -53,6 +54,7 @@ STEP_FIELDS: tuple[str, ...] = (
     "reward_height",
     "reward_distance",
     "reward_contact",
+    "reward_active_hit",
     "reward_success",
     "reward_failure",
     "terminated",
@@ -74,6 +76,15 @@ STEP_FIELDS: tuple[str, ...] = (
     "contact_ball_velocity_y",
     "contact_ball_velocity_z",
     "contact_ball_speed_norm",
+    "contact_racket_velocity_x",
+    "contact_racket_velocity_y",
+    "contact_racket_velocity_z",
+    "contact_racket_speed_norm",
+    "contact_racket_acceleration_x",
+    "contact_racket_acceleration_y",
+    "contact_racket_acceleration_z",
+    "contact_racket_acceleration_norm",
+    "active_hit_score",
 )
 
 CONTACT_FIELDS: tuple[str, ...] = (
@@ -84,6 +95,15 @@ CONTACT_FIELDS: tuple[str, ...] = (
     "ball_velocity_y",
     "ball_velocity_z",
     "ball_speed_norm",
+    "racket_velocity_x",
+    "racket_velocity_y",
+    "racket_velocity_z",
+    "racket_speed_norm",
+    "racket_acceleration_x",
+    "racket_acceleration_y",
+    "racket_acceleration_z",
+    "racket_acceleration_norm",
+    "active_hit_score",
     "success_reason",
     "failure_reason",
     "terminated",
@@ -123,6 +143,16 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
         help="Success threshold forwarded to PingPongEEDeltaEnv. This script does not modify it automatically.",
+    )
+    parser.add_argument("--reset-xy-range", type=float, default=0.0, help="Uniform reset XY offset range.")
+    parser.add_argument("--reset-velocity-xy-range", type=float, default=0.0, help="Uniform reset XY velocity range.")
+    parser.add_argument(
+        "--reset-velocity-z-range",
+        type=float,
+        nargs=2,
+        metavar=("MIN", "MAX"),
+        default=(0.0, 0.0),
+        help="Uniform reset vertical velocity range.",
     )
     parser.add_argument(
         "--output-dir",
@@ -184,6 +214,7 @@ def run_episode(
         "reward_height_sum": 0.0,
         "reward_distance_sum": 0.0,
         "reward_contact_sum": 0.0,
+        "reward_active_hit_sum": 0.0,
         "reward_success_sum": 0.0,
         "reward_failure_sum": 0.0,
     }
@@ -197,6 +228,7 @@ def run_episode(
         reward_sums["reward_height_sum"] += float(info["reward_height"])
         reward_sums["reward_distance_sum"] += float(info["reward_distance"])
         reward_sums["reward_contact_sum"] += float(info["reward_contact"])
+        reward_sums["reward_active_hit_sum"] += float(info.get("reward_active_hit", 0.0))
         reward_sums["reward_success_sum"] += float(info["reward_success"])
         reward_sums["reward_failure_sum"] += float(info["reward_failure"])
 
@@ -208,6 +240,7 @@ def run_episode(
                 "reward_height": float(info["reward_height"]),
                 "reward_distance": float(info["reward_distance"]),
                 "reward_contact": float(info["reward_contact"]),
+                "reward_active_hit": float(info.get("reward_active_hit", 0.0)),
                 "reward_success": float(info["reward_success"]),
                 "reward_failure": float(info["reward_failure"]),
                 "terminated": bool(info["terminated"]),
@@ -229,6 +262,15 @@ def run_episode(
                 "contact_ball_velocity_y": info["contact_ball_velocity_y"],
                 "contact_ball_velocity_z": info["contact_ball_velocity_z"],
                 "contact_ball_speed_norm": info["contact_ball_speed_norm"],
+                "contact_racket_velocity_x": info.get("contact_racket_velocity_x"),
+                "contact_racket_velocity_y": info.get("contact_racket_velocity_y"),
+                "contact_racket_velocity_z": info.get("contact_racket_velocity_z"),
+                "contact_racket_speed_norm": info.get("contact_racket_speed_norm"),
+                "contact_racket_acceleration_x": info.get("contact_racket_acceleration_x"),
+                "contact_racket_acceleration_y": info.get("contact_racket_acceleration_y"),
+                "contact_racket_acceleration_z": info.get("contact_racket_acceleration_z"),
+                "contact_racket_acceleration_norm": info.get("contact_racket_acceleration_norm"),
+                "active_hit_score": float(info.get("active_hit_score", 0.0)),
             }
         )
 
@@ -244,6 +286,15 @@ def run_episode(
                     "ball_velocity_y": info["contact_ball_velocity_y"],
                     "ball_velocity_z": info["contact_ball_velocity_z"],
                     "ball_speed_norm": info["contact_ball_speed_norm"],
+                    "racket_velocity_x": info.get("contact_racket_velocity_x"),
+                    "racket_velocity_y": info.get("contact_racket_velocity_y"),
+                    "racket_velocity_z": info.get("contact_racket_velocity_z"),
+                    "racket_speed_norm": info.get("contact_racket_speed_norm"),
+                    "racket_acceleration_x": info.get("contact_racket_acceleration_x"),
+                    "racket_acceleration_y": info.get("contact_racket_acceleration_y"),
+                    "racket_acceleration_z": info.get("contact_racket_acceleration_z"),
+                    "racket_acceleration_norm": info.get("contact_racket_acceleration_norm"),
+                    "active_hit_score": float(info.get("active_hit_score", 0.0)),
                     "success_reason": _normalize_reason(info["success_reason"]),
                     "failure_reason": _normalize_reason(info["failure_reason"]),
                     "terminated": bool(info["terminated"]),
@@ -284,10 +335,19 @@ def build_summary(
     contact_velocity_y = [float(row["ball_velocity_y"]) for row in contact_rows if row["ball_velocity_y"] is not None]
     contact_velocity_z = [float(row["ball_velocity_z"]) for row in contact_rows if row["ball_velocity_z"] is not None]
     contact_speed_norm = [float(row["ball_speed_norm"]) for row in contact_rows if row["ball_speed_norm"] is not None]
+    contact_racket_velocity_z = [
+        float(row["racket_velocity_z"]) for row in contact_rows if row["racket_velocity_z"] is not None
+    ]
+    contact_racket_acceleration_z = [
+        float(row["racket_acceleration_z"]) for row in contact_rows if row["racket_acceleration_z"] is not None
+    ]
+    active_hit_scores = [float(row["active_hit_score"]) for row in contact_rows if row["active_hit_score"] is not None]
     zero_contact_reward_episodes = sum(float(row["reward_contact_sum"]) == 0.0 for row in episode_rows)
+    zero_active_hit_reward_episodes = sum(float(row["reward_active_hit_sum"]) == 0.0 for row in episode_rows)
     zero_success_reward_episodes = sum(float(row["reward_success_sum"]) == 0.0 for row in episode_rows)
     height_dominant_episodes = sum(
-        float(row["reward_height_sum"]) > float(row["reward_contact_sum"]) + float(row["reward_success_sum"])
+        float(row["reward_height_sum"])
+        > float(row["reward_contact_sum"]) + float(row["reward_active_hit_sum"]) + float(row["reward_success_sum"])
         for row in episode_rows
     )
     survival_without_success_episodes = sum(
@@ -303,6 +363,9 @@ def build_summary(
             "ball_velocity": [float(value) for value in args.ball_velocity],
             "action": [float(value) for value in args.action],
             "success_velocity_threshold": float(args.success_velocity_threshold),
+            "reset_xy_range": float(args.reset_xy_range),
+            "reset_velocity_xy_range": float(args.reset_velocity_xy_range),
+            "reset_velocity_z_range": [float(value) for value in args.reset_velocity_z_range],
         },
         "episode_counts": {
             "episodes": len(episode_rows),
@@ -321,11 +384,13 @@ def build_summary(
             "reward_height_sum": _episode_metric_stats(episode_rows, "reward_height_sum"),
             "reward_distance_sum": _episode_metric_stats(episode_rows, "reward_distance_sum"),
             "reward_contact_sum": _episode_metric_stats(episode_rows, "reward_contact_sum"),
+            "reward_active_hit_sum": _episode_metric_stats(episode_rows, "reward_active_hit_sum"),
             "reward_success_sum": _episode_metric_stats(episode_rows, "reward_success_sum"),
             "reward_failure_sum": _episode_metric_stats(episode_rows, "reward_failure_sum"),
         },
         "reward_dominance": {
             "zero_contact_reward_episodes": zero_contact_reward_episodes,
+            "zero_active_hit_reward_episodes": zero_active_hit_reward_episodes,
             "zero_success_reward_episodes": zero_success_reward_episodes,
             "height_dominant_episodes": height_dominant_episodes,
             "survival_without_success_episodes": survival_without_success_episodes,
@@ -335,6 +400,9 @@ def build_summary(
             "ball_velocity_y": _quantile_stats(contact_velocity_y),
             "ball_velocity_z": _quantile_stats(contact_velocity_z),
             "ball_speed_norm": _quantile_stats(contact_speed_norm),
+            "racket_velocity_z": _quantile_stats(contact_racket_velocity_z),
+            "racket_acceleration_z": _quantile_stats(contact_racket_acceleration_z),
+            "active_hit_score": _quantile_stats(active_hit_scores),
         },
     }
 
@@ -352,6 +420,9 @@ def main() -> None:
         max_episode_steps=args.max_episode_steps,
         ball_height=args.ball_height,
         success_velocity_threshold=args.success_velocity_threshold,
+        reset_xy_range=args.reset_xy_range,
+        reset_velocity_xy_range=args.reset_velocity_xy_range,
+        reset_velocity_z_range=tuple(args.reset_velocity_z_range),
     )
     output_dir = (
         ROLLOUT_ANALYSIS_ROOT
