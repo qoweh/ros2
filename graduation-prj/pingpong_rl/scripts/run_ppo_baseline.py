@@ -12,6 +12,17 @@ if str(SRC_ROOT) not in sys.path:
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 
+from pingpong_rl.defaults import (
+    DEFAULT_BALL_HEIGHT,
+    DEFAULT_MAX_EPISODE_STEPS,
+    DEFAULT_PPO_BATCH_SIZE,
+    DEFAULT_PPO_GAMMA,
+    DEFAULT_PPO_LEARNING_RATE,
+    DEFAULT_PPO_N_STEPS,
+    DEFAULT_PPO_RUN_NAME,
+    DEFAULT_PPO_TOTAL_TIMESTEPS,
+    DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
+)
 from pingpong_rl.envs import PingPongEEDeltaGymEnv
 from pingpong_rl.training import PPOLoggingCallback
 from pingpong_rl.utils import PPO_RUNS_ROOT, resolve_output_path
@@ -19,19 +30,19 @@ from pingpong_rl.utils import PPO_RUNS_ROOT, resolve_output_path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a PPO baseline with rollout-aligned logging.")
-    parser.add_argument("--total-timesteps", type=int, default=2048, help="Total PPO training timesteps.")
-    parser.add_argument("--max-episode-steps", type=int, default=300, help="Env time limit.")
-    parser.add_argument("--ball-height", type=float, default=0.22, help="Spawn height above racket_center.")
+    parser.add_argument("--total-timesteps", type=int, default=DEFAULT_PPO_TOTAL_TIMESTEPS, help="Total PPO training timesteps.")
+    parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS, help="Env time limit.")
+    parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT, help="Spawn height above racket_center.")
     parser.add_argument(
         "--success-velocity-threshold",
         type=float,
-        default=0.5,
+        default=DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
         help="Success threshold forwarded to the env. This script does not tune it automatically.",
     )
-    parser.add_argument("--n-steps", type=int, default=256, help="PPO rollout length per update.")
-    parser.add_argument("--batch-size", type=int, default=64, help="PPO minibatch size.")
-    parser.add_argument("--learning-rate", type=float, default=3.0e-4, help="PPO learning rate.")
-    parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor.")
+    parser.add_argument("--n-steps", type=int, default=DEFAULT_PPO_N_STEPS, help="PPO rollout length per update.")
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_PPO_BATCH_SIZE, help="PPO minibatch size.")
+    parser.add_argument("--learning-rate", type=float, default=DEFAULT_PPO_LEARNING_RATE, help="PPO learning rate.")
+    parser.add_argument("--gamma", type=float, default=DEFAULT_PPO_GAMMA, help="Discount factor.")
     parser.add_argument("--device", type=str, default="auto", help="Torch device passed to PPO.")
     parser.add_argument(
         "--output-dir",
@@ -39,7 +50,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("docs/etc/ppo_runs"),
         help="Directory for model, CSV logs, TensorBoard logs, and summary JSON.",
     )
-    parser.add_argument("--run-name", type=str, default="ppo_baseline", help="Run name prefix for artifacts.")
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default=DEFAULT_PPO_RUN_NAME,
+        help="Run name prefix for artifacts. Use ppo_smoke only for very short wiring checks.",
+    )
     return parser.parse_args()
 
 

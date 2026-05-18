@@ -15,6 +15,13 @@ SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from pingpong_rl.defaults import (
+    DEFAULT_ANALYSIS_EPISODES,
+    DEFAULT_ANALYSIS_PREFIX,
+    DEFAULT_BALL_HEIGHT,
+    DEFAULT_MAX_EPISODE_STEPS,
+    DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
+)
 from pingpong_rl.envs import PingPongEEDeltaEnv
 from pingpong_rl.utils import ROLLOUT_ANALYSIS_ROOT, resolve_output_path
 
@@ -82,14 +89,14 @@ CONTACT_FIELDS: tuple[str, ...] = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run EE env rollouts and export reward/contact analysis logs.")
-    parser.add_argument("--episodes", type=int, default=5, help="Number of episodes to roll out.")
+    parser.add_argument("--episodes", type=int, default=DEFAULT_ANALYSIS_EPISODES, help="Number of episodes to roll out.")
     parser.add_argument(
         "--max-episode-steps",
         type=int,
-        default=300,
+        default=DEFAULT_MAX_EPISODE_STEPS,
         help="Time-limit steps passed to PingPongEEDeltaEnv.",
     )
-    parser.add_argument("--ball-height", type=float, default=0.22, help="Spawn height above racket_center.")
+    parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT, help="Spawn height above racket_center.")
     parser.add_argument(
         "--ball-velocity",
         type=float,
@@ -109,7 +116,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--success-velocity-threshold",
         type=float,
-        default=0.5,
+        default=DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
         help="Success threshold forwarded to PingPongEEDeltaEnv. This script does not modify it automatically.",
     )
     parser.add_argument(
@@ -121,7 +128,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-prefix",
         type=str,
-        default="ee_rollout_analysis",
+        default=DEFAULT_ANALYSIS_PREFIX,
         help="Prefix used for exported filenames.",
     )
     return parser.parse_args()

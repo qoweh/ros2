@@ -9,11 +9,17 @@ import mujoco.viewer
 from stable_baselines3 import PPO
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MODEL_PATH = Path("docs/etc/ppo_runs/ppo_baseline/ppo_baseline_model.zip")
 SRC_ROOT = PACKAGE_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from pingpong_rl.defaults import (
+    DEFAULT_BALL_HEIGHT,
+    DEFAULT_MAX_EPISODE_STEPS,
+    DEFAULT_PPO_RUN_NAME,
+    DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
+    default_ppo_model_candidates,
+)
 from pingpong_rl.envs import PingPongEEDeltaGymEnv
 from pingpong_rl.utils import PPO_RUNS_ROOT, resolve_input_path
 
@@ -23,16 +29,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model-path",
         type=Path,
-        default=DEFAULT_MODEL_PATH,
-        help="Path to a saved Stable-Baselines3 PPO zip model.",
+        default=None,
+        help="Path to a saved Stable-Baselines3 PPO zip model. Default: ppo_baseline model if present.",
     )
-    parser.add_argument("--episodes", type=int, default=1, help="Number of episodes to replay before exit.")
-    parser.add_argument("--max-episode-steps", type=int, default=300, help="Env time limit.")
-    parser.add_argument("--ball-height", type=float, default=0.22, help="Spawn height above racket_center.")
+    parser.add_argument("--episodes", type=int, default=5, help="Number of episodes to replay before exit.")
+    parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS, help="Env time limit.")
+    parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT, help="Spawn height above racket_center.")
     parser.add_argument(
         "--success-velocity-threshold",
         type=float,
-        default=0.5,
+        default=DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
         help="Success threshold forwarded to the env. This script does not tune it automatically.",
     )
     parser.add_argument(
@@ -49,6 +55,17 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _resolve_model_path(model_path: Path | None) -> Path:
+    if model_path is not None:
+        return resolve_input_path(model_path)
+
+    candidates = default_ppo_model_candidates(PPO_RUNS_ROOT)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
+
+
 def _episode_summary(index: int, episode_return: float, episode_steps: int, info: dict[str, object]) -> str:
     return (
         f"episode={index} steps={episode_steps} return={episode_return:.4f} "
@@ -61,9 +78,7 @@ def _episode_summary(index: int, episode_return: float, episode_steps: int, info
 
 def main() -> None:
     args = parse_args()
-    model_path = PPO_RUNS_ROOT / "ppo_baseline" / "ppo_baseline_model.zip"
-    if args.model_path != DEFAULT_MODEL_PATH:
-        model_path = resolve_input_path(args.model_path)
+    model_path = _resolve_model_path(args.model_path)
     if args.episodes < 1:
         raise ValueError(f"episodes must be positive, got {args.episodes}.")
     if not model_path.is_file():
@@ -84,6 +99,7 @@ def main() -> None:
         f"episodes={args.episodes} deterministic={not args.stochastic} "
         f"max_episode_steps={args.max_episode_steps} ball_height={args.ball_height}"
     )
+    print(f"default_run_name={DEFAULT_PPO_RUN_NAME}")
     print("Close the MuJoCo viewer window to stop early.")
 
     episode_index = 1

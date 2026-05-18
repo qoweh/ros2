@@ -11,14 +11,15 @@ SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from pingpong_rl.defaults import DEFAULT_BALL_HEIGHT, DEFAULT_BOUNCE_EPISODES, DEFAULT_BOUNCE_MAX_STEPS
 from pingpong_rl.envs import PingPongSim
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run a repeated headless bounce baseline.")
-    parser.add_argument("--episodes", type=int, default=5, help="Number of reset-and-drop trials to run.")
-    parser.add_argument("--max-steps", type=int, default=1200, help="Maximum physics steps per episode.")
-    parser.add_argument("--ball-height", type=float, default=0.22, help="Spawn height above racket_center.")
+    parser = argparse.ArgumentParser(description="Run a no-learning bounce sanity check.")
+    parser.add_argument("--episodes", type=int, default=DEFAULT_BOUNCE_EPISODES, help="Number of reset-and-drop trials to run.")
+    parser.add_argument("--max-steps", type=int, default=DEFAULT_BOUNCE_MAX_STEPS, help="Maximum physics steps per episode.")
+    parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT, help="Spawn height above racket_center.")
     parser.add_argument(
         "--xy-offset",
         type=float,
