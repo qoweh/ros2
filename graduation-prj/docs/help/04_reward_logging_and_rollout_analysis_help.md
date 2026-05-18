@@ -83,7 +83,7 @@ python pingpong_rl/scripts/run_ee_rollout_analysis.py --episodes 10 --max-episod
 
 기본 출력 위치:
 
-- `docs/etc/rollout_analysis`
+- `pingpong_rl/docs/etc/rollout_analysis`
 
 기본 산출물:
 

@@ -5,6 +5,12 @@ from typing import Sequence
 import numpy as np
 
 from pingpong_rl.controllers import RacketCartesianController
+from pingpong_rl.defaults import (
+    DEFAULT_ACTION_LIMIT,
+    DEFAULT_BALL_HEIGHT,
+    DEFAULT_MAX_EPISODE_STEPS,
+    DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
+)
 from pingpong_rl.envs.pingpong_env import PingPongSim
 
 
@@ -29,10 +35,10 @@ class PingPongEEDeltaEnv:
     def __init__(
         self,
         sim: PingPongSim | None = None,
-        action_limit: float = 0.03,
-        max_episode_steps: int = 300,
-        success_velocity_threshold: float = 0.5,
-        ball_height: float = 0.22,
+        action_limit: float = DEFAULT_ACTION_LIMIT,
+        max_episode_steps: int = DEFAULT_MAX_EPISODE_STEPS,
+        success_velocity_threshold: float = DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
+        ball_height: float = DEFAULT_BALL_HEIGHT,
         contact_bonus: float = 1.0,
         height_reward_weight: float = 0.1,
         floor_penalty: float = -1.0,

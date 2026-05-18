@@ -10,6 +10,7 @@ import mujoco.viewer
 import numpy as np
 
 from pingpong_rl.controllers import JointPositionController, RacketCartesianController
+from pingpong_rl.defaults import DEFAULT_BALL_HEIGHT, DEFAULT_CONTROL_DT, DEFAULT_VIEWER_RESET_HEIGHT
 from pingpong_rl.envs import PingPongSim
 from pingpong_rl.utils.paths import SCENE_XML_PATH
 
@@ -28,8 +29,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="hold",
         help="Passive mode only: hold the home pose, run the existing joint demo, or run the new EE demo.",
     )
-    parser.add_argument("--ball-height", type=float, default=0.22, help="Ball spawn height above the racket in meters.")
-    parser.add_argument("--reset-height", type=float, default=0.25, help="Passive mode only: reset the ball when it falls below this z height.")
+    parser.add_argument(
+        "--ball-height",
+        type=float,
+        default=DEFAULT_BALL_HEIGHT,
+        help="Ball spawn height above the racket in meters.",
+    )
+    parser.add_argument(
+        "--reset-height",
+        type=float,
+        default=DEFAULT_VIEWER_RESET_HEIGHT,
+        help="Passive mode only: reset the ball when it falls below this z height.",
+    )
     parser.add_argument("--demo-joint", type=int, choices=range(1, 8), help="Passive mode only: 1-based Franka joint index to move with a sine wave.")
     parser.add_argument("--demo-amplitude", type=float, default=0.2, help="Passive mode only: sine-wave amplitude in radians.")
     parser.add_argument("--demo-frequency", type=float, default=0.25, help="Passive mode only: sine-wave frequency in Hz.")
@@ -39,7 +50,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="z",
         help="Passive mode only: Cartesian axis for the EE sine-wave demo.",
     )
-    parser.add_argument("--control-dt", type=float, default=0.02, help="Controller period in seconds.")
+    parser.add_argument("--control-dt", type=float, default=DEFAULT_CONTROL_DT, help="Controller period in seconds.")
     return parser.parse_args(argv)
 
 

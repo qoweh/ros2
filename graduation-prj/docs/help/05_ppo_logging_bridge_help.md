@@ -44,7 +44,7 @@ python pingpong_rl/scripts/run_ppo_baseline.py --total-timesteps 2048 --run-name
 
 기본 출력 경로:
 
-- `docs/etc/ppo_runs/<run-name>`
+- `pingpong_rl/docs/etc/ppo_runs/<run-name>`
 
 현재 생성되는 산출물:
 
@@ -122,8 +122,7 @@ python pingpong_rl/scripts/run_ppo_baseline.py \
   --total-timesteps 256 \
   --n-steps 64 \
   --batch-size 32 \
-  --run-name smoke_ppo \
-  --output-dir docs/etc/ppo_runs/20260513_smoke
+  --run-name ppo_smoke
 ```
 
 확인된 점:

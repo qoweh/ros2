@@ -16,6 +16,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from pingpong_rl.envs import PingPongEEDeltaEnv
+from pingpong_rl.utils import ROLLOUT_ANALYSIS_ROOT, resolve_output_path
 
 
 EPISODE_FIELDS: tuple[str, ...] = (
@@ -114,7 +115,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "docs" / "etc" / "rollout_analysis",
+        default=Path("docs/etc/rollout_analysis"),
         help="Directory for CSV/JSON exports.",
     )
     parser.add_argument(
@@ -333,7 +334,11 @@ def main() -> None:
         ball_height=args.ball_height,
         success_velocity_threshold=args.success_velocity_threshold,
     )
-    output_dir = args.output_dir.resolve()
+    output_dir = (
+        ROLLOUT_ANALYSIS_ROOT
+        if args.output_dir == Path("docs/etc/rollout_analysis")
+        else resolve_output_path(args.output_dir)
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     episode_rows: list[dict[str, object]] = []

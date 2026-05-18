@@ -14,6 +14,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 
 from pingpong_rl.envs import PingPongEEDeltaGymEnv
 from pingpong_rl.training import PPOLoggingCallback
+from pingpong_rl.utils import PPO_RUNS_ROOT, resolve_output_path
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "docs" / "etc" / "ppo_runs",
+        default=Path("docs/etc/ppo_runs"),
         help="Directory for model, CSV logs, TensorBoard logs, and summary JSON.",
     )
     parser.add_argument("--run-name", type=str, default="ppo_baseline", help="Run name prefix for artifacts.")
@@ -44,7 +45,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    output_dir = args.output_dir.resolve() / args.run_name
+    output_root = PPO_RUNS_ROOT if args.output_dir == Path("docs/etc/ppo_runs") else resolve_output_path(args.output_dir)
+    output_dir = output_root / args.run_name
     output_dir.mkdir(parents=True, exist_ok=True)
 
     def make_env() -> PingPongEEDeltaGymEnv:

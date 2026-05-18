@@ -6,11 +6,12 @@ from typing import Sequence
 import mujoco
 import numpy as np
 
+from pingpong_rl.defaults import DEFAULT_BALL_HEIGHT, DEFAULT_CONTROL_DT
 from pingpong_rl.utils.paths import SCENE_XML_PATH
 
 
 class PingPongSim:
-    def __init__(self, scene_path: Path | str | None = None, control_dt: float = 0.02) -> None:
+    def __init__(self, scene_path: Path | str | None = None, control_dt: float = DEFAULT_CONTROL_DT) -> None:
         scene_file = Path(scene_path) if scene_path is not None else SCENE_XML_PATH
         self.scene_path = scene_file.resolve()
         self.model = mujoco.MjModel.from_xml_path(str(self.scene_path))
@@ -32,7 +33,7 @@ class PingPongSim:
         self._ball_dof_adr = self.model.jnt_dofadr[self.ball_joint_id]
         self._home_ctrl = self.model.key_ctrl[0].copy()
         self._home_joint_targets = self._home_ctrl[:7].copy()
-        self._default_ball_height = 0.22
+        self._default_ball_height = DEFAULT_BALL_HEIGHT
         self.reset()
 
     @property

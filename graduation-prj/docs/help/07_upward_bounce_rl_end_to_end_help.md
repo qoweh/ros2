@@ -248,7 +248,7 @@ python pingpong_rl/scripts/run_ppo_baseline.py --total-timesteps 10000 --device 
 ```bash
 conda activate mujoco_env
 cd /Users/pilt/project-collection/ros2/graduation-prj
-mjpython pingpong_rl/scripts/run_ppo_render.py --model-path docs/etc/ppo_runs/20260513_smoke/smoke_ppo/smoke_ppo_model.zip --episodes 3
+mjpython pingpong_rl/scripts/run_ppo_render.py --model-path docs/etc/ppo_runs/ppo_smoke/ppo_smoke_model.zip --episodes 3
 ```
 
 즉 권장 루프는 아래다.
@@ -658,13 +658,13 @@ python pingpong_rl/scripts/run_ppo_baseline.py --total-timesteps 10000 --max-epi
 ### 16.5 학습 결과 render
 
 ```bash
-mjpython pingpong_rl/scripts/run_ppo_render.py --model-path /Users/pilt/project-collection/ros2/graduation-prj/docs/etc/ppo_runs/ppo_smoke_cpu/ppo_smoke_cpu_model.zip --episodes 3
+mjpython pingpong_rl/scripts/run_ppo_render.py --model-path docs/etc/ppo_runs/ppo_smoke_cpu/ppo_smoke_cpu_model.zip --episodes 3
 ```
 
 ### 16.6 TensorBoard 보기
 
 ```bash
-tensorboard --logdir /Users/pilt/project-collection/ros2/graduation-prj/docs/etc/ppo_runs
+tensorboard --logdir /Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl/docs/etc/ppo_runs
 ```
 
 ## 17. 자주 생기는 오해 정리

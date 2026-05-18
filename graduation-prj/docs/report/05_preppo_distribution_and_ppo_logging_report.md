@@ -22,15 +22,15 @@ conda activate mujoco_env
 cd /Users/pilt/project-collection/ros2/graduation-prj
 python pingpong_rl/scripts/run_ee_rollout_analysis.py \
   --episodes 200 \
-  --output-dir docs/etc/rollout_analysis/20260513_preppo \
+  --output-dir docs/etc/rollout_analysis/preppo_200 \
   --output-prefix ee_preppo_200
 ```
 
 산출물:
-- `docs/etc/rollout_analysis/20260513_preppo/ee_preppo_200_episodes.csv`
-- `docs/etc/rollout_analysis/20260513_preppo/ee_preppo_200_steps.csv`
-- `docs/etc/rollout_analysis/20260513_preppo/ee_preppo_200_contacts.csv`
-- `docs/etc/rollout_analysis/20260513_preppo/ee_preppo_200_summary.json`
+- `pingpong_rl/docs/etc/rollout_analysis/preppo_200/ee_preppo_200_episodes.csv`
+- `pingpong_rl/docs/etc/rollout_analysis/preppo_200/ee_preppo_200_steps.csv`
+- `pingpong_rl/docs/etc/rollout_analysis/preppo_200/ee_preppo_200_contacts.csv`
+- `pingpong_rl/docs/etc/rollout_analysis/preppo_200/ee_preppo_200_summary.json`
 
 ### 2.1 종료 패턴
 - episode 수: `200`
@@ -126,17 +126,16 @@ python pingpong_rl/scripts/run_ppo_baseline.py \
   --total-timesteps 256 \
   --n-steps 64 \
   --batch-size 32 \
-  --run-name smoke_ppo \
-  --output-dir docs/etc/ppo_runs/20260513_smoke
+  --run-name ppo_smoke
 ```
 
 생성 확인:
 - model zip
 - TensorBoard log directory
-- `smoke_ppo_episodes.csv`
-- `smoke_ppo_steps.csv`
-- `smoke_ppo_contacts.csv`
-- `smoke_ppo_training_summary.json`
+- `ppo_smoke_episodes.csv`
+- `ppo_smoke_steps.csv`
+- `ppo_smoke_contacts.csv`
+- `ppo_smoke_training_summary.json`
 
 즉 rollout analysis와 PPO training이 같은 필드 이름으로 logging되는 경로는 연결되었다.
 

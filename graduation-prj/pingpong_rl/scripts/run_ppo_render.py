@@ -9,12 +9,13 @@ import mujoco.viewer
 from stable_baselines3 import PPO
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-PROJECT_ROOT = PACKAGE_ROOT.parent
+DEFAULT_MODEL_PATH = Path("docs/etc/ppo_runs/ppo_baseline/ppo_baseline_model.zip")
 SRC_ROOT = PACKAGE_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from pingpong_rl.envs import PingPongEEDeltaGymEnv
+from pingpong_rl.utils import PPO_RUNS_ROOT, resolve_input_path
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,12 +23,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model-path",
         type=Path,
-        default=PROJECT_ROOT / "docs" / "etc" / "ppo_runs" / "20260513_smoke" / "smoke_ppo" / "smoke_ppo_model.zip",
+        default=DEFAULT_MODEL_PATH,
         help="Path to a saved Stable-Baselines3 PPO zip model.",
     )
     parser.add_argument("--episodes", type=int, default=1, help="Number of episodes to replay before exit.")
     parser.add_argument("--max-episode-steps", type=int, default=300, help="Env time limit.")
-    parser.add_argument("--ball-height", type=float, default=1.22, help="Spawn height above racket_center.")
+    parser.add_argument("--ball-height", type=float, default=0.22, help="Spawn height above racket_center.")
     parser.add_argument(
         "--success-velocity-threshold",
         type=float,
@@ -60,7 +61,9 @@ def _episode_summary(index: int, episode_return: float, episode_steps: int, info
 
 def main() -> None:
     args = parse_args()
-    model_path = args.model_path.resolve()
+    model_path = PPO_RUNS_ROOT / "ppo_baseline" / "ppo_baseline_model.zip"
+    if args.model_path != DEFAULT_MODEL_PATH:
+        model_path = resolve_input_path(args.model_path)
     if args.episodes < 1:
         raise ValueError(f"episodes must be positive, got {args.episodes}.")
     if not model_path.is_file():
