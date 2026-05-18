@@ -52,10 +52,10 @@ class PingPongEEDeltaEnv:
         target_contact_velocity_z: float = 1.40,
         lift_reward_weight: float = 8.0,
         lift_overshoot_penalty_weight: float = 4.0,
-        min_active_racket_velocity_z: float = 0.04,
-        target_active_racket_velocity_z: float = 0.25,
-        min_active_racket_acceleration_z: float = 0.5,
-        target_active_racket_acceleration_z: float = 4.0,
+        min_active_racket_velocity_z: float = 0.10,
+        target_active_racket_velocity_z: float = 0.35,
+        min_active_racket_acceleration_z: float = 1.0,
+        target_active_racket_acceleration_z: float = 6.0,
         active_hit_reward_weight: float = 6.0,
         passive_contact_penalty: float = -2.5,
         preparation_reward_weight: float = 2.5,
@@ -484,12 +484,15 @@ class PingPongEEDeltaEnv:
             self.min_active_racket_velocity_z,
             self.target_active_racket_velocity_z,
         )
+        if velocity_score <= 0.0:
+            return 0.0
+
         acceleration_score = self._range_score(
             racket_acceleration_z,
             self.min_active_racket_acceleration_z,
             self.target_active_racket_acceleration_z,
         )
-        return max(velocity_score, acceleration_score)
+        return velocity_score * (0.7 + 0.3 * acceleration_score)
 
     def _active_hit_term(self, contact_event: bool, contact_trace: dict[str, object] | None) -> float:
         preparation_term = self._pre_contact_upward_term(contact_event)

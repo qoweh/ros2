@@ -94,6 +94,33 @@ class PingPongSimTest(unittest.TestCase):
 
         self.assertEqual(first_target_contact, ("ball_geom", "racket_head"))
 
+    def test_ball_inner_side_does_not_hit_robot_link_before_racket(self) -> None:
+        sim = PingPongSim()
+        sim.reset(ball_height=0.24, ball_velocity=(0.0, 0.0, -0.2), ball_xy_offset=(-0.04, 0.0))
+
+        first_ball_contact_bodies: set[str] = set()
+        racket_contact_seen = False
+        for _ in range(40):
+            sim.step(joint_targets=sim.home_joint_targets, n_substeps=sim.n_substeps)
+            for contact_index in range(sim.data.ncon):
+                contact = sim.data.contact[contact_index]
+                geom_1 = sim.model.geom(int(contact.geom1))
+                geom_2 = sim.model.geom(int(contact.geom2))
+                geom_names = {geom_1.name, geom_2.name}
+                if "ball_geom" not in geom_names:
+                    continue
+
+                first_ball_contact_bodies.add(sim.model.body(int(geom_1.bodyid)).name)
+                first_ball_contact_bodies.add(sim.model.body(int(geom_2.bodyid)).name)
+                if "racket_head" in geom_names:
+                    racket_contact_seen = True
+                    break
+            if racket_contact_seen:
+                break
+
+        self.assertTrue(racket_contact_seen)
+        self.assertNotIn("link5", first_ball_contact_bodies)
+
     def test_failure_reason_reports_out_of_bounds(self) -> None:
         sim = PingPongSim()
         sim.reset()
@@ -614,6 +641,21 @@ class PingPongSimTest(unittest.TestCase):
         self.assertGreater(upward_term, 0.0)
         self.assertLess(downward_term, upward_term)
         self.assertLess(downward_term, 0.0)
+
+    def test_ee_delta_env_active_hit_requires_upward_velocity_not_only_acceleration(self) -> None:
+        env = PingPongEEDeltaEnv()
+
+        acceleration_only_trace = {
+            "contact_racket_velocity_z": -0.02,
+            "contact_racket_acceleration_z": env.target_active_racket_acceleration_z,
+        }
+        real_upward_trace = {
+            "contact_racket_velocity_z": env.target_active_racket_velocity_z,
+            "contact_racket_acceleration_z": env.target_active_racket_acceleration_z,
+        }
+
+        self.assertEqual(env._active_hit_score(acceleration_only_trace), 0.0)
+        self.assertGreater(env._active_hit_score(real_upward_trace), 0.0)
 
     def test_ee_delta_env_persistent_contact_counts_once_and_penalizes_stale_contact(self) -> None:
         class FakeSim:

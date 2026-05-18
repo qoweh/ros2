@@ -16,7 +16,7 @@
         <geom type="mesh" contype="0" conaffinity="0" group="2"/>
       </default>
       <default class="collision">
-        <geom type="mesh" group="3"/>
+        <geom type="mesh" group="3" contype="0" conaffinity="0"/>
         <default class="fingertip_pad_collision_1">
           <geom type="box" size="0.0085 0.004 0.0085" pos="0 0.0055 0.0445"/>
         </default>
@@ -223,6 +223,7 @@
                         <geom name="racket_neck" type="box" size="0.018 0.028 0.008" pos="0.045 0 0"
                           rgba="0.83 0.76 0.6 1" contype="0" conaffinity="0"/>
                         <geom name="racket_head" type="cylinder" size="0.084 0.006" pos="0.12 0 0"
+                          contype="1" conaffinity="1"
                           mass="0.11" rgba="0.84 0.14 0.12 1" friction="0.22 0.001 0.0001"
                           solref="0.002 1" solimp="0.95 0.99 0.001"/>
                         <geom name="racket_head_back" type="cylinder" size="0.079 0.0025" pos="0.12 0 -0.0036"

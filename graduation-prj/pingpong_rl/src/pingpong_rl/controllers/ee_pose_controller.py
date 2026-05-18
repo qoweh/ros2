@@ -13,8 +13,8 @@ class RacketCartesianController:
         self,
         sim: PingPongSim,
         damping: float = 1.0e-4,
-        position_gain: float = 0.6,
-        max_position_step: float = 0.03,
+        position_gain: float = 1.2,
+        max_position_step: float = 0.05,
         target_offset_low: Sequence[float] | None = None,
         target_offset_high: Sequence[float] | None = None,
     ) -> None:
