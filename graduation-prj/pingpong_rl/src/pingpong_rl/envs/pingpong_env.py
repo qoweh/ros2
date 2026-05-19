@@ -23,10 +23,17 @@ class PingPongSim:
         self.ball_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "ball")
         self.racket_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "racket")
         self.racket_site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "racket_center")
+        self.racket_head_geom_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, "racket_head")
 
-        if self.ball_joint_id < 0 or self.ball_body_id < 0 or self.racket_body_id < 0 or self.racket_site_id < 0:
+        if (
+            self.ball_joint_id < 0
+            or self.ball_body_id < 0
+            or self.racket_body_id < 0
+            or self.racket_site_id < 0
+            or self.racket_head_geom_id < 0
+        ):
             raise ValueError(
-                "Scene is missing one of the required objects: ball_joint, ball, racket, racket_center."
+                "Scene is missing one of the required objects: ball_joint, ball, racket, racket_center, racket_head."
             )
 
         self._ball_qpos_adr = self.model.jnt_qposadr[self.ball_joint_id]
@@ -75,6 +82,11 @@ class PingPongSim:
     @property
     def racket_grip_position(self) -> np.ndarray:
         return self.data.xpos[self.racket_body_id].copy()
+
+    @property
+    def racket_face_normal(self) -> np.ndarray:
+        racket_xmat = np.asarray(self.data.geom_xmat[self.racket_head_geom_id], dtype=float).reshape(3, 3)
+        return racket_xmat[:, 2].copy()
 
     @property
     def ball_velocity(self) -> np.ndarray:
@@ -150,6 +162,24 @@ class PingPongSim:
             pairs.append(tuple(sorted((geom1, geom2))))
         return pairs
 
+    def ball_robot_body_contact(self) -> str | None:
+        for index in range(self.data.ncon):
+            contact = self.data.contact[index]
+            geom1 = self.model.geom(int(contact.geom1))
+            geom2 = self.model.geom(int(contact.geom2))
+            geom1_name = geom1.name or ""
+            geom2_name = geom2.name or ""
+            if geom1_name != "ball_geom" and geom2_name != "ball_geom":
+                continue
+
+            other_geom = geom2 if geom1_name == "ball_geom" else geom1
+            other_geom_name = other_geom.name or ""
+            other_body_name = self.model.body(int(np.asarray(other_geom.bodyid).item())).name
+            if other_geom_name == "floor" or other_body_name in {"ball", "racket"}:
+                continue
+            return other_body_name
+        return None
+
     def has_contact(self, geom_a: str, geom_b: str) -> bool:
         target = tuple(sorted((geom_a, geom_b)))
         return target in self.contact_pairs()
@@ -168,6 +198,8 @@ class PingPongSim:
             return "nonfinite_state"
         if self.has_contact("ball_geom", "floor"):
             return "floor_contact"
+        if self.ball_robot_body_contact() is not None:
+            return "robot_body_contact"
 
         ball_position = self.ball_position
         within_x = x_bounds[0] <= ball_position[0] <= x_bounds[1]

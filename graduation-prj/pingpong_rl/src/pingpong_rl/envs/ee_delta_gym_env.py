@@ -52,5 +52,11 @@ class PingPongEEDeltaGymEnv(gym.Env[np.ndarray, np.ndarray]):
         observation, reward, terminated, truncated, info = self.base_env.step(action)
         return observation.astype(np.float32, copy=False), reward, terminated, truncated, info
 
+    def apply_curriculum_stage(self, stage_name: str, stage_updates: dict[str, object]) -> None:
+        self.base_env.apply_curriculum_stage(stage_name, stage_updates)
+
+    def training_config(self) -> dict[str, object]:
+        return self.base_env.training_config()
+
     def close(self) -> None:
         return None

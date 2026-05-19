@@ -10,12 +10,14 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import CallbackList
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from pingpong_rl.defaults import (
     DEFAULT_BALL_HEIGHT,
     DEFAULT_MAX_EPISODE_STEPS,
     DEFAULT_PPO_BATCH_SIZE,
+    DEFAULT_PPO_CURRICULUM,
     DEFAULT_PPO_GAMMA,
     DEFAULT_PPO_LEARNING_RATE,
     DEFAULT_PPO_N_STEPS,
@@ -24,8 +26,16 @@ from pingpong_rl.defaults import (
     DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
 )
 from pingpong_rl.envs import PingPongEEDeltaGymEnv
-from pingpong_rl.training import PPOLoggingCallback
+from pingpong_rl.training import CurriculumCallback, PPOLoggingCallback, curriculum_names
 from pingpong_rl.utils import PPO_RUNS_ROOT, resolve_input_path, resolve_output_path
+
+
+def _schedule_value(value: object) -> float | None:
+    if value is None:
+        return None
+    if callable(value):
+        return float(value(1.0))
+    return float(value)
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,13 +53,13 @@ def parse_args() -> argparse.Namespace:
         "--target-ball-height",
         type=float,
         default=None,
-        help="Optional reward target for ball height above the racket after a useful bounce.",
+        help="Optional reward target lift above the per-episode spawn height after a useful bounce.",
     )
     parser.add_argument(
         "--height-tolerance",
         type=float,
         default=None,
-        help="Optional tolerance band around --target-ball-height for the height reward.",
+        help="Optional tolerance band around the spawn-relative --target-ball-height reward target.",
     )
     parser.add_argument(
         "--useful-contact-velocity-z",
@@ -136,6 +146,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=DEFAULT_PPO_LEARNING_RATE, help="PPO learning rate.")
     parser.add_argument("--gamma", type=float, default=DEFAULT_PPO_GAMMA, help="Discount factor.")
     parser.add_argument("--device", type=str, default="cpu", help="Torch device passed to PPO.")
+    parser.add_argument(
+        "--curriculum",
+        type=str,
+        default=DEFAULT_PPO_CURRICULUM,
+        choices=curriculum_names(),
+        help="Training curriculum preset. Use 'none' to keep a fixed env throughout training.",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -233,6 +250,7 @@ def main() -> None:
         )
 
     vec_env = DummyVecEnv([make_env])
+    effective_env_config = vec_env.env_method("training_config")[0]
     if starting_checkpoint is None:
         model = _build_new_model(args, vec_env, output_dir)
         training_mode = "new"
@@ -242,55 +260,75 @@ def main() -> None:
         model.verbose = 1
         training_mode = "resume" if resuming_same_run else "init_from_checkpoint"
 
-    callback = PPOLoggingCallback(
+    reward_config = effective_env_config["reward_shaping"]
+    reset_config = effective_env_config["reset_randomization"]
+    core_config = effective_env_config["core"]
+    effective_ppo_config = {
+        "policy": "MlpPolicy",
+        "device": str(model.device),
+        "n_steps": int(model.n_steps),
+        "batch_size": int(model.batch_size),
+        "learning_rate": float(args.learning_rate),
+        "gamma": float(model.gamma),
+        "gae_lambda": float(model.gae_lambda),
+        "ent_coef": float(model.ent_coef),
+        "vf_coef": float(model.vf_coef),
+        "max_grad_norm": float(model.max_grad_norm),
+        "n_epochs": int(model.n_epochs),
+        "normalize_advantage": bool(model.normalize_advantage),
+        "clip_range": _schedule_value(model.clip_range),
+        "clip_range_vf": _schedule_value(model.clip_range_vf),
+        "policy_kwargs": {} if model.policy_kwargs is None else dict(model.policy_kwargs),
+    }
+
+    callback_parts = []
+    if args.curriculum != "none":
+        callback_parts.append(
+            CurriculumCallback(
+                curriculum_name=args.curriculum,
+                total_timesteps=args.total_timesteps,
+                verbose=1,
+            )
+        )
+
+    callback_parts.append(
+        PPOLoggingCallback(
         output_dir=output_dir,
         run_name=args.run_name,
         summary_config={
             "total_timesteps": int(args.total_timesteps),
-            "max_episode_steps": int(args.max_episode_steps),
-            "ball_height": float(args.ball_height),
-            "success_velocity_threshold": float(args.success_velocity_threshold),
-            "target_ball_height": None if args.target_ball_height is None else float(args.target_ball_height),
-            "height_tolerance": None if args.height_tolerance is None else float(args.height_tolerance),
-            "useful_contact_velocity_z": None
-            if args.useful_contact_velocity_z is None
-            else float(args.useful_contact_velocity_z),
-            "target_contact_velocity_z": None
-            if args.target_contact_velocity_z is None
-            else float(args.target_contact_velocity_z),
-            "lift_reward_weight": None if args.lift_reward_weight is None else float(args.lift_reward_weight),
-            "lift_overshoot_penalty_weight": None
-            if args.lift_overshoot_penalty_weight is None
-            else float(args.lift_overshoot_penalty_weight),
-            "min_active_racket_velocity_z": None
-            if args.min_active_racket_velocity_z is None
-            else float(args.min_active_racket_velocity_z),
-            "target_active_racket_velocity_z": None
-            if args.target_active_racket_velocity_z is None
-            else float(args.target_active_racket_velocity_z),
-            "min_active_racket_acceleration_z": None
-            if args.min_active_racket_acceleration_z is None
-            else float(args.min_active_racket_acceleration_z),
-            "target_active_racket_acceleration_z": None
-            if args.target_active_racket_acceleration_z is None
-            else float(args.target_active_racket_acceleration_z),
-            "active_hit_reward_weight": None
-            if args.active_hit_reward_weight is None
-            else float(args.active_hit_reward_weight),
-            "passive_contact_penalty": None
-            if args.passive_contact_penalty is None
-            else float(args.passive_contact_penalty),
-            "reset_xy_range": float(args.reset_xy_range),
-            "reset_velocity_xy_range": float(args.reset_velocity_xy_range),
-            "reset_velocity_z_range": [float(value) for value in args.reset_velocity_z_range],
-            "n_steps": int(args.n_steps),
-            "batch_size": int(args.batch_size),
-            "learning_rate": float(args.learning_rate),
-            "gamma": float(args.gamma),
+            "max_episode_steps": int(core_config["max_episode_steps"]),
+            "ball_height": float(core_config["ball_height"]),
+            "curriculum": args.curriculum,
+            "success_velocity_threshold": float(core_config["success_velocity_threshold"]),
+            "target_ball_height": float(reward_config["target_ball_height"]),
+            "target_ball_height_reference": str(reward_config["target_ball_height_reference"]),
+            "height_tolerance": float(reward_config["height_tolerance"]),
+            "useful_contact_velocity_z": float(reward_config["useful_contact_velocity_z"]),
+            "target_contact_velocity_z": float(reward_config["target_contact_velocity_z"]),
+            "lift_reward_weight": float(reward_config["lift_reward_weight"]),
+            "lift_overshoot_penalty_weight": float(reward_config["lift_overshoot_penalty_weight"]),
+            "min_active_racket_velocity_z": float(reward_config["min_active_racket_velocity_z"]),
+            "target_active_racket_velocity_z": float(reward_config["target_active_racket_velocity_z"]),
+            "min_active_racket_acceleration_z": float(reward_config["min_active_racket_acceleration_z"]),
+            "target_active_racket_acceleration_z": float(reward_config["target_active_racket_acceleration_z"]),
+            "active_hit_reward_weight": float(reward_config["active_hit_reward_weight"]),
+            "passive_contact_penalty": float(reward_config["passive_contact_penalty"]),
+            "reset_xy_range": float(reset_config["reset_xy_range"]),
+            "reset_velocity_xy_range": float(reset_config["reset_velocity_xy_range"]),
+            "reset_velocity_z_range": list(reset_config["reset_velocity_z_range"]),
+            "n_steps": int(effective_ppo_config["n_steps"]),
+            "batch_size": int(effective_ppo_config["batch_size"]),
+            "learning_rate": float(effective_ppo_config["learning_rate"]),
+            "gamma": float(effective_ppo_config["gamma"]),
+            "effective_env": effective_env_config,
+            "effective_ppo": effective_ppo_config,
             "training_mode": training_mode,
             "starting_checkpoint": None if starting_checkpoint is None else str(starting_checkpoint),
         },
+        )
     )
+    callback = callback_parts[0] if len(callback_parts) == 1 else CallbackList(callback_parts)
     print(f"training_mode={training_mode}")
     if starting_checkpoint is not None:
         print(f"starting_checkpoint={starting_checkpoint}")

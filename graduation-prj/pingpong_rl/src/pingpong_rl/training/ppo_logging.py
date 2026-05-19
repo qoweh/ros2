@@ -26,6 +26,9 @@ EPISODE_FIELDS: tuple[str, ...] = (
     "reward_total_sum",
     "reward_height_sum",
     "reward_distance_sum",
+    "reward_orientation_sum",
+    "reward_joint_motion_sum",
+    "reward_action_smoothness_sum",
     "reward_contact_sum",
     "reward_active_hit_sum",
     "reward_success_sum",
@@ -35,9 +38,13 @@ EPISODE_FIELDS: tuple[str, ...] = (
 STEP_FIELDS: tuple[str, ...] = (
     "episode_index",
     "step",
+    "curriculum_stage",
     "reward_total",
     "reward_height",
     "reward_distance",
+    "reward_orientation",
+    "reward_joint_motion",
+    "reward_action_smoothness",
     "reward_contact",
     "reward_active_hit",
     "reward_success",
@@ -57,6 +64,8 @@ STEP_FIELDS: tuple[str, ...] = (
     "ball_velocity_y",
     "ball_velocity_z",
     "ball_speed_norm",
+    "racket_face_normal_z",
+    "robot_body_contact_body",
     "contact_ball_velocity_x",
     "contact_ball_velocity_y",
     "contact_ball_velocity_z",
@@ -167,6 +176,12 @@ def build_training_summary(
             "reward_total_sum": _episode_metric_stats(episode_rows, "reward_total_sum"),
             "reward_height_sum": _episode_metric_stats(episode_rows, "reward_height_sum"),
             "reward_distance_sum": _episode_metric_stats(episode_rows, "reward_distance_sum"),
+            "reward_orientation_sum": _episode_metric_stats(episode_rows, "reward_orientation_sum"),
+            "reward_joint_motion_sum": _episode_metric_stats(episode_rows, "reward_joint_motion_sum"),
+            "reward_action_smoothness_sum": _episode_metric_stats(
+                episode_rows,
+                "reward_action_smoothness_sum",
+            ),
             "reward_contact_sum": _episode_metric_stats(episode_rows, "reward_contact_sum"),
             "reward_active_hit_sum": _episode_metric_stats(episode_rows, "reward_active_hit_sum"),
             "reward_success_sum": _episode_metric_stats(episode_rows, "reward_success_sum"),
@@ -219,6 +234,9 @@ class PPOLoggingCallback(BaseCallback):
             "reward_total_sum": 0.0,
             "reward_height_sum": 0.0,
             "reward_distance_sum": 0.0,
+            "reward_orientation_sum": 0.0,
+            "reward_joint_motion_sum": 0.0,
+            "reward_action_smoothness_sum": 0.0,
             "reward_contact_sum": 0.0,
             "reward_active_hit_sum": 0.0,
             "reward_success_sum": 0.0,
@@ -245,9 +263,13 @@ class PPOLoggingCallback(BaseCallback):
         return {
             "episode_index": episode_index,
             "step": int(info["episode_steps"]),
+            "curriculum_stage": _normalize_reason(info.get("curriculum_stage")),
             "reward_total": float(info["reward_total"]),
             "reward_height": float(info["reward_height"]),
             "reward_distance": float(info["reward_distance"]),
+            "reward_orientation": float(info.get("reward_orientation_term", 0.0)),
+            "reward_joint_motion": float(info.get("reward_joint_motion_term", 0.0)),
+            "reward_action_smoothness": float(info.get("reward_action_smoothness_term", 0.0)),
             "reward_contact": float(info["reward_contact"]),
             "reward_active_hit": float(info.get("reward_active_hit", 0.0)),
             "reward_success": float(info["reward_success"]),
@@ -267,6 +289,8 @@ class PPOLoggingCallback(BaseCallback):
             "ball_velocity_y": float(info["ball_velocity_y"]),
             "ball_velocity_z": float(info["ball_velocity_z"]),
             "ball_speed_norm": float(info["ball_speed_norm"]),
+            "racket_face_normal_z": float(info.get("racket_face_normal_z", 0.0)),
+            "robot_body_contact_body": _normalize_reason(info.get("robot_body_contact_body")),
             "contact_ball_velocity_x": info["contact_ball_velocity_x"],
             "contact_ball_velocity_y": info["contact_ball_velocity_y"],
             "contact_ball_velocity_z": info["contact_ball_velocity_z"],
@@ -323,6 +347,9 @@ class PPOLoggingCallback(BaseCallback):
             "reward_total_sum": float(episode_state["reward_total_sum"]),
             "reward_height_sum": float(episode_state["reward_height_sum"]),
             "reward_distance_sum": float(episode_state["reward_distance_sum"]),
+            "reward_orientation_sum": float(episode_state["reward_orientation_sum"]),
+            "reward_joint_motion_sum": float(episode_state["reward_joint_motion_sum"]),
+            "reward_action_smoothness_sum": float(episode_state["reward_action_smoothness_sum"]),
             "reward_contact_sum": float(episode_state["reward_contact_sum"]),
             "reward_active_hit_sum": float(episode_state["reward_active_hit_sum"]),
             "reward_success_sum": float(episode_state["reward_success_sum"]),
@@ -335,6 +362,9 @@ class PPOLoggingCallback(BaseCallback):
             "reward_total_sum",
             "reward_height_sum",
             "reward_distance_sum",
+            "reward_orientation_sum",
+            "reward_joint_motion_sum",
+            "reward_action_smoothness_sum",
             "reward_contact_sum",
             "reward_active_hit_sum",
             "reward_success_sum",
@@ -374,6 +404,9 @@ class PPOLoggingCallback(BaseCallback):
             episode_state["reward_total_sum"] += float(info["reward_total"])
             episode_state["reward_height_sum"] += float(info["reward_height"])
             episode_state["reward_distance_sum"] += float(info["reward_distance"])
+            episode_state["reward_orientation_sum"] += float(info.get("reward_orientation_term", 0.0))
+            episode_state["reward_joint_motion_sum"] += float(info.get("reward_joint_motion_term", 0.0))
+            episode_state["reward_action_smoothness_sum"] += float(info.get("reward_action_smoothness_term", 0.0))
             episode_state["reward_contact_sum"] += float(info["reward_contact"])
             episode_state["reward_active_hit_sum"] += float(info.get("reward_active_hit", 0.0))
             episode_state["reward_success_sum"] += float(info["reward_success"])

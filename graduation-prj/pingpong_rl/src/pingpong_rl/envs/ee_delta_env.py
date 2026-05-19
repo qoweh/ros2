@@ -64,7 +64,12 @@ class PingPongEEDeltaEnv:
         strike_zone_xy_radius: float = 0.10,
         strike_zone_height_tolerance: float = 0.16,
         xy_alignment_weight: float = 0.75,
+        racket_tilt_penalty_weight: float = 0.0,
+        joint_velocity_penalty_weight: float = 0.0,
+        action_smoothness_penalty_weight: float = 0.0,
+        action_filter_alpha: float = 0.0,
         floor_penalty: float = -8.0,
+        robot_body_contact_penalty: float = -10.0,
         failure_penalty: float = -5.0,
         reset_xy_range: float = 0.015,
         reset_velocity_xy_range: float = 0.01,
@@ -101,7 +106,12 @@ class PingPongEEDeltaEnv:
         self.strike_zone_xy_radius = float(strike_zone_xy_radius)
         self.strike_zone_height_tolerance = float(strike_zone_height_tolerance)
         self.xy_alignment_weight = float(xy_alignment_weight)
+        self.racket_tilt_penalty_weight = float(racket_tilt_penalty_weight)
+        self.joint_velocity_penalty_weight = float(joint_velocity_penalty_weight)
+        self.action_smoothness_penalty_weight = float(action_smoothness_penalty_weight)
+        self.action_filter_alpha = float(action_filter_alpha)
         self.floor_penalty = float(floor_penalty)
+        self.robot_body_contact_penalty = float(robot_body_contact_penalty)
         self.failure_penalty = float(failure_penalty)
         self.reset_xy_range = float(reset_xy_range)
         self.reset_velocity_xy_range = float(reset_velocity_xy_range)
@@ -138,6 +148,22 @@ class PingPongEEDeltaEnv:
             raise ValueError(
                 f"strike_zone_height_tolerance must be positive, got {self.strike_zone_height_tolerance}."
             )
+        if self.racket_tilt_penalty_weight < 0.0:
+            raise ValueError(
+                f"racket_tilt_penalty_weight must be non-negative, got {self.racket_tilt_penalty_weight}."
+            )
+        if self.joint_velocity_penalty_weight < 0.0:
+            raise ValueError(
+                "joint_velocity_penalty_weight must be non-negative, got "
+                f"{self.joint_velocity_penalty_weight}."
+            )
+        if self.action_smoothness_penalty_weight < 0.0:
+            raise ValueError(
+                "action_smoothness_penalty_weight must be non-negative, got "
+                f"{self.action_smoothness_penalty_weight}."
+            )
+        if not 0.0 <= self.action_filter_alpha < 1.0:
+            raise ValueError(f"action_filter_alpha must be in [0, 1), got {self.action_filter_alpha}.")
         if self.reset_xy_range < 0.0:
             raise ValueError(f"reset_xy_range must be non-negative, got {self.reset_xy_range}.")
         if self.reset_velocity_xy_range < 0.0:
@@ -161,12 +187,25 @@ class PingPongEEDeltaEnv:
         self.successful_bounce_count = 0
         self._contact_active_previous_step = False
         self._rng = np.random.default_rng()
+        self.curriculum_stage = "manual"
+        self._spawn_ball_height_above_racket = self.ball_height
+        self._spawn_ball_position_z = 0.0
+        self._previous_action = np.zeros(3, dtype=float)
         self.controller = RacketCartesianController(
             self.sim,
             max_position_step=self.action_limit,
             target_offset_low=self.target_offset_low,
             target_offset_high=self.target_offset_high,
         )
+
+    def apply_curriculum_stage(self, stage_name: str, stage_updates: dict[str, object]) -> None:
+        for key, value in stage_updates.items():
+            if key == "reset_velocity_z_range":
+                low, high = value
+                setattr(self, key, (float(low), float(high)))
+            else:
+                setattr(self, key, float(value) if isinstance(value, (int, float)) else value)
+        self.curriculum_stage = str(stage_name)
 
     @property
     def target_position(self) -> np.ndarray:
@@ -179,6 +218,63 @@ class PingPongEEDeltaEnv:
     @property
     def observation_slices(self) -> dict[str, slice]:
         return _OBSERVATION_SLICES.copy()
+
+    def training_config(self) -> dict[str, object]:
+        return {
+            "core": {
+                "action_limit": self.action_limit,
+                "max_episode_steps": self.max_episode_steps,
+                "ball_height": self.ball_height,
+                "success_velocity_threshold": self.success_velocity_threshold,
+            },
+            "reward_shaping": {
+                "contact_bonus": self.contact_bonus,
+                "stale_contact_penalty": self.stale_contact_penalty,
+                "success_bonus": self.success_bonus,
+                "rally_progress_bonus": self.rally_progress_bonus,
+                "target_ball_height": self.target_ball_height,
+                "target_ball_height_reference": "spawn_plus_target_ball_height",
+                "height_tolerance": self.height_tolerance,
+                "height_reward_weight": self.height_reward_weight,
+                "height_overshoot_penalty_weight": self.height_overshoot_penalty_weight,
+                "useful_contact_velocity_z": self.useful_contact_velocity_z,
+                "target_contact_velocity_z": self.target_contact_velocity_z,
+                "lift_reward_weight": self.lift_reward_weight,
+                "lift_overshoot_penalty_weight": self.lift_overshoot_penalty_weight,
+                "min_active_racket_velocity_z": self.min_active_racket_velocity_z,
+                "target_active_racket_velocity_z": self.target_active_racket_velocity_z,
+                "min_active_racket_acceleration_z": self.min_active_racket_acceleration_z,
+                "target_active_racket_acceleration_z": self.target_active_racket_acceleration_z,
+                "active_hit_reward_weight": self.active_hit_reward_weight,
+                "passive_contact_penalty": self.passive_contact_penalty,
+                "preparation_reward_weight": self.preparation_reward_weight,
+                "downward_motion_penalty_weight": self.downward_motion_penalty_weight,
+                "descending_ball_velocity_threshold": self.descending_ball_velocity_threshold,
+                "strike_zone_xy_radius": self.strike_zone_xy_radius,
+                "strike_zone_height_tolerance": self.strike_zone_height_tolerance,
+                "xy_alignment_weight": self.xy_alignment_weight,
+            },
+            "stability": {
+                "racket_tilt_penalty_weight": self.racket_tilt_penalty_weight,
+                "joint_velocity_penalty_weight": self.joint_velocity_penalty_weight,
+                "action_smoothness_penalty_weight": self.action_smoothness_penalty_weight,
+                "action_filter_alpha": self.action_filter_alpha,
+            },
+            "failure_penalties": {
+                "floor_penalty": self.floor_penalty,
+                "robot_body_contact_penalty": self.robot_body_contact_penalty,
+                "failure_penalty": self.failure_penalty,
+            },
+            "reset_randomization": {
+                "reset_xy_range": self.reset_xy_range,
+                "reset_velocity_xy_range": self.reset_velocity_xy_range,
+                "reset_velocity_z_range": [float(value) for value in self.reset_velocity_z_range],
+            },
+            "controller": {
+                "target_offset_low": self.target_offset_low.tolist(),
+                "target_offset_high": self.target_offset_high.tolist(),
+            },
+        }
 
     def observation_dict(self) -> dict[str, np.ndarray]:
         return {
@@ -227,26 +323,33 @@ class PingPongEEDeltaEnv:
         except TypeError:
             self.sim.reset(ball_height=spawn_height, ball_velocity=spawn_velocity)
         self.controller.reset()
+        self._spawn_ball_height_above_racket = spawn_height
+        self._spawn_ball_position_z = float(self.sim.ball_position[2])
         self.step_count = 0
         self.contact_count = 0
         self.successful_bounce_count = 0
         self._contact_active_previous_step = False
+        self._previous_action = np.zeros(3, dtype=float)
         reward_terms = self._reward_terms(
             failure_reason=None,
             success_reason=None,
             contact_event=False,
             contact_active=False,
+            applied_action=None,
         )
         reward_logging = self._reward_logging(reward_terms)
         info: dict[str, object] = {
             "failure_reason": None,
             "success_reason": None,
             "episode_success_reason": None,
+            "curriculum_stage": self.curriculum_stage,
             "step_count": self.step_count,
             "episode_steps": self.step_count,
             "contact_count": self.contact_count,
             "successful_bounce_count": self.successful_bounce_count,
             "target_position": self.controller.target_position,
+            "spawn_ball_height_above_racket": self._spawn_ball_height_above_racket,
+            "target_ball_height_above_racket": self._target_ball_height_above_racket(),
             "time_limit_reached": False,
             "terminated": False,
             "truncated": False,
@@ -255,10 +358,15 @@ class PingPongEEDeltaEnv:
             "racket_velocity_y": float(self._racket_velocity()[1]),
             "racket_velocity_z": float(self._racket_velocity()[2]),
             "racket_speed_norm": float(np.linalg.norm(self._racket_velocity())),
+            "racket_face_normal_z": float(self._racket_face_normal()[2]),
+            "robot_body_contact_body": None,
             "ball_height_above_racket": self._ball_height_above_racket(),
             "reward_height_target_term": float(self._height_target_term()),
             "reward_lift_term": 0.0,
             "reward_active_hit_term": 0.0,
+            "reward_orientation_term": float(self._orientation_term()),
+            "reward_joint_motion_term": 0.0,
+            "reward_action_smoothness_term": 0.0,
             "reward_terms": reward_terms,
             **reward_logging,
         }
@@ -269,7 +377,8 @@ class PingPongEEDeltaEnv:
         if action_array.shape != (3,):
             raise ValueError(f"EE delta action must have shape (3,), got {action_array.shape}.")
 
-        applied_action = np.clip(action_array, -self.action_limit, self.action_limit)
+        requested_action = np.clip(action_array, -self.action_limit, self.action_limit)
+        applied_action = self._filtered_action(requested_action)
         self.controller.add_target_offset(applied_action)
         joint_targets = self.controller.compute_joint_targets()
         if hasattr(self.sim, "step_with_contact_trace"):
@@ -299,7 +408,8 @@ class PingPongEEDeltaEnv:
 
         ball_velocity = self.sim.ball_velocity
         racket_velocity = self._racket_velocity()
-        failure_reason = self.sim.failure_reason()
+        failure_reason = self._failure_reason()
+        robot_body_contact_body = self._robot_body_contact_body()
         contact_observed = bool(contact_trace["contact_observed"])
         contact_active = bool(contact_observed or self.sim.has_contact("ball_geom", "racket_head"))
         contact_event = contact_active and not self._contact_active_previous_step
@@ -315,6 +425,7 @@ class PingPongEEDeltaEnv:
             contact_event,
             contact_active,
             contact_trace,
+            applied_action,
         )
         reward_logging = self._reward_logging(reward_terms)
         reward = float(sum(reward_terms.values()))
@@ -324,11 +435,13 @@ class PingPongEEDeltaEnv:
         if truncated and self.successful_bounce_count > 0:
             episode_success_reason = "keepup_time_limit"
         info: dict[str, object] = {
+            "requested_action": requested_action.copy(),
             "applied_action": applied_action.copy(),
             "target_position": self.controller.target_position,
             "failure_reason": failure_reason,
             "success_reason": success_reason,
             "episode_success_reason": episode_success_reason,
+            "curriculum_stage": self.curriculum_stage,
             "reward_terms": reward_terms,
             "racket_contact": self.sim.has_contact("ball_geom", "racket_head"),
             "ball_velocity_x": float(ball_velocity[0]),
@@ -340,6 +453,8 @@ class PingPongEEDeltaEnv:
             "racket_velocity_y": float(racket_velocity[1]),
             "racket_velocity_z": float(racket_velocity[2]),
             "racket_speed_norm": float(np.linalg.norm(racket_velocity)),
+            "racket_face_normal_z": float(self._racket_face_normal()[2]),
+            "robot_body_contact_body": robot_body_contact_body,
             "ball_height_above_racket": self._ball_height_above_racket(),
             "contact_observed_during_step": bool(contact_trace["contact_observed"]),
             "contact_event_during_step": contact_event,
@@ -360,16 +475,22 @@ class PingPongEEDeltaEnv:
             "reward_height_target_term": float(self._height_target_term()),
             "reward_lift_term": float(self._lift_term(contact_event, contact_trace)),
             "reward_active_hit_term": float(self._active_hit_term(contact_event, contact_trace)),
+            "reward_orientation_term": float(self._orientation_term()),
+            "reward_joint_motion_term": float(self._joint_motion_term()),
+            "reward_action_smoothness_term": float(self._action_smoothness_term(applied_action)),
             "step_count": self.step_count,
             "episode_steps": self.step_count,
             "contact_count": self.contact_count,
             "successful_bounce_count": self.successful_bounce_count,
+            "spawn_ball_height_above_racket": self._spawn_ball_height_above_racket,
+            "target_ball_height_above_racket": self._target_ball_height_above_racket(),
             "time_limit_reached": truncated,
             "terminated": terminated,
             "truncated": truncated,
             **reward_logging,
         }
         self._contact_active_previous_step = contact_active
+        self._previous_action = applied_action.copy()
         return self.observation(), reward, terminated, truncated, info
 
     def _success_reason(
@@ -404,6 +525,7 @@ class PingPongEEDeltaEnv:
         contact_event: bool,
         contact_active: bool,
         contact_trace: dict[str, object] | None = None,
+        applied_action: np.ndarray | None = None,
     ) -> dict[str, float]:
         xy_alignment_error = float(np.linalg.norm(self.sim.ball_position[:2] - self.sim.racket_position[:2]))
         height_target_term = self._height_target_term()
@@ -415,6 +537,9 @@ class PingPongEEDeltaEnv:
             "height_term": height_target_term + lift_term,
             "distance_term": -self.xy_alignment_weight * xy_alignment_error,
             "active_hit_term": active_hit_term,
+            "orientation_term": self._orientation_term(),
+            "joint_motion_term": self._joint_motion_term(),
+            "action_smoothness_term": self._action_smoothness_term(applied_action),
             "success_bonus": 0.0,
             "failure_penalty": 0.0,
         }
@@ -429,6 +554,8 @@ class PingPongEEDeltaEnv:
             )
         if failure_reason == "floor_contact":
             reward_terms["failure_penalty"] = self.floor_penalty
+        elif failure_reason == "robot_body_contact":
+            reward_terms["failure_penalty"] = self.robot_body_contact_penalty
         elif failure_reason is not None:
             reward_terms["failure_penalty"] = self.failure_penalty
         return reward_terms
@@ -436,12 +563,31 @@ class PingPongEEDeltaEnv:
     def _ball_height_above_racket(self) -> float:
         return float(self.sim.ball_position[2] - self.sim.racket_position[2])
 
+    def _target_ball_height_above_racket(self) -> float:
+        return float(self._spawn_ball_height_above_racket + self.target_ball_height)
+
+    def _failure_z_bounds(self) -> tuple[float, float]:
+        dynamic_upper_bound = (
+            self._spawn_ball_position_z
+            + self.target_ball_height
+            + self.height_tolerance
+            + max(self.height_tolerance, 0.20)
+        )
+        return (-0.05, max(2.0, float(dynamic_upper_bound)))
+
+    def _failure_reason(self) -> str | None:
+        try:
+            return self.sim.failure_reason(z_bounds=self._failure_z_bounds())
+        except TypeError:
+            return self.sim.failure_reason()
+
     def _height_target_term(self) -> float:
         ball_height_above_racket = self._ball_height_above_racket()
-        height_error = abs(ball_height_above_racket - self.target_ball_height)
+        target_ball_height_above_racket = self._target_ball_height_above_racket()
+        height_error = abs(ball_height_above_racket - target_ball_height_above_racket)
         height_match = max(1.0 - height_error / self.height_tolerance, 0.0)
         overshoot_penalty = self.height_overshoot_penalty_weight * max(
-            ball_height_above_racket - (self.target_ball_height + self.height_tolerance),
+            ball_height_above_racket - (target_ball_height_above_racket + self.height_tolerance),
             0.0,
         )
         return self.height_reward_weight * height_match - overshoot_penalty
@@ -458,10 +604,25 @@ class PingPongEEDeltaEnv:
         velocity[2] = self._rng.uniform(self.reset_velocity_z_range[0], self.reset_velocity_z_range[1])
         return velocity
 
+    def _filtered_action(self, requested_action: np.ndarray) -> np.ndarray:
+        if self.action_filter_alpha <= 0.0:
+            return requested_action.copy()
+        return self.action_filter_alpha * self._previous_action + (1.0 - self.action_filter_alpha) * requested_action
+
     def _racket_velocity(self) -> np.ndarray:
         if not hasattr(self.sim, "racket_velocity"):
             return np.zeros(3, dtype=float)
         return np.asarray(self.sim.racket_velocity, dtype=float)
+
+    def _racket_face_normal(self) -> np.ndarray:
+        if not hasattr(self.sim, "racket_face_normal"):
+            return np.array([0.0, 0.0, -1.0], dtype=float)
+        return np.asarray(self.sim.racket_face_normal, dtype=float)
+
+    def _robot_body_contact_body(self) -> str | None:
+        if not hasattr(self.sim, "ball_robot_body_contact"):
+            return None
+        return self.sim.ball_robot_body_contact()
 
     @staticmethod
     def _contact_float(contact_trace: dict[str, object] | None, key: str, default: float = 0.0) -> float:
@@ -537,8 +698,9 @@ class PingPongEEDeltaEnv:
 
         xy_alignment_error = float(np.linalg.norm(self.sim.ball_position[:2] - self.sim.racket_position[:2]))
         xy_score = max(1.0 - xy_alignment_error / self.strike_zone_xy_radius, 0.0)
+        target_ball_height_above_racket = self._target_ball_height_above_racket()
         height_score = max(
-            1.0 - abs(ball_height_above_racket - self.target_ball_height) / self.strike_zone_height_tolerance,
+            1.0 - abs(ball_height_above_racket - target_ball_height_above_racket) / self.strike_zone_height_tolerance,
             0.0,
         )
         descent_speed_score = self._range_score(
@@ -583,6 +745,22 @@ class PingPongEEDeltaEnv:
             self.lift_reward_weight - self.lift_overshoot_penalty_weight * velocity_overshoot,
             -self.lift_reward_weight,
         )
+
+    def _orientation_term(self) -> float:
+        if self.racket_tilt_penalty_weight <= 0.0:
+            return 0.0
+        return -self.racket_tilt_penalty_weight * (1.0 - abs(float(self._racket_face_normal()[2])))
+
+    def _joint_motion_term(self) -> float:
+        if self.joint_velocity_penalty_weight <= 0.0:
+            return 0.0
+        return -self.joint_velocity_penalty_weight * float(np.linalg.norm(self.sim.joint_velocities))
+
+    def _action_smoothness_term(self, applied_action: np.ndarray | None) -> float:
+        if applied_action is None or self.action_smoothness_penalty_weight <= 0.0:
+            return 0.0
+        action_delta = float(np.linalg.norm(applied_action - self._previous_action))
+        return -self.action_smoothness_penalty_weight * action_delta / max(self.action_limit, 1.0e-6)
 
     def _reward_logging(self, reward_terms: dict[str, float]) -> dict[str, float]:
         return {

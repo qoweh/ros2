@@ -33,7 +33,7 @@
     - 실패 패널티
   - success도 `upward_racket_bounce` 기준이다.
 
-- `docs/step/03_ee_delta_env_contract.md`
+- `docs/log/step/03_ee_delta_env_contract.md`
   - 아직 observation에 racket orientation, racket velocity, ball spin이 없다.
 
 즉 현재 단계는 아래처럼 해석해야 한다.
