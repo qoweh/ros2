@@ -13,6 +13,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from pingpong_rl.envs import PingPongEEDeltaEnv, PingPongSim
 from pingpong_rl.controllers import RacketCartesianController, compute_keepup_target
+from pingpong_rl.training.ppo_logging import build_training_summary
 from pingpong_rl.viewer import _ee_demo_target_position, _passive_viewer_is_running, parse_args
 
 
@@ -219,6 +220,98 @@ class PingPongSimTest(unittest.TestCase):
         np.testing.assert_allclose(target[:2], anchor[:2], atol=1.0e-6)
         self.assertAlmostEqual(float(target[2]), 0.52, places=6)
 
+    def test_target_ball_height_is_fixed_keepup_band_not_spawn_relative(self) -> None:
+        env = PingPongEEDeltaEnv(ball_height=0.50, target_ball_height=0.42)
+
+        _, info = env.reset(ball_height=0.63)
+
+        self.assertAlmostEqual(float(info["spawn_ball_height_above_racket"]), 0.63, places=6)
+        self.assertAlmostEqual(float(info["target_ball_height_above_racket"]), 0.42, places=6)
+        self.assertEqual(
+            env.training_config()["reward_shaping"]["target_ball_height_reference"],
+            "target_height_above_racket",
+        )
+
+    def test_step_info_exposes_keepup_stability_metrics(self) -> None:
+        env = PingPongEEDeltaEnv()
+        env.reset()
+
+        _, _, _, _, info = env.step((0.0, 0.0, 0.0))
+
+        self.assertIn("ball_lateral_speed", info)
+        self.assertIn("xy_alignment_error", info)
+        self.assertIn("current_flight_peak_height_above_racket", info)
+        self.assertIn("last_apex_height_above_racket", info)
+        self.assertIn("last_bounce_interval_steps", info)
+        self.assertIn("reward_lateral_rebound_term", info)
+
+    def test_reset_ball_height_range_randomizes_spawn_height_when_not_overridden(self) -> None:
+        env = PingPongEEDeltaEnv(ball_height=0.50, reset_ball_height_range=0.05)
+        env.seed(7)
+
+        _, info_1 = env.reset()
+        _, info_2 = env.reset()
+        _, fixed_info = env.reset(ball_height=0.61)
+
+        self.assertGreaterEqual(float(info_1["spawn_ball_height_above_racket"]), 0.45)
+        self.assertLessEqual(float(info_1["spawn_ball_height_above_racket"]), 0.55)
+        self.assertGreaterEqual(float(info_2["spawn_ball_height_above_racket"]), 0.45)
+        self.assertLessEqual(float(info_2["spawn_ball_height_above_racket"]), 0.55)
+        self.assertNotAlmostEqual(
+            float(info_1["spawn_ball_height_above_racket"]),
+            float(info_2["spawn_ball_height_above_racket"]),
+            places=7,
+        )
+        self.assertAlmostEqual(float(fixed_info["spawn_ball_height_above_racket"]), 0.61, places=6)
+
+    def test_training_summary_includes_keepup_stability_fields(self) -> None:
+        episode_rows = [
+            {
+                "terminated": True,
+                "truncated": False,
+                "episode_success_reason": "",
+                "failure_reason": "ball_out_of_bounds",
+                "successful_bounce_count": 2,
+                "reward_total_sum": 4.0,
+                "reward_height_sum": 1.0,
+                "reward_distance_sum": -1.0,
+                "reward_orientation_sum": 0.0,
+                "reward_joint_motion_sum": 0.0,
+                "reward_action_smoothness_sum": 0.0,
+                "reward_lateral_rebound_sum": -0.5,
+                "reward_contact_sum": 1.0,
+                "reward_active_hit_sum": 2.0,
+                "reward_success_sum": 3.0,
+                "reward_failure_sum": -1.0,
+                "peak_ball_height_above_racket": 0.55,
+                "peak_xy_alignment_error": 0.08,
+                "apex_height_mean": 0.48,
+                "apex_height_std": 0.03,
+                "apex_xy_alignment_mean": 0.04,
+                "apex_xy_alignment_max": 0.07,
+                "bounce_interval_mean": 12.0,
+                "bounce_interval_std": 1.5,
+            }
+        ]
+        contact_rows = [
+            {
+                "ball_velocity_x": 0.2,
+                "ball_velocity_y": -0.1,
+                "ball_velocity_z": 0.9,
+                "ball_lateral_speed": float(np.linalg.norm([0.2, -0.1])),
+                "ball_speed_norm": float(np.linalg.norm([0.2, -0.1, 0.9])),
+                "racket_velocity_z": 0.3,
+                "racket_acceleration_z": 2.0,
+                "active_hit_score": 0.6,
+            }
+        ]
+
+        summary = build_training_summary(episode_rows, contact_rows, {"run": "unit-test"})
+
+        self.assertIn("stability_stats", summary)
+        self.assertIn("ball_lateral_speed", summary["contact_velocity_stats"])
+        self.assertEqual(summary["stability_stats"]["apex_height_mean"]["count"], 1)
+
     def test_ee_delta_env_step_clips_action_and_returns_flat_contract(self) -> None:
         env = PingPongEEDeltaEnv()
         observation, reset_info = env.reset()
@@ -331,86 +424,7 @@ class PingPongSimTest(unittest.TestCase):
         self.assertEqual(reset_info_after["episode_steps"], 0)
         self.assertFalse(reset_info_after["time_limit_reached"])
 
-    def test_ee_delta_env_height_target_tracks_spawn_height(self) -> None:
-        class FakeSim:
-            def __init__(self) -> None:
-                self.n_substeps = 1
-                self._joint_positions = np.zeros(7, dtype=float)
-                self._joint_velocities = np.zeros(7, dtype=float)
-                self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
-                self._ball_position = self._racket_position + np.array([0.0, 0.0, 0.50], dtype=float)
-                self._ball_velocity = np.zeros(3, dtype=float)
-
-            @property
-            def joint_positions(self) -> np.ndarray:
-                return self._joint_positions.copy()
-
-            @property
-            def joint_velocities(self) -> np.ndarray:
-                return self._joint_velocities.copy()
-
-            @property
-            def racket_position(self) -> np.ndarray:
-                return self._racket_position.copy()
-
-            @property
-            def ball_position(self) -> np.ndarray:
-                return self._ball_position.copy()
-
-            @property
-            def ball_velocity(self) -> np.ndarray:
-                return self._ball_velocity.copy()
-
-            def reset(
-                self,
-                ball_height: float | None = None,
-                ball_velocity: tuple[float, float, float] = (0.0, 0.0, 0.0),
-                ball_xy_offset: tuple[float, float] = (0.0, 0.0),
-            ) -> None:
-                del ball_xy_offset
-                spawn_height = 0.50 if ball_height is None else float(ball_height)
-                self._ball_position = self._racket_position + np.array([0.0, 0.0, spawn_height], dtype=float)
-                self._ball_velocity = np.asarray(ball_velocity, dtype=float)
-
-            def failure_reason(self) -> None:
-                return None
-
-            def has_contact(self, geom_a: str, geom_b: str) -> bool:
-                del geom_a, geom_b
-                return False
-
-        class FakeController:
-            def __init__(self, target_position: np.ndarray) -> None:
-                self._target_position = target_position.copy()
-
-            @property
-            def target_position(self) -> np.ndarray:
-                return self._target_position.copy()
-
-            def reset(self) -> np.ndarray:
-                return np.zeros(7, dtype=float)
-
-            def add_target_offset(self, delta: tuple[float, float, float] | np.ndarray) -> np.ndarray:
-                self._target_position = self._target_position + np.asarray(delta, dtype=float)
-                return self.target_position
-
-            def compute_joint_targets(self) -> np.ndarray:
-                return np.zeros(7, dtype=float)
-
-        env = PingPongEEDeltaEnv(target_ball_height=0.30, height_tolerance=0.10)
-        fake_sim = FakeSim()
-        env.sim = fake_sim
-        env.controller = FakeController(fake_sim.racket_position)
-
-        _, reset_info = env.reset(ball_height=0.40)
-
-        self.assertAlmostEqual(float(reset_info["spawn_ball_height_above_racket"]), 0.40, places=6)
-        self.assertAlmostEqual(float(reset_info["target_ball_height_above_racket"]), 0.70, places=6)
-
-        fake_sim._ball_position = fake_sim._racket_position + np.array([0.0, 0.0, 0.70], dtype=float)
-        self.assertAlmostEqual(env._height_target_term(), env.height_reward_weight, places=6)
-
-    def test_ee_delta_env_relaxes_failure_z_bound_for_high_spawn_height(self) -> None:
+    def test_ee_delta_env_relaxes_failure_z_bound_for_high_keepup_target(self) -> None:
         class FakeSim:
             def __init__(self) -> None:
                 self.n_substeps = 1
@@ -501,12 +515,12 @@ class PingPongSimTest(unittest.TestCase):
             def compute_joint_targets(self) -> np.ndarray:
                 return np.zeros(7, dtype=float)
 
-        env = PingPongEEDeltaEnv(target_ball_height=0.30, height_tolerance=0.10)
+        env = PingPongEEDeltaEnv(target_ball_height=1.80, height_tolerance=0.10)
         fake_sim = FakeSim()
         env.sim = fake_sim
         env.controller = FakeController(fake_sim.racket_position)
 
-        env.reset(ball_height=1.60)
+        env.reset(ball_height=0.50)
         _, _, terminated, truncated, _ = env.step((0.0, 0.0, 0.0))
 
         self.assertFalse(terminated)
@@ -609,7 +623,7 @@ class PingPongSimTest(unittest.TestCase):
         self.assertFalse(terminated)
         self.assertFalse(truncated)
         self.assertIsNone(success_info["failure_reason"])
-        self.assertEqual(success_info["success_reason"], "upward_racket_bounce")
+        self.assertEqual(success_info["success_reason"], "useful_keepup_bounce")
         self.assertTrue(success_info["racket_contact"])
         self.assertFalse(success_info["terminated"])
         self.assertFalse(success_info["truncated"])
@@ -706,7 +720,7 @@ class PingPongSimTest(unittest.TestCase):
 
         self.assertFalse(terminated)
         self.assertFalse(truncated)
-        self.assertEqual(success_info["success_reason"], "upward_racket_bounce")
+        self.assertEqual(success_info["success_reason"], "useful_keepup_bounce")
         self.assertTrue(success_info["contact_observed_during_step"])
         self.assertTrue(success_info["contact_event_during_step"])
         self.assertEqual(float(success_info["reward_success"]), env.success_bonus)
@@ -716,7 +730,7 @@ class PingPongSimTest(unittest.TestCase):
         class FakeSim:
             def __init__(self) -> None:
                 self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
-                self._ball_position = np.array([0.55, 0.125, 1.32], dtype=float)
+                self._ball_position = np.array([0.55, 0.125, 1.02], dtype=float)
                 self._ball_velocity = np.zeros(3, dtype=float)
 
             @property
@@ -781,7 +795,7 @@ class PingPongSimTest(unittest.TestCase):
         class FakeSim:
             def __init__(self) -> None:
                 self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
-                self._ball_position = np.array([0.56, 0.13, 1.32], dtype=float)
+                self._ball_position = np.array([0.56, 0.13, 1.02], dtype=float)
                 self._ball_velocity = np.array([0.0, 0.0, -0.35], dtype=float)
                 self._racket_velocity = np.array([0.0, 0.0, 0.18], dtype=float)
 

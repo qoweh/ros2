@@ -18,6 +18,7 @@ CURRICULA: dict[str, tuple[CurriculumStage, ...]] = {
             name="bootstrap",
             progress_start=0.0,
             env_updates={
+                "reset_ball_height_range": 0.0,
                 "reset_xy_range": 0.0,
                 "reset_velocity_xy_range": 0.0,
                 "reset_velocity_z_range": (0.0, 0.0),
@@ -32,6 +33,7 @@ CURRICULA: dict[str, tuple[CurriculumStage, ...]] = {
             name="stabilize",
             progress_start=0.35,
             env_updates={
+                "reset_ball_height_range": 0.025,
                 "reset_xy_range": 0.01,
                 "reset_velocity_xy_range": 0.005,
                 "reset_velocity_z_range": (-0.01, 0.01),
@@ -46,6 +48,7 @@ CURRICULA: dict[str, tuple[CurriculumStage, ...]] = {
             name="refine",
             progress_start=0.75,
             env_updates={
+                "reset_ball_height_range": 0.05,
                 "reset_xy_range": 0.02,
                 "reset_velocity_xy_range": 0.01,
                 "reset_velocity_z_range": (-0.02, 0.02),

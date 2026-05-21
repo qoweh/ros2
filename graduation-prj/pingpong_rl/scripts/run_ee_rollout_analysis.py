@@ -41,10 +41,19 @@ EPISODE_FIELDS: tuple[str, ...] = (
     "reward_total_sum",
     "reward_height_sum",
     "reward_distance_sum",
+    "reward_lateral_rebound_sum",
     "reward_contact_sum",
     "reward_active_hit_sum",
     "reward_success_sum",
     "reward_failure_sum",
+    "peak_ball_height_above_racket",
+    "peak_xy_alignment_error",
+    "apex_height_mean",
+    "apex_height_std",
+    "apex_xy_alignment_mean",
+    "apex_xy_alignment_max",
+    "bounce_interval_mean",
+    "bounce_interval_std",
 )
 
 STEP_FIELDS: tuple[str, ...] = (
@@ -53,6 +62,7 @@ STEP_FIELDS: tuple[str, ...] = (
     "reward_total",
     "reward_height",
     "reward_distance",
+    "reward_lateral_rebound",
     "reward_contact",
     "reward_active_hit",
     "reward_success",
@@ -71,7 +81,15 @@ STEP_FIELDS: tuple[str, ...] = (
     "ball_velocity_x",
     "ball_velocity_y",
     "ball_velocity_z",
+    "ball_lateral_speed",
     "ball_speed_norm",
+    "ball_height_above_racket",
+    "xy_alignment_error",
+    "current_flight_peak_height_above_racket",
+    "current_flight_peak_xy_alignment_error",
+    "last_apex_height_above_racket",
+    "last_apex_xy_alignment_error",
+    "last_bounce_interval_steps",
     "contact_ball_velocity_x",
     "contact_ball_velocity_y",
     "contact_ball_velocity_z",
@@ -94,7 +112,13 @@ CONTACT_FIELDS: tuple[str, ...] = (
     "ball_velocity_x",
     "ball_velocity_y",
     "ball_velocity_z",
+    "ball_lateral_speed",
     "ball_speed_norm",
+    "ball_height_above_racket",
+    "xy_alignment_error",
+    "last_apex_height_above_racket",
+    "last_apex_xy_alignment_error",
+    "last_bounce_interval_steps",
     "racket_velocity_x",
     "racket_velocity_y",
     "racket_velocity_z",
@@ -143,6 +167,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
         help="Success threshold forwarded to PingPongEEDeltaEnv. This script does not modify it automatically.",
+    )
+    parser.add_argument(
+        "--reset-ball-height-range",
+        type=float,
+        default=0.0,
+        help="Uniform reset height offset range around --ball-height.",
     )
     parser.add_argument("--reset-xy-range", type=float, default=0.0, help="Uniform reset XY offset range.")
     parser.add_argument("--reset-velocity-xy-range", type=float, default=0.0, help="Uniform reset XY velocity range.")
@@ -213,6 +243,7 @@ def run_episode(
         "reward_total_sum": 0.0,
         "reward_height_sum": 0.0,
         "reward_distance_sum": 0.0,
+        "reward_lateral_rebound_sum": 0.0,
         "reward_contact_sum": 0.0,
         "reward_active_hit_sum": 0.0,
         "reward_success_sum": 0.0,
@@ -221,16 +252,24 @@ def run_episode(
     step_rows: list[dict[str, object]] = []
     contact_rows: list[dict[str, object]] = []
     first_contact_step: int | None = None
+    apex_heights: list[float] = []
+    apex_xy_alignment_errors: list[float] = []
+    bounce_intervals: list[float] = []
+    peak_ball_height_above_racket = 0.0
+    peak_xy_alignment_error = 0.0
 
     while True:
         _, _, terminated, truncated, info = env.step(action)
         reward_sums["reward_total_sum"] += float(info["reward_total"])
         reward_sums["reward_height_sum"] += float(info["reward_height"])
         reward_sums["reward_distance_sum"] += float(info["reward_distance"])
+        reward_sums["reward_lateral_rebound_sum"] += float(info.get("reward_lateral_rebound", 0.0))
         reward_sums["reward_contact_sum"] += float(info["reward_contact"])
         reward_sums["reward_active_hit_sum"] += float(info.get("reward_active_hit", 0.0))
         reward_sums["reward_success_sum"] += float(info["reward_success"])
         reward_sums["reward_failure_sum"] += float(info["reward_failure"])
+        peak_ball_height_above_racket = max(peak_ball_height_above_racket, max(float(info.get("ball_height_above_racket", 0.0)), 0.0))
+        peak_xy_alignment_error = max(peak_xy_alignment_error, float(info.get("xy_alignment_error", 0.0)))
 
         step_rows.append(
             {
@@ -239,6 +278,7 @@ def run_episode(
                 "reward_total": float(info["reward_total"]),
                 "reward_height": float(info["reward_height"]),
                 "reward_distance": float(info["reward_distance"]),
+                "reward_lateral_rebound": float(info.get("reward_lateral_rebound", 0.0)),
                 "reward_contact": float(info["reward_contact"]),
                 "reward_active_hit": float(info.get("reward_active_hit", 0.0)),
                 "reward_success": float(info["reward_success"]),
@@ -257,7 +297,15 @@ def run_episode(
                 "ball_velocity_x": float(info["ball_velocity_x"]),
                 "ball_velocity_y": float(info["ball_velocity_y"]),
                 "ball_velocity_z": float(info["ball_velocity_z"]),
+                "ball_lateral_speed": float(info.get("ball_lateral_speed", 0.0)),
                 "ball_speed_norm": float(info["ball_speed_norm"]),
+                "ball_height_above_racket": float(info.get("ball_height_above_racket", 0.0)),
+                "xy_alignment_error": float(info.get("xy_alignment_error", 0.0)),
+                "current_flight_peak_height_above_racket": info.get("current_flight_peak_height_above_racket"),
+                "current_flight_peak_xy_alignment_error": info.get("current_flight_peak_xy_alignment_error"),
+                "last_apex_height_above_racket": info.get("last_apex_height_above_racket"),
+                "last_apex_xy_alignment_error": info.get("last_apex_xy_alignment_error"),
+                "last_bounce_interval_steps": info.get("last_bounce_interval_steps"),
                 "contact_ball_velocity_x": info["contact_ball_velocity_x"],
                 "contact_ball_velocity_y": info["contact_ball_velocity_y"],
                 "contact_ball_velocity_z": info["contact_ball_velocity_z"],
@@ -277,6 +325,12 @@ def run_episode(
         if info.get("contact_event_during_step", False):
             if first_contact_step is None:
                 first_contact_step = int(info["episode_steps"])
+            if info.get("last_apex_height_above_racket") is not None:
+                apex_heights.append(float(info["last_apex_height_above_racket"]))
+            if info.get("last_apex_xy_alignment_error") is not None:
+                apex_xy_alignment_errors.append(float(info["last_apex_xy_alignment_error"]))
+            if info.get("last_bounce_interval_steps") is not None:
+                bounce_intervals.append(float(info["last_bounce_interval_steps"]))
             contact_rows.append(
                 {
                     "episode_index": episode_index,
@@ -285,7 +339,13 @@ def run_episode(
                     "ball_velocity_x": info["contact_ball_velocity_x"],
                     "ball_velocity_y": info["contact_ball_velocity_y"],
                     "ball_velocity_z": info["contact_ball_velocity_z"],
+                    "ball_lateral_speed": info.get("ball_lateral_speed"),
                     "ball_speed_norm": info["contact_ball_speed_norm"],
+                    "ball_height_above_racket": info.get("ball_height_above_racket"),
+                    "xy_alignment_error": info.get("xy_alignment_error"),
+                    "last_apex_height_above_racket": info.get("last_apex_height_above_racket"),
+                    "last_apex_xy_alignment_error": info.get("last_apex_xy_alignment_error"),
+                    "last_bounce_interval_steps": info.get("last_bounce_interval_steps"),
                     "racket_velocity_x": info.get("contact_racket_velocity_x"),
                     "racket_velocity_y": info.get("contact_racket_velocity_y"),
                     "racket_velocity_z": info.get("contact_racket_velocity_z"),
@@ -317,6 +377,14 @@ def run_episode(
                     "contact_count": len(contact_rows),
                     "successful_bounce_count": int(info.get("successful_bounce_count", 0)),
                     "first_contact_step": first_contact_step if first_contact_step is not None else "",
+                    "peak_ball_height_above_racket": peak_ball_height_above_racket,
+                    "peak_xy_alignment_error": peak_xy_alignment_error,
+                    "apex_height_mean": float(np.mean(apex_heights)) if apex_heights else 0.0,
+                    "apex_height_std": float(np.std(apex_heights)) if apex_heights else 0.0,
+                    "apex_xy_alignment_mean": float(np.mean(apex_xy_alignment_errors)) if apex_xy_alignment_errors else 0.0,
+                    "apex_xy_alignment_max": float(np.max(apex_xy_alignment_errors)) if apex_xy_alignment_errors else 0.0,
+                    "bounce_interval_mean": float(np.mean(bounce_intervals)) if bounce_intervals else 0.0,
+                    "bounce_interval_std": float(np.std(bounce_intervals)) if bounce_intervals else 0.0,
                     **reward_sums,
                 },
                 step_rows,
@@ -334,6 +402,7 @@ def build_summary(
     contact_velocity_x = [float(row["ball_velocity_x"]) for row in contact_rows if row["ball_velocity_x"] is not None]
     contact_velocity_y = [float(row["ball_velocity_y"]) for row in contact_rows if row["ball_velocity_y"] is not None]
     contact_velocity_z = [float(row["ball_velocity_z"]) for row in contact_rows if row["ball_velocity_z"] is not None]
+    contact_lateral_speed = [float(row["ball_lateral_speed"]) for row in contact_rows if row["ball_lateral_speed"] is not None]
     contact_speed_norm = [float(row["ball_speed_norm"]) for row in contact_rows if row["ball_speed_norm"] is not None]
     contact_racket_velocity_z = [
         float(row["racket_velocity_z"]) for row in contact_rows if row["racket_velocity_z"] is not None
@@ -383,10 +452,21 @@ def build_summary(
             "reward_total_sum": _episode_metric_stats(episode_rows, "reward_total_sum"),
             "reward_height_sum": _episode_metric_stats(episode_rows, "reward_height_sum"),
             "reward_distance_sum": _episode_metric_stats(episode_rows, "reward_distance_sum"),
+            "reward_lateral_rebound_sum": _episode_metric_stats(episode_rows, "reward_lateral_rebound_sum"),
             "reward_contact_sum": _episode_metric_stats(episode_rows, "reward_contact_sum"),
             "reward_active_hit_sum": _episode_metric_stats(episode_rows, "reward_active_hit_sum"),
             "reward_success_sum": _episode_metric_stats(episode_rows, "reward_success_sum"),
             "reward_failure_sum": _episode_metric_stats(episode_rows, "reward_failure_sum"),
+        },
+        "stability_stats": {
+            "peak_ball_height_above_racket": _episode_metric_stats(episode_rows, "peak_ball_height_above_racket"),
+            "peak_xy_alignment_error": _episode_metric_stats(episode_rows, "peak_xy_alignment_error"),
+            "apex_height_mean": _episode_metric_stats(episode_rows, "apex_height_mean"),
+            "apex_height_std": _episode_metric_stats(episode_rows, "apex_height_std"),
+            "apex_xy_alignment_mean": _episode_metric_stats(episode_rows, "apex_xy_alignment_mean"),
+            "apex_xy_alignment_max": _episode_metric_stats(episode_rows, "apex_xy_alignment_max"),
+            "bounce_interval_mean": _episode_metric_stats(episode_rows, "bounce_interval_mean"),
+            "bounce_interval_std": _episode_metric_stats(episode_rows, "bounce_interval_std"),
         },
         "reward_dominance": {
             "zero_contact_reward_episodes": zero_contact_reward_episodes,
@@ -399,6 +479,7 @@ def build_summary(
             "ball_velocity_x": _quantile_stats(contact_velocity_x),
             "ball_velocity_y": _quantile_stats(contact_velocity_y),
             "ball_velocity_z": _quantile_stats(contact_velocity_z),
+            "ball_lateral_speed": _quantile_stats(contact_lateral_speed),
             "ball_speed_norm": _quantile_stats(contact_speed_norm),
             "racket_velocity_z": _quantile_stats(contact_racket_velocity_z),
             "racket_acceleration_z": _quantile_stats(contact_racket_acceleration_z),
@@ -420,6 +501,7 @@ def main() -> None:
         max_episode_steps=args.max_episode_steps,
         ball_height=args.ball_height,
         success_velocity_threshold=args.success_velocity_threshold,
+        reset_ball_height_range=args.reset_ball_height_range,
         reset_xy_range=args.reset_xy_range,
         reset_velocity_xy_range=args.reset_velocity_xy_range,
         reset_velocity_z_range=tuple(args.reset_velocity_z_range),

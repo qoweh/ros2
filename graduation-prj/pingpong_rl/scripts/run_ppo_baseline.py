@@ -53,13 +53,13 @@ def parse_args() -> argparse.Namespace:
         "--target-ball-height",
         type=float,
         default=None,
-        help="Optional reward target lift above the per-episode spawn height after a useful bounce.",
+        help="Optional absolute keep-up target height above the racket used by the height reward band.",
     )
     parser.add_argument(
         "--height-tolerance",
         type=float,
         default=None,
-        help="Optional tolerance band around the spawn-relative --target-ball-height reward target.",
+        help="Optional tolerance band around the absolute --target-ball-height keep-up target.",
     )
     parser.add_argument(
         "--useful-contact-velocity-z",
@@ -126,6 +126,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.015,
         help="Uniform reset XY offset range around racket_center. Use 0 to disable.",
+    )
+    parser.add_argument(
+        "--reset-ball-height-range",
+        type=float,
+        default=0.0,
+        help="Uniform reset height offset range around --ball-height. Use 0 to disable.",
     )
     parser.add_argument(
         "--reset-velocity-xy-range",
@@ -242,6 +248,7 @@ def main() -> None:
             env_kwargs["active_hit_reward_weight"] = args.active_hit_reward_weight
         if args.passive_contact_penalty is not None:
             env_kwargs["passive_contact_penalty"] = args.passive_contact_penalty
+        env_kwargs["reset_ball_height_range"] = args.reset_ball_height_range
         env_kwargs["reset_xy_range"] = args.reset_xy_range
         env_kwargs["reset_velocity_xy_range"] = args.reset_velocity_xy_range
         env_kwargs["reset_velocity_z_range"] = tuple(args.reset_velocity_z_range)
