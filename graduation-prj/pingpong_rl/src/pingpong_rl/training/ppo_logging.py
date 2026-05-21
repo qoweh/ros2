@@ -30,6 +30,7 @@ EPISODE_FIELDS: tuple[str, ...] = (
     "reward_joint_motion_sum",
     "reward_action_smoothness_sum",
     "reward_lateral_rebound_sum",
+    "reward_rebound_direction_sum",
     "reward_contact_sum",
     "reward_active_hit_sum",
     "reward_success_sum",
@@ -55,6 +56,7 @@ STEP_FIELDS: tuple[str, ...] = (
     "reward_joint_motion",
     "reward_action_smoothness",
     "reward_lateral_rebound",
+    "reward_rebound_direction",
     "reward_contact",
     "reward_active_hit",
     "reward_success",
@@ -88,6 +90,7 @@ STEP_FIELDS: tuple[str, ...] = (
     "contact_ball_velocity_y",
     "contact_ball_velocity_z",
     "contact_ball_speed_norm",
+    "contact_rebound_vertical_ratio",
     "contact_racket_velocity_x",
     "contact_racket_velocity_y",
     "contact_racket_velocity_z",
@@ -113,6 +116,7 @@ CONTACT_FIELDS: tuple[str, ...] = (
     "last_apex_height_above_racket",
     "last_apex_xy_alignment_error",
     "last_bounce_interval_steps",
+    "contact_rebound_vertical_ratio",
     "racket_velocity_x",
     "racket_velocity_y",
     "racket_velocity_z",
@@ -164,6 +168,11 @@ def build_training_summary(
     contact_velocity_z = [float(row["ball_velocity_z"]) for row in contact_rows if row["ball_velocity_z"] is not None]
     contact_lateral_speed = [float(row["ball_lateral_speed"]) for row in contact_rows if row["ball_lateral_speed"] is not None]
     contact_speed_norm = [float(row["ball_speed_norm"]) for row in contact_rows if row["ball_speed_norm"] is not None]
+    contact_rebound_vertical_ratio = [
+        float(row["contact_rebound_vertical_ratio"])
+        for row in contact_rows
+        if row["contact_rebound_vertical_ratio"] is not None
+    ]
     contact_racket_velocity_z = [
         float(row["racket_velocity_z"]) for row in contact_rows if row["racket_velocity_z"] is not None
     ]
@@ -208,6 +217,7 @@ def build_training_summary(
                 "reward_action_smoothness_sum",
             ),
             "reward_lateral_rebound_sum": _episode_metric_stats(episode_rows, "reward_lateral_rebound_sum"),
+            "reward_rebound_direction_sum": _episode_metric_stats(episode_rows, "reward_rebound_direction_sum"),
             "reward_contact_sum": _episode_metric_stats(episode_rows, "reward_contact_sum"),
             "reward_active_hit_sum": _episode_metric_stats(episode_rows, "reward_active_hit_sum"),
             "reward_success_sum": _episode_metric_stats(episode_rows, "reward_success_sum"),
@@ -236,6 +246,7 @@ def build_training_summary(
             "ball_velocity_z": _quantile_stats(contact_velocity_z),
             "ball_lateral_speed": _quantile_stats(contact_lateral_speed),
             "ball_speed_norm": _quantile_stats(contact_speed_norm),
+            "contact_rebound_vertical_ratio": _quantile_stats(contact_rebound_vertical_ratio),
             "racket_velocity_z": _quantile_stats(contact_racket_velocity_z),
             "racket_acceleration_z": _quantile_stats(contact_racket_acceleration_z),
             "active_hit_score": _quantile_stats(active_hit_scores),
@@ -275,6 +286,7 @@ class PPOLoggingCallback(BaseCallback):
             "reward_joint_motion_sum": 0.0,
             "reward_action_smoothness_sum": 0.0,
             "reward_lateral_rebound_sum": 0.0,
+            "reward_rebound_direction_sum": 0.0,
             "reward_contact_sum": 0.0,
             "reward_active_hit_sum": 0.0,
             "reward_success_sum": 0.0,
@@ -314,6 +326,7 @@ class PPOLoggingCallback(BaseCallback):
             "reward_joint_motion": float(info.get("reward_joint_motion_term", 0.0)),
             "reward_action_smoothness": float(info.get("reward_action_smoothness_term", 0.0)),
             "reward_lateral_rebound": float(info.get("reward_lateral_rebound", 0.0)),
+            "reward_rebound_direction": float(info.get("reward_rebound_direction", 0.0)),
             "reward_contact": float(info["reward_contact"]),
             "reward_active_hit": float(info.get("reward_active_hit", 0.0)),
             "reward_success": float(info["reward_success"]),
@@ -347,6 +360,7 @@ class PPOLoggingCallback(BaseCallback):
             "contact_ball_velocity_y": info["contact_ball_velocity_y"],
             "contact_ball_velocity_z": info["contact_ball_velocity_z"],
             "contact_ball_speed_norm": info["contact_ball_speed_norm"],
+            "contact_rebound_vertical_ratio": info.get("contact_rebound_vertical_ratio"),
             "contact_racket_velocity_x": info.get("contact_racket_velocity_x"),
             "contact_racket_velocity_y": info.get("contact_racket_velocity_y"),
             "contact_racket_velocity_z": info.get("contact_racket_velocity_z"),
@@ -373,6 +387,7 @@ class PPOLoggingCallback(BaseCallback):
             "last_apex_height_above_racket": info.get("last_apex_height_above_racket"),
             "last_apex_xy_alignment_error": info.get("last_apex_xy_alignment_error"),
             "last_bounce_interval_steps": info.get("last_bounce_interval_steps"),
+            "contact_rebound_vertical_ratio": info.get("contact_rebound_vertical_ratio"),
             "racket_velocity_x": info.get("contact_racket_velocity_x"),
             "racket_velocity_y": info.get("contact_racket_velocity_y"),
             "racket_velocity_z": info.get("contact_racket_velocity_z"),
@@ -412,6 +427,7 @@ class PPOLoggingCallback(BaseCallback):
             "reward_joint_motion_sum": float(episode_state["reward_joint_motion_sum"]),
             "reward_action_smoothness_sum": float(episode_state["reward_action_smoothness_sum"]),
             "reward_lateral_rebound_sum": float(episode_state["reward_lateral_rebound_sum"]),
+            "reward_rebound_direction_sum": float(episode_state["reward_rebound_direction_sum"]),
             "reward_contact_sum": float(episode_state["reward_contact_sum"]),
             "reward_active_hit_sum": float(episode_state["reward_active_hit_sum"]),
             "reward_success_sum": float(episode_state["reward_success_sum"]),
@@ -436,6 +452,7 @@ class PPOLoggingCallback(BaseCallback):
             "reward_joint_motion_sum",
             "reward_action_smoothness_sum",
             "reward_lateral_rebound_sum",
+            "reward_rebound_direction_sum",
             "reward_contact_sum",
             "reward_active_hit_sum",
             "reward_success_sum",
@@ -487,6 +504,7 @@ class PPOLoggingCallback(BaseCallback):
             episode_state["reward_joint_motion_sum"] += float(info.get("reward_joint_motion_term", 0.0))
             episode_state["reward_action_smoothness_sum"] += float(info.get("reward_action_smoothness_term", 0.0))
             episode_state["reward_lateral_rebound_sum"] += float(info.get("reward_lateral_rebound", 0.0))
+            episode_state["reward_rebound_direction_sum"] += float(info.get("reward_rebound_direction", 0.0))
             episode_state["reward_contact_sum"] += float(info["reward_contact"])
             episode_state["reward_active_hit_sum"] += float(info.get("reward_active_hit", 0.0))
             episode_state["reward_success_sum"] += float(info["reward_success"])

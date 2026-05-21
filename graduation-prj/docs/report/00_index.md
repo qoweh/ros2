@@ -20,3 +20,5 @@
   - 최근 코드 수정과 물리/보상/커리큘럼 변경을 반영한 현재 상태 요약
 - `11_keepup_stability_review.md`
   - stable repeated bouncing 기준으로 task/action/reward/reset/bottleneck을 다시 검토한 보고서
+- `12_keepup_v3_followup_and_control_assist_report.md`
+  - `ppo_keepup_v3` 40k 재학습 분석, reward-only rebound shaping 실패, control-side tracking assist 비교 결과

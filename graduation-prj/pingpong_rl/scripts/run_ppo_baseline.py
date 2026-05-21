@@ -122,6 +122,30 @@ def parse_args() -> argparse.Namespace:
         help="Optional penalty applied when the ball contacts a non-active racket.",
     )
     parser.add_argument(
+        "--target-rebound-vertical-ratio",
+        type=float,
+        default=None,
+        help="Optional target fraction of post-contact ball speed that should remain vertical.",
+    )
+    parser.add_argument(
+        "--rebound-direction-reward-weight",
+        type=float,
+        default=None,
+        help="Optional weight for contact-time rebound direction shaping toward vertical keep-up.",
+    )
+    parser.add_argument(
+        "--tracking-assist-weight",
+        type=float,
+        default=None,
+        help="Optional blend weight for strike-zone keep-up target assistance under the descending ball.",
+    )
+    parser.add_argument(
+        "--tracking-assist-preview-time",
+        type=float,
+        default=None,
+        help="Optional preview horizon used by the strike-zone tracking assist.",
+    )
+    parser.add_argument(
         "--reset-xy-range",
         type=float,
         default=0.015,
@@ -248,6 +272,14 @@ def main() -> None:
             env_kwargs["active_hit_reward_weight"] = args.active_hit_reward_weight
         if args.passive_contact_penalty is not None:
             env_kwargs["passive_contact_penalty"] = args.passive_contact_penalty
+        if args.target_rebound_vertical_ratio is not None:
+            env_kwargs["target_rebound_vertical_ratio"] = args.target_rebound_vertical_ratio
+        if args.rebound_direction_reward_weight is not None:
+            env_kwargs["rebound_direction_reward_weight"] = args.rebound_direction_reward_weight
+        if args.tracking_assist_weight is not None:
+            env_kwargs["tracking_assist_weight"] = args.tracking_assist_weight
+        if args.tracking_assist_preview_time is not None:
+            env_kwargs["tracking_assist_preview_time"] = args.tracking_assist_preview_time
         env_kwargs["reset_ball_height_range"] = args.reset_ball_height_range
         env_kwargs["reset_xy_range"] = args.reset_xy_range
         env_kwargs["reset_velocity_xy_range"] = args.reset_velocity_xy_range
@@ -270,6 +302,7 @@ def main() -> None:
     reward_config = effective_env_config["reward_shaping"]
     reset_config = effective_env_config["reset_randomization"]
     core_config = effective_env_config["core"]
+    controller_config = effective_env_config["controller"]
     effective_ppo_config = {
         "policy": "MlpPolicy",
         "device": str(model.device),
@@ -321,6 +354,10 @@ def main() -> None:
             "target_active_racket_acceleration_z": float(reward_config["target_active_racket_acceleration_z"]),
             "active_hit_reward_weight": float(reward_config["active_hit_reward_weight"]),
             "passive_contact_penalty": float(reward_config["passive_contact_penalty"]),
+            "target_rebound_vertical_ratio": float(reward_config["target_rebound_vertical_ratio"]),
+            "rebound_direction_reward_weight": float(reward_config["rebound_direction_reward_weight"]),
+            "tracking_assist_weight": float(controller_config["tracking_assist_weight"]),
+            "tracking_assist_preview_time": float(controller_config["tracking_assist_preview_time"]),
             "reset_xy_range": float(reset_config["reset_xy_range"]),
             "reset_velocity_xy_range": float(reset_config["reset_velocity_xy_range"]),
             "reset_velocity_z_range": list(reset_config["reset_velocity_z_range"]),
