@@ -18,3 +18,5 @@
 
 - `10_pingpong_rl_status_report.md`
   - 최근 코드 수정과 물리/보상/커리큘럼 변경을 반영한 현재 상태 요약
+- `11_keepup_stability_review.md`
+  - stable repeated bouncing 기준으로 task/action/reward/reset/bottleneck을 다시 검토한 보고서
