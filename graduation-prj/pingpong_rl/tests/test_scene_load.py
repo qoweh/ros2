@@ -390,6 +390,51 @@ class PingPongSimTest(unittest.TestCase):
         self.assertGreater(float(info["target_position"][0]), float(initial_target[0]))
         self.assertLess(float(info["target_position"][1]), float(initial_target[1]))
 
+    def test_ee_delta_env_body_keepout_pushes_target_away_from_link5(self) -> None:
+        class FakeBody:
+            def __init__(self, body_id: int) -> None:
+                self.id = body_id
+
+        class FakeModel:
+            def __init__(self) -> None:
+                self._body_ids = {"link5": 0, "link6": 1, "link7": 2, "hand": 3}
+
+            def body(self, name: str) -> FakeBody:
+                return FakeBody(self._body_ids[name])
+
+        class FakeData:
+            def __init__(self) -> None:
+                self.xpos = np.array(
+                    [
+                        [0.48, 0.12, 0.48],
+                        [0.53, 0.12, 0.53],
+                        [0.57, 0.12, 0.57],
+                        [0.60, 0.12, 0.60],
+                    ],
+                    dtype=float,
+                )
+
+        class FakeSim:
+            def __init__(self) -> None:
+                self.model = FakeModel()
+                self.data = FakeData()
+                self._racket_position = np.array([0.65, 0.12, 0.52], dtype=float)
+
+            @property
+            def racket_position(self) -> np.ndarray:
+                return self._racket_position.copy()
+
+        env = PingPongEEDeltaEnv()
+        env.sim = FakeSim()
+
+        safe_target = env._body_safe_target_position(np.array([0.50, 0.12, 0.52], dtype=float))
+
+        self.assertGreaterEqual(
+            float(np.linalg.norm(safe_target[:2] - np.array([0.48, 0.12], dtype=float))),
+            0.12 - 1.0e-9,
+        )
+        self.assertGreater(float(safe_target[0]), 0.50)
+
     def test_reset_ball_height_range_randomizes_spawn_height_when_not_overridden(self) -> None:
         env = PingPongEEDeltaEnv(ball_height=0.50, reset_ball_height_range=0.05)
         env.seed(7)

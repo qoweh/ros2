@@ -591,6 +591,12 @@ class PingPongEEDeltaEnv:
                 self.controller.set_target_position(assisted_target)
             else:
                 self.controller.add_target_offset(assisted_target - current_target)
+        current_target = self.controller.target_position
+        safe_target_position = self._body_safe_target_position(current_target)
+        if hasattr(self.controller, "set_target_position"):
+            self.controller.set_target_position(safe_target_position)
+        else:
+            self.controller.add_target_offset(safe_target_position - current_target)
         tilt_tracking_assist_target = self._tracking_assist_tilt()
         if tilt_tracking_assist_target is not None and hasattr(self.controller, "set_target_tilt"):
             current_tilt = self.controller.target_tilt if hasattr(self.controller, "target_tilt") else np.zeros(2, dtype=float)
@@ -995,6 +1001,47 @@ class PingPongEEDeltaEnv:
         if self._strike_zone_score() <= 0.0:
             return None
         return self._keepup_tracking_target()
+
+    def _body_safe_target_position(self, target_position: Sequence[float]) -> np.ndarray:
+        safe_target = np.asarray(target_position, dtype=float).copy()
+        if safe_target.shape != (3,):
+            raise ValueError(f"target_position must have shape (3,), got {safe_target.shape}.")
+        if not hasattr(self.sim, "model") or not hasattr(self.sim, "data") or not hasattr(self.sim.data, "xpos"):
+            return safe_target
+
+        keepout_specs = (
+            ("link5", 0.12),
+            ("link6", 0.10),
+            ("link7", 0.09),
+            ("hand", 0.08),
+        )
+        anchor_xy = np.asarray(self.sim.racket_position[:2], dtype=float)
+
+        for body_name, keepout_radius in keepout_specs:
+            try:
+                body_id = self.sim.model.body(body_name).id
+            except Exception:
+                continue
+
+            body_position = np.asarray(self.sim.data.xpos[body_id], dtype=float)
+            delta_xy = safe_target[:2] - body_position[:2]
+            distance_xy = float(np.linalg.norm(delta_xy))
+            if distance_xy >= keepout_radius:
+                continue
+
+            if distance_xy <= 1.0e-9:
+                fallback_direction = safe_target[:2] - anchor_xy
+                fallback_norm = float(np.linalg.norm(fallback_direction))
+                delta_direction = (
+                    np.array([1.0, 0.0], dtype=float)
+                    if fallback_norm <= 1.0e-9
+                    else fallback_direction / fallback_norm
+                )
+            else:
+                delta_direction = delta_xy / distance_xy
+
+            safe_target[:2] = body_position[:2] + keepout_radius * delta_direction
+        return safe_target
 
     def _tracking_assist_tilt(self) -> np.ndarray | None:
         if self.action_mode != "position_tilt" or self.tilt_tracking_assist_weight <= 0.0:
