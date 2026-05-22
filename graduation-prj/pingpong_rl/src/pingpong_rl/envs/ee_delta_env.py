@@ -89,7 +89,7 @@ class PingPongEEDeltaEnv:
         failure_penalty: float = -5.0,
         single_bounce_out_penalty: float = -12.0,
         reset_ball_height_range: float = 0.0,
-        reset_xy_range: float = 0.015,
+        reset_xy_range: float = 0.115,
         reset_velocity_xy_range: float = 0.01,
         reset_velocity_z_range: tuple[float, float] = (-0.02, 0.01),
         target_offset_low: Sequence[float] = (-0.12, -0.12, -0.04),
