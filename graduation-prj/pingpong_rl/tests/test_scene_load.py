@@ -295,7 +295,7 @@ class PingPongSimTest(unittest.TestCase):
                 self._joint_positions = np.zeros(7, dtype=float)
                 self._joint_velocities = np.zeros(7, dtype=float)
                 self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
-                self._ball_position = np.array([0.60, 0.10, 1.02], dtype=float)
+                self._ball_position = np.array([0.60, 0.10, 0.74], dtype=float)
                 self._ball_velocity = np.array([0.20, -0.10, -0.40], dtype=float)
 
             @property
@@ -584,7 +584,7 @@ class PingPongSimTest(unittest.TestCase):
 
     def test_ee_delta_env_position_tilt_mode_accepts_5d_action(self) -> None:
         env = PingPongEEDeltaEnv(action_mode="position_tilt")
-        observation, _ = env.reset()
+        observation, _ = env.reset(ball_height=0.22, ball_velocity=(0.0, 0.0, -0.2))
 
         self.assertEqual(observation.shape, (env.observation_size,))
         self.assertEqual(env.action_size, 5)
@@ -614,8 +614,8 @@ class PingPongSimTest(unittest.TestCase):
                 self._joint_positions = np.zeros(7, dtype=float)
                 self._joint_velocities = np.zeros(7, dtype=float)
                 self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
-                self._ball_position = np.array([0.60, 0.10, 1.02], dtype=float)
-                self._ball_velocity = np.array([0.20, -0.10, -0.50], dtype=float)
+                self._ball_position = np.array([0.58, 0.11, 0.72], dtype=float)
+                self._ball_velocity = np.array([0.05, -0.03, -0.50], dtype=float)
 
             @property
             def joint_positions(self) -> np.ndarray:
@@ -697,13 +697,25 @@ class PingPongSimTest(unittest.TestCase):
         env.sim = FakeSim()
         env.controller = FakeController(env.sim.racket_position)
 
-        env.reset(ball_height=0.50, ball_velocity=(0.20, -0.10, -0.50))
+        env.sim._ball_position = np.array([0.58, 0.11, 0.72], dtype=float)
+        env.sim._ball_velocity = np.array([0.05, -0.03, -0.50], dtype=float)
+
         _, _, terminated, truncated, info = env.step((0.0, 0.0, 0.0, 0.0, 0.0))
 
         self.assertFalse(terminated)
         self.assertFalse(truncated)
         self.assertGreater(float(info["target_tilt"][0]), 0.0)
         self.assertGreater(float(info["target_tilt"][1]), 0.0)
+
+    def test_ee_delta_env_suppresses_tilt_control_at_episode_start(self) -> None:
+        env = PingPongEEDeltaEnv(action_mode="position_tilt")
+        env.reset(ball_height=0.50, ball_velocity=(0.0, 0.0, 0.0))
+
+        _, _, terminated, truncated, info = env.step((0.0, 0.0, 0.0, 0.12, -0.12))
+
+        self.assertFalse(terminated)
+        self.assertFalse(truncated)
+        np.testing.assert_allclose(info["target_tilt"], np.zeros(2, dtype=float), atol=1.0e-9)
 
     def test_ee_delta_env_truncates_at_time_limit_and_reset_clears_counter(self) -> None:
         env = PingPongEEDeltaEnv(max_episode_steps=2)
@@ -1204,7 +1216,7 @@ class PingPongSimTest(unittest.TestCase):
         class FakeSim:
             def __init__(self) -> None:
                 self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
-                self._ball_position = np.array([0.56, 0.13, 1.02], dtype=float)
+                self._ball_position = np.array([0.56, 0.13, 0.70], dtype=float)
                 self._ball_velocity = np.array([0.0, 0.0, -0.35], dtype=float)
                 self._racket_velocity = np.array([0.0, 0.0, 0.18], dtype=float)
 
@@ -1240,7 +1252,7 @@ class PingPongSimTest(unittest.TestCase):
         class FakeSim:
             def __init__(self) -> None:
                 self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
-                self._ball_position = np.array([0.67, 0.125, 1.00], dtype=float)
+                self._ball_position = np.array([0.67, 0.125, 0.74], dtype=float)
                 self._ball_velocity = np.array([-0.45, 0.0, -0.40], dtype=float)
 
             @property
@@ -1260,6 +1272,32 @@ class PingPongSimTest(unittest.TestCase):
 
         self.assertGreater(env._tracking_alignment_term(False), 0.0)
         self.assertGreater(env._strike_zone_score(), 0.0)
+
+    def test_ee_delta_env_strike_zone_waits_until_ball_descends_near_contact_band(self) -> None:
+        class FakeSim:
+            def __init__(self) -> None:
+                self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
+                self._ball_position = np.array([0.56, 0.13, 1.02], dtype=float)
+                self._ball_velocity = np.array([0.0, 0.0, -0.35], dtype=float)
+
+            @property
+            def racket_position(self) -> np.ndarray:
+                return self._racket_position.copy()
+
+            @property
+            def ball_position(self) -> np.ndarray:
+                return self._ball_position.copy()
+
+            @property
+            def ball_velocity(self) -> np.ndarray:
+                return self._ball_velocity.copy()
+
+        env = PingPongEEDeltaEnv(tracking_assist_weight=0.5, tracking_alignment_reward_weight=2.0)
+        env.sim = FakeSim()
+
+        self.assertEqual(env._strike_zone_score(), 0.0)
+        self.assertEqual(env._tracking_alignment_term(False), 0.0)
+        self.assertIsNone(env._tracking_assist_target())
 
     def test_ee_delta_env_contact_centering_reward_prefers_racket_center_hits(self) -> None:
         class FakeSim:

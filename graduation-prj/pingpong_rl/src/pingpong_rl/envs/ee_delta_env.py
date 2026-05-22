@@ -74,7 +74,7 @@ class PingPongEEDeltaEnv:
         rebound_direction_reward_weight: float = 0.0,
         tracking_assist_weight: float = 0.20,
         tracking_assist_preview_time: float = 0.10,
-        tilt_tracking_assist_weight: float = 0.20,
+        tilt_tracking_assist_weight: float = 0.0,
         controller_position_gain: float = 1.8,
         controller_orientation_gain: float = 0.75,
         controller_max_position_step: float = 0.08,
@@ -564,6 +564,8 @@ class PingPongEEDeltaEnv:
                 )
             requested_position_action = np.clip(action_array[:3], -self.action_limit, self.action_limit)
             requested_tilt_action = np.clip(action_array[3:], -self.tilt_action_limit, self.tilt_action_limit)
+            if not self._tilt_control_ready():
+                requested_tilt_action = np.zeros(2, dtype=float)
 
         applied_position_action = self._filtered_action(requested_position_action)
         applied_tilt_action = requested_tilt_action.copy()
@@ -950,14 +952,15 @@ class PingPongEEDeltaEnv:
         if ball_height_above_racket < 0.0:
             return 0.0
 
-        target_ball_height_above_racket = self._target_ball_height_above_racket()
-        if ball_height_above_racket >= target_ball_height_above_racket:
-            return 1.0
-
+        preparation_target_height_above_racket = self._preparation_target_height_above_racket()
+        preparation_height_tolerance = max(self.strike_zone_height_tolerance, 0.16)
         return max(
-            1.0 - (target_ball_height_above_racket - ball_height_above_racket) / self.strike_zone_height_tolerance,
+            1.0 - abs(ball_height_above_racket - preparation_target_height_above_racket) / preparation_height_tolerance,
             0.0,
         )
+
+    def _preparation_target_height_above_racket(self) -> float:
+        return float(np.clip(self._tracking_strike_plane_offset() + 0.08, 0.10, 0.24))
 
     def _tracking_alignment_score(self) -> float:
         if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
@@ -996,6 +999,8 @@ class PingPongEEDeltaEnv:
     def _tracking_assist_tilt(self) -> np.ndarray | None:
         if self.action_mode != "position_tilt" or self.tilt_tracking_assist_weight <= 0.0:
             return None
+        if not self._tilt_control_ready():
+            return None
 
         strike_zone_score = self._strike_zone_score()
         if strike_zone_score <= 0.0:
@@ -1025,6 +1030,13 @@ class PingPongEEDeltaEnv:
             1.0,
         )
         return np.clip(strike_zone_score * desired_tilt, -self.target_tilt_limit, self.target_tilt_limit)
+
+    def _tilt_control_ready(self) -> bool:
+        if self.action_mode != "position_tilt":
+            return False
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return False
+        return self._preparation_height_score() > 0.0
 
     def _update_flight_metrics(self, contact_event: bool) -> None:
         current_height = max(self._ball_height_above_racket(), 0.0)

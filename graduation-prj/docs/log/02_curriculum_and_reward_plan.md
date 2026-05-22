@@ -144,6 +144,29 @@
 - predicted-intercept 정렬과 중앙 적중 shaping은 필요한 보강이었다.
 - `position_tilt` action 추가는 구조적으로 맞는 방향이지만, `40k`에서는 아직 `v6`를 넘지 못했다.
 
+### 8.1 `ppo_keepup_v10` 회귀 점검
+
+`ppo_keepup_v10` 100k run은 이전 `v9`보다 명확하게 악화됐다.
+
+- `v9`: 평균 bounce `2.2918`, `episodes_with_bounces = 2734`, contact `10069`
+- `v10`: 평균 bounce `0.0267`, `episodes_with_bounces = 142`, contact `1195`
+- 특히 `robot_body_contact = 3287/5318`로 크게 증가했다.
+
+이번 회귀에서 가장 직접적인 차이는 `episode step 1`부터 tilt가 항상 켜졌다는 점이다.
+
+- `v9` step1 nonzero tilt ratio: `0.0`
+- `v10` step1 nonzero tilt ratio: `1.0`
+
+즉 `position_tilt` 자체가 문제라기보다, reset 직후부터 tilt 관련 개입이 들어가면서 정책이 너무 이른 시점에 팔을 흔들도록 학습된 쪽으로 보는 편이 맞다.
+
+그래서 현재 코드는 아래처럼 다시 단순화했다.
+
+- 기본 `tilt_tracking_assist_weight = 0.0`
+- curriculum 모든 stage에서도 tilt heuristic assist 제거
+- 공이 초기 spawn 높이에서 충분히 내려오기 전에는 tilt residual action 자체를 막음
+
+정리하면, 현재 우선순위는 `tilt를 더 세게 도와주기`가 아니라 `tilt는 늦게 열고, 위치 추종/타이밍부터 다시 안정화`하는 쪽이다.
+
 따라서 현재 우선순위는 아래다.
 
 1. `position_tilt` 모드를 더 긴 budget으로 돌려 보기
