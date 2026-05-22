@@ -604,6 +604,12 @@ class PingPongSimTest(unittest.TestCase):
             "contact_ball_velocity_z": 1.0,
             "contact_ball_speed_norm": 1.0,
         }
+        outward_trace = {
+            "contact_ball_velocity_x": 0.5,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": 1.0,
+            "contact_ball_speed_norm": float(np.linalg.norm([0.5, 0.0, 1.0])),
+        }
         shallow_trace = {
             "contact_ball_velocity_x": 1.0,
             "contact_ball_velocity_y": 0.0,
@@ -612,10 +618,13 @@ class PingPongSimTest(unittest.TestCase):
         }
 
         vertical_term = env._rebound_direction_term(True, vertical_trace)
+        outward_term = env._rebound_direction_term(True, outward_trace)
         shallow_term = env._rebound_direction_term(True, shallow_trace)
 
         self.assertEqual(vertical_term, 0.0)
+        self.assertLess(outward_term, 0.0)
         self.assertLess(shallow_term, 0.0)
+        self.assertGreater(vertical_term, outward_term)
         self.assertGreater(vertical_term, shallow_term)
 
     def test_ee_delta_env_step_clips_action_and_returns_flat_contract(self) -> None:
@@ -1072,7 +1081,10 @@ class PingPongSimTest(unittest.TestCase):
         self.assertEqual(success_info["contact_count"], 1)
         self.assertEqual(success_info["successful_bounce_count"], 1)
         self.assertGreater(success_info["ball_vertical_velocity"], env.success_velocity_threshold)
-        self.assertEqual(float(success_info["reward_success"]), env.success_bonus)
+        self.assertEqual(
+            float(success_info["reward_success"]),
+            env.success_bonus * env.first_bounce_success_scale,
+        )
 
     def test_ee_delta_env_success_uses_transient_contact_trace(self) -> None:
         class FakeSim:
@@ -1164,7 +1176,10 @@ class PingPongSimTest(unittest.TestCase):
         self.assertEqual(success_info["success_reason"], "useful_keepup_bounce")
         self.assertTrue(success_info["contact_observed_during_step"])
         self.assertTrue(success_info["contact_event_during_step"])
-        self.assertEqual(float(success_info["reward_success"]), env.success_bonus)
+        self.assertEqual(
+            float(success_info["reward_success"]),
+            env.success_bonus * env.first_bounce_success_scale,
+        )
         self.assertGreater(float(success_info["reward_lift_term"]), 0.0)
 
     def test_ee_delta_env_low_contact_does_not_count_success_without_required_apex(self) -> None:

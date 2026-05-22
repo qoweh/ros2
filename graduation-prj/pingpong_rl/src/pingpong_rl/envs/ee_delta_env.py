@@ -46,6 +46,7 @@ class PingPongEEDeltaEnv:
         stale_contact_penalty: float = -0.25,
         success_bonus: float = 12.0,
         bounce_progress_bonus: float = 6.0,
+        first_bounce_success_scale: float = 0.25,
         target_ball_height: float = DEFAULT_BALL_HEIGHT,
         height_tolerance: float = 0.10,
         height_reward_weight: float = 0.25,
@@ -71,7 +72,7 @@ class PingPongEEDeltaEnv:
         contact_centering_radius: float = 0.04,
         lateral_contact_velocity_penalty_weight: float = 2.0,
         target_rebound_vertical_ratio: float = 0.80,
-        rebound_direction_reward_weight: float = 0.0,
+        rebound_direction_reward_weight: float = 1.5,
         tracking_assist_weight: float = 0.20,
         tracking_assist_preview_time: float = 0.10,
         tilt_tracking_assist_weight: float = 0.0,
@@ -105,6 +106,7 @@ class PingPongEEDeltaEnv:
         self.stale_contact_penalty = float(stale_contact_penalty)
         self.success_bonus = float(success_bonus)
         self.bounce_progress_bonus = float(bounce_progress_bonus)
+        self.first_bounce_success_scale = float(first_bounce_success_scale)
         self.target_ball_height = float(target_ball_height)
         self.height_tolerance = float(height_tolerance)
         self.height_reward_weight = float(height_reward_weight)
@@ -162,6 +164,11 @@ class PingPongEEDeltaEnv:
             )
         if self.target_ball_height <= 0.0:
             raise ValueError(f"target_ball_height must be positive, got {self.target_ball_height}.")
+        if not 0.0 <= self.first_bounce_success_scale <= 1.0:
+            raise ValueError(
+                "first_bounce_success_scale must be in [0, 1], got "
+                f"{self.first_bounce_success_scale}."
+            )
         if self.height_tolerance <= 0.0:
             raise ValueError(f"height_tolerance must be positive, got {self.height_tolerance}.")
         if self.target_contact_velocity_z < self.useful_contact_velocity_z:
@@ -366,6 +373,7 @@ class PingPongEEDeltaEnv:
                 "stale_contact_penalty": self.stale_contact_penalty,
                 "success_bonus": self.success_bonus,
                 "bounce_progress_bonus": self.bounce_progress_bonus,
+                "first_bounce_success_scale": self.first_bounce_success_scale,
                 "target_ball_height": self.target_ball_height,
                 "target_ball_height_reference": "max(target_height_above_racket, spawn_ball_height_above_racket)",
                 "height_tolerance": self.height_tolerance,
@@ -805,10 +813,7 @@ class PingPongEEDeltaEnv:
         elif contact_active:
             reward_terms["contact_bonus"] = self.stale_contact_penalty
         if success_reason is not None:
-            reward_terms["success_bonus"] = self.success_bonus + self.bounce_progress_bonus * max(
-                self.successful_bounce_count - 1,
-                0,
-            )
+            reward_terms["success_bonus"] = self._success_bonus_term()
         if failure_reason == "floor_contact":
             reward_terms["failure_penalty"] = self.floor_penalty
         elif failure_reason == "robot_body_contact":
@@ -816,6 +821,13 @@ class PingPongEEDeltaEnv:
         elif failure_reason is not None:
             reward_terms["failure_penalty"] = self.failure_penalty
         return reward_terms
+
+    def _success_bonus_term(self) -> float:
+        if self.successful_bounce_count <= 0:
+            return 0.0
+        if self.successful_bounce_count == 1:
+            return float(self.first_bounce_success_scale * self.success_bonus)
+        return float(self.success_bonus + self.bounce_progress_bonus * max(self.successful_bounce_count - 1, 0))
 
     def _ball_height_above_racket(self) -> float:
         return float(self.sim.ball_position[2] - self.sim.racket_position[2])
@@ -1305,6 +1317,30 @@ class PingPongEEDeltaEnv:
         contact_ball_velocity_y = self._contact_float(contact_trace, "contact_ball_velocity_y", default=float(self.sim.ball_velocity[1]))
         return float(np.linalg.norm([contact_ball_velocity_x, contact_ball_velocity_y]))
 
+    def _contact_ball_velocity_xy(self, contact_trace: dict[str, object] | None) -> np.ndarray:
+        return np.array(
+            [
+                self._contact_float(contact_trace, "contact_ball_velocity_x", default=float(self.sim.ball_velocity[0])),
+                self._contact_float(contact_trace, "contact_ball_velocity_y", default=float(self.sim.ball_velocity[1])),
+            ],
+            dtype=float,
+        )
+
+    def _contact_ball_outward_speed(self, contact_trace: dict[str, object] | None) -> float:
+        velocity_xy = self._contact_ball_velocity_xy(contact_trace)
+        lateral_speed = float(np.linalg.norm(velocity_xy))
+        if lateral_speed <= 1.0e-6:
+            return 0.0
+
+        anchor_xy = self._controller_anchor_position()[:2]
+        contact_offset_xy = np.asarray(self.sim.ball_position[:2], dtype=float) - anchor_xy
+        contact_offset_norm = float(np.linalg.norm(contact_offset_xy))
+        if contact_offset_norm <= 1.0e-6:
+            return lateral_speed
+
+        outward_direction_xy = contact_offset_xy / contact_offset_norm
+        return float(max(np.dot(velocity_xy, outward_direction_xy), 0.0))
+
     def _contact_ball_speed_norm(self, contact_trace: dict[str, object] | None) -> float:
         if contact_trace is not None:
             raw_speed_norm = contact_trace.get("contact_ball_speed_norm")
@@ -1328,13 +1364,18 @@ class PingPongEEDeltaEnv:
         if not contact_event or self.rebound_direction_reward_weight <= 0.0:
             return 0.0
         rebound_vertical_ratio = self._contact_rebound_vertical_ratio(contact_trace)
-        if rebound_vertical_ratio >= self.target_rebound_vertical_ratio:
-            return 0.0
-        rebound_direction_shortfall = self.target_rebound_vertical_ratio - rebound_vertical_ratio
+        rebound_direction_shortfall = max(self.target_rebound_vertical_ratio - rebound_vertical_ratio, 0.0)
+        direction_penalty_speed = max(
+            self._contact_ball_lateral_speed(contact_trace),
+            self._contact_ball_outward_speed(contact_trace),
+        )
+        outward_speed_penalty = direction_penalty_speed / max(self.useful_contact_velocity_z, 1.0e-6)
         return float(
             -self.rebound_direction_reward_weight
-            * rebound_direction_shortfall
-            / max(self.target_rebound_vertical_ratio, 1.0e-6)
+            * (
+                rebound_direction_shortfall / max(self.target_rebound_vertical_ratio, 1.0e-6)
+                + outward_speed_penalty
+            )
         )
 
     def _orientation_term(self) -> float:
