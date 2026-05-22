@@ -466,9 +466,46 @@ class PingPongSimTest(unittest.TestCase):
         env.controller = FakeController()
         env.contact_count = 0
 
-        guarded_target = env._guarded_target_position(np.array([0.57, 0.12, 0.60], dtype=float))
+        guarded_target = env._guarded_target_position(np.array([0.67, 0.12, 0.60], dtype=float))
 
         self.assertAlmostEqual(float(guarded_target[2]), 0.54, places=6)
+        self.assertAlmostEqual(float(guarded_target[0]), 0.59, places=6)
+
+    def test_ee_delta_env_pre_contact_guard_limits_xy_target_until_ball_is_close(self) -> None:
+        class FakeBody:
+            def __init__(self, body_id: int) -> None:
+                self.id = body_id
+
+        class FakeModel:
+            def body(self, name: str) -> FakeBody:
+                del name
+                return FakeBody(0)
+
+        class FakeData:
+            def __init__(self) -> None:
+                self.xpos = np.array([[0.30, 0.00, 0.60]], dtype=float)
+
+        class FakeSim:
+            def __init__(self) -> None:
+                self.model = FakeModel()
+                self.data = FakeData()
+                self.ball_position = np.array([0.67, 0.12, 0.82], dtype=float)
+                self.ball_velocity = np.array([0.0, 0.0, -0.30], dtype=float)
+                self.racket_position = np.array([0.55, 0.12, 0.52], dtype=float)
+
+        class FakeController:
+            def __init__(self) -> None:
+                self._anchor_position = np.array([0.55, 0.12, 0.52], dtype=float)
+
+        env = PingPongEEDeltaEnv()
+        env.sim = FakeSim()
+        env.controller = FakeController()
+        env.contact_count = 0
+
+        guarded_target = env._guarded_target_position(np.array([0.67, 0.12, 0.60], dtype=float))
+
+        self.assertAlmostEqual(float(env._pre_contact_xy_limit()), 0.04, places=6)
+        self.assertAlmostEqual(float(guarded_target[0]), 0.59, places=6)
 
     def test_ee_delta_env_pre_contact_guard_releases_upward_target_when_ball_is_ready(self) -> None:
         class FakeBody:
@@ -504,6 +541,7 @@ class PingPongSimTest(unittest.TestCase):
         guarded_target = env._guarded_target_position(np.array([0.57, 0.12, 0.60], dtype=float))
 
         self.assertAlmostEqual(float(guarded_target[2]), 0.60, places=6)
+        self.assertGreater(float(env._pre_contact_xy_limit()), 0.04)
 
     def test_reset_ball_height_range_randomizes_spawn_height_when_not_overridden(self) -> None:
         env = PingPongEEDeltaEnv(ball_height=0.50, reset_ball_height_range=0.05)

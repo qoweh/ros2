@@ -155,8 +155,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reset-xy-range",
         type=float,
-        default=0.015,
-        help="Uniform reset XY offset range around racket_center. Use 0 to disable.",
+        default=None,
+        help="Optional uniform reset XY offset range around racket_center. If omitted, use the env/curriculum defaults.",
     )
     parser.add_argument(
         "--reset-ball-height-range",
@@ -289,7 +289,8 @@ def main() -> None:
         if args.tracking_assist_preview_time is not None:
             env_kwargs["tracking_assist_preview_time"] = args.tracking_assist_preview_time
         env_kwargs["reset_ball_height_range"] = args.reset_ball_height_range
-        env_kwargs["reset_xy_range"] = args.reset_xy_range
+        if args.reset_xy_range is not None:
+            env_kwargs["reset_xy_range"] = args.reset_xy_range
         env_kwargs["reset_velocity_xy_range"] = args.reset_velocity_xy_range
         env_kwargs["reset_velocity_z_range"] = tuple(args.reset_velocity_z_range)
         return PingPongEEDeltaGymEnv(

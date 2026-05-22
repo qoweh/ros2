@@ -1045,6 +1045,15 @@ class PingPongEEDeltaEnv:
             return False
         return self._tracking_alignment_error() <= max(1.5 * self.contact_centering_radius, 0.6 * self.strike_zone_xy_radius)
 
+    def _pre_contact_xy_limit(self) -> float:
+        full_xy_limit = min(self.strike_zone_xy_radius, float(np.min(self.target_offset_high[:2])))
+        base_xy_limit = min(max(self.contact_centering_radius, 0.4 * full_xy_limit), full_xy_limit)
+        if self.contact_count > 0:
+            return float(full_xy_limit)
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return float(base_xy_limit)
+        return float(base_xy_limit + self._preparation_height_score() * (full_xy_limit - base_xy_limit))
+
     def _body_safe_target_position(self, target_position: Sequence[float]) -> np.ndarray:
         safe_target = np.asarray(target_position, dtype=float).copy()
         if safe_target.shape != (3,):
@@ -1088,6 +1097,14 @@ class PingPongEEDeltaEnv:
 
     def _guarded_target_position(self, target_position: Sequence[float]) -> np.ndarray:
         safe_target = self._body_safe_target_position(target_position)
+        if self.contact_count <= 0:
+            anchor_position = self._controller_anchor_position()
+            pre_contact_xy_limit = self._pre_contact_xy_limit()
+            safe_target[:2] = anchor_position[:2] + np.clip(
+                safe_target[:2] - anchor_position[:2],
+                -pre_contact_xy_limit,
+                pre_contact_xy_limit,
+            )
         if self._pre_contact_upward_ready():
             return safe_target
 
