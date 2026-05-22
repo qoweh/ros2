@@ -627,6 +627,59 @@ class PingPongSimTest(unittest.TestCase):
         self.assertGreater(vertical_term, outward_term)
         self.assertGreater(vertical_term, shallow_term)
 
+    def test_ee_delta_env_single_bounce_out_penalty_only_applies_to_one_bounce_out(self) -> None:
+        class FakeSim:
+            def __init__(self) -> None:
+                self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
+                self._ball_position = np.array([0.55, 0.125, 0.76], dtype=float)
+                self._ball_velocity = np.array([0.0, 0.0, -0.2], dtype=float)
+
+            @property
+            def racket_position(self) -> np.ndarray:
+                return self._racket_position.copy()
+
+            @property
+            def ball_position(self) -> np.ndarray:
+                return self._ball_position.copy()
+
+            @property
+            def ball_velocity(self) -> np.ndarray:
+                return self._ball_velocity.copy()
+
+        env = PingPongEEDeltaEnv(single_bounce_out_penalty=-12.0)
+        env.sim = FakeSim()
+
+        env.successful_bounce_count = 1
+        one_bounce_terms = env._reward_terms(
+            failure_reason="ball_out_of_bounds",
+            success_reason=None,
+            contact_event=False,
+            contact_active=False,
+        )
+
+        env.successful_bounce_count = 0
+        zero_bounce_terms = env._reward_terms(
+            failure_reason="ball_out_of_bounds",
+            success_reason=None,
+            contact_event=False,
+            contact_active=False,
+        )
+
+        env.successful_bounce_count = 2
+        multi_bounce_terms = env._reward_terms(
+            failure_reason="ball_out_of_bounds",
+            success_reason=None,
+            contact_event=False,
+            contact_active=False,
+        )
+
+        self.assertEqual(
+            float(one_bounce_terms["failure_penalty"]),
+            env.failure_penalty + env.single_bounce_out_penalty,
+        )
+        self.assertEqual(float(zero_bounce_terms["failure_penalty"]), env.failure_penalty)
+        self.assertEqual(float(multi_bounce_terms["failure_penalty"]), env.failure_penalty)
+
     def test_ee_delta_env_step_clips_action_and_returns_flat_contract(self) -> None:
         env = PingPongEEDeltaEnv()
         observation, reset_info = env.reset()

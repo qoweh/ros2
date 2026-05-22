@@ -46,7 +46,7 @@ class PingPongEEDeltaEnv:
         stale_contact_penalty: float = -0.25,
         success_bonus: float = 12.0,
         bounce_progress_bonus: float = 6.0,
-        first_bounce_success_scale: float = 0.25,
+        first_bounce_success_scale: float = 1.0,
         target_ball_height: float = DEFAULT_BALL_HEIGHT,
         height_tolerance: float = 0.10,
         height_reward_weight: float = 0.25,
@@ -72,7 +72,7 @@ class PingPongEEDeltaEnv:
         contact_centering_radius: float = 0.04,
         lateral_contact_velocity_penalty_weight: float = 2.0,
         target_rebound_vertical_ratio: float = 0.80,
-        rebound_direction_reward_weight: float = 1.5,
+        rebound_direction_reward_weight: float = 0.0,
         tracking_assist_weight: float = 0.20,
         tracking_assist_preview_time: float = 0.10,
         tilt_tracking_assist_weight: float = 0.0,
@@ -87,6 +87,7 @@ class PingPongEEDeltaEnv:
         floor_penalty: float = -8.0,
         robot_body_contact_penalty: float = -10.0,
         failure_penalty: float = -5.0,
+        single_bounce_out_penalty: float = -12.0,
         reset_ball_height_range: float = 0.0,
         reset_xy_range: float = 0.015,
         reset_velocity_xy_range: float = 0.01,
@@ -147,6 +148,7 @@ class PingPongEEDeltaEnv:
         self.floor_penalty = float(floor_penalty)
         self.robot_body_contact_penalty = float(robot_body_contact_penalty)
         self.failure_penalty = float(failure_penalty)
+        self.single_bounce_out_penalty = float(single_bounce_out_penalty)
         self.reset_ball_height_range = float(reset_ball_height_range)
         self.reset_xy_range = float(reset_xy_range)
         self.reset_velocity_xy_range = float(reset_velocity_xy_range)
@@ -266,6 +268,11 @@ class PingPongEEDeltaEnv:
             )
         if not 0.0 <= self.action_filter_alpha < 1.0:
             raise ValueError(f"action_filter_alpha must be in [0, 1), got {self.action_filter_alpha}.")
+        if self.single_bounce_out_penalty > 0.0:
+            raise ValueError(
+                "single_bounce_out_penalty must be non-positive, got "
+                f"{self.single_bounce_out_penalty}."
+            )
         if self.reset_ball_height_range < 0.0:
             raise ValueError(
                 f"reset_ball_height_range must be non-negative, got {self.reset_ball_height_range}."
@@ -374,6 +381,7 @@ class PingPongEEDeltaEnv:
                 "success_bonus": self.success_bonus,
                 "bounce_progress_bonus": self.bounce_progress_bonus,
                 "first_bounce_success_scale": self.first_bounce_success_scale,
+                "single_bounce_out_penalty": self.single_bounce_out_penalty,
                 "target_ball_height": self.target_ball_height,
                 "target_ball_height_reference": "max(target_height_above_racket, spawn_ball_height_above_racket)",
                 "height_tolerance": self.height_tolerance,
@@ -820,6 +828,7 @@ class PingPongEEDeltaEnv:
             reward_terms["failure_penalty"] = self.robot_body_contact_penalty
         elif failure_reason is not None:
             reward_terms["failure_penalty"] = self.failure_penalty
+        reward_terms["failure_penalty"] += self._single_bounce_out_penalty_term(failure_reason)
         return reward_terms
 
     def _success_bonus_term(self) -> float:
@@ -828,6 +837,13 @@ class PingPongEEDeltaEnv:
         if self.successful_bounce_count == 1:
             return float(self.first_bounce_success_scale * self.success_bonus)
         return float(self.success_bonus + self.bounce_progress_bonus * max(self.successful_bounce_count - 1, 0))
+
+    def _single_bounce_out_penalty_term(self, failure_reason: str | None) -> float:
+        if failure_reason != "ball_out_of_bounds":
+            return 0.0
+        if self.successful_bounce_count != 1:
+            return 0.0
+        return float(self.single_bounce_out_penalty)
 
     def _ball_height_above_racket(self) -> float:
         return float(self.sim.ball_position[2] - self.sim.racket_position[2])
