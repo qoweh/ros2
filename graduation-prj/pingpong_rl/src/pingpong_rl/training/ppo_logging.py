@@ -84,6 +84,13 @@ STEP_FIELDS: tuple[str, ...] = (
     "last_apex_height_above_racket",
     "last_apex_xy_alignment_error",
     "last_bounce_interval_steps",
+    "target_tilt_pitch",
+    "target_tilt_roll",
+    "target_face_normal_x",
+    "target_face_normal_y",
+    "target_face_normal_z",
+    "minimum_success_height_above_racket",
+    "projected_contact_apex_height_above_racket",
     "racket_face_normal_z",
     "robot_body_contact_body",
     "contact_ball_velocity_x",
@@ -315,6 +322,11 @@ class PPOLoggingCallback(BaseCallback):
         self._episode_states = [self._empty_episode_state() for _ in range(self.training_env.num_envs)]
 
     def _step_row(self, episode_index: int, info: dict[str, object]) -> dict[str, object]:
+        target_tilt = np.asarray(info.get("target_tilt", np.zeros(2, dtype=float)), dtype=float)
+        target_face_normal = np.asarray(
+            info.get("target_face_normal", np.array([0.0, 0.0, -1.0], dtype=float)),
+            dtype=float,
+        )
         return {
             "episode_index": episode_index,
             "step": int(info["episode_steps"]),
@@ -354,6 +366,13 @@ class PPOLoggingCallback(BaseCallback):
             "last_apex_height_above_racket": info.get("last_apex_height_above_racket"),
             "last_apex_xy_alignment_error": info.get("last_apex_xy_alignment_error"),
             "last_bounce_interval_steps": info.get("last_bounce_interval_steps"),
+            "target_tilt_pitch": float(target_tilt[0]),
+            "target_tilt_roll": float(target_tilt[1]),
+            "target_face_normal_x": float(target_face_normal[0]),
+            "target_face_normal_y": float(target_face_normal[1]),
+            "target_face_normal_z": float(target_face_normal[2]),
+            "minimum_success_height_above_racket": float(info.get("minimum_success_height_above_racket", 0.0)),
+            "projected_contact_apex_height_above_racket": info.get("projected_contact_apex_height_above_racket"),
             "racket_face_normal_z": float(info.get("racket_face_normal_z", 0.0)),
             "robot_body_contact_body": _normalize_reason(info.get("robot_body_contact_body")),
             "contact_ball_velocity_x": info["contact_ball_velocity_x"],

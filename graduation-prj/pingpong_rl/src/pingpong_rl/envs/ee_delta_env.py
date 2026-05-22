@@ -74,6 +74,11 @@ class PingPongEEDeltaEnv:
         rebound_direction_reward_weight: float = 0.0,
         tracking_assist_weight: float = 0.20,
         tracking_assist_preview_time: float = 0.10,
+        tilt_tracking_assist_weight: float = 0.20,
+        controller_position_gain: float = 1.8,
+        controller_orientation_gain: float = 0.75,
+        controller_max_position_step: float = 0.08,
+        controller_max_orientation_step: float = 0.18,
         racket_tilt_penalty_weight: float = 0.0,
         joint_velocity_penalty_weight: float = 0.0,
         action_smoothness_penalty_weight: float = 0.0,
@@ -128,6 +133,11 @@ class PingPongEEDeltaEnv:
         self.rebound_direction_reward_weight = float(rebound_direction_reward_weight)
         self.tracking_assist_weight = float(tracking_assist_weight)
         self.tracking_assist_preview_time = float(tracking_assist_preview_time)
+        self.tilt_tracking_assist_weight = float(tilt_tracking_assist_weight)
+        self.controller_position_gain = float(controller_position_gain)
+        self.controller_orientation_gain = float(controller_orientation_gain)
+        self.controller_max_position_step = float(controller_max_position_step)
+        self.controller_max_orientation_step = float(controller_max_orientation_step)
         self.racket_tilt_penalty_weight = float(racket_tilt_penalty_weight)
         self.joint_velocity_penalty_weight = float(joint_velocity_penalty_weight)
         self.action_smoothness_penalty_weight = float(action_smoothness_penalty_weight)
@@ -213,6 +223,26 @@ class PingPongEEDeltaEnv:
             raise ValueError(
                 f"tracking_assist_preview_time must be non-negative, got {self.tracking_assist_preview_time}."
             )
+        if not 0.0 <= self.tilt_tracking_assist_weight <= 1.0:
+            raise ValueError(
+                f"tilt_tracking_assist_weight must be in [0, 1], got {self.tilt_tracking_assist_weight}."
+            )
+        if self.controller_position_gain <= 0.0:
+            raise ValueError(
+                f"controller_position_gain must be positive, got {self.controller_position_gain}."
+            )
+        if self.controller_orientation_gain <= 0.0:
+            raise ValueError(
+                f"controller_orientation_gain must be positive, got {self.controller_orientation_gain}."
+            )
+        if self.controller_max_position_step <= 0.0:
+            raise ValueError(
+                f"controller_max_position_step must be positive, got {self.controller_max_position_step}."
+            )
+        if self.controller_max_orientation_step <= 0.0:
+            raise ValueError(
+                f"controller_max_orientation_step must be positive, got {self.controller_max_orientation_step}."
+            )
         if self.racket_tilt_penalty_weight < 0.0:
             raise ValueError(
                 f"racket_tilt_penalty_weight must be non-negative, got {self.racket_tilt_penalty_weight}."
@@ -274,7 +304,10 @@ class PingPongEEDeltaEnv:
         self._last_bounce_interval_steps: int | None = None
         self.controller = RacketCartesianController(
             self.sim,
-            max_position_step=self.action_limit,
+            position_gain=self.controller_position_gain,
+            orientation_gain=self.controller_orientation_gain,
+            max_position_step=self.controller_max_position_step,
+            max_orientation_step=self.controller_max_orientation_step,
             target_offset_low=self.target_offset_low,
             target_offset_high=self.target_offset_high,
             target_tilt_limit=self.target_tilt_limit,
@@ -334,7 +367,7 @@ class PingPongEEDeltaEnv:
                 "success_bonus": self.success_bonus,
                 "bounce_progress_bonus": self.bounce_progress_bonus,
                 "target_ball_height": self.target_ball_height,
-                "target_ball_height_reference": "target_height_above_racket",
+                "target_ball_height_reference": "max(target_height_above_racket, spawn_ball_height_above_racket)",
                 "height_tolerance": self.height_tolerance,
                 "height_reward_weight": self.height_reward_weight,
                 "height_overshoot_penalty_weight": self.height_overshoot_penalty_weight,
@@ -384,6 +417,11 @@ class PingPongEEDeltaEnv:
                 "target_tilt_limit": self.target_tilt_limit.tolist(),
                 "tracking_assist_weight": self.tracking_assist_weight,
                 "tracking_assist_preview_time": self.tracking_assist_preview_time,
+                "tilt_tracking_assist_weight": self.tilt_tracking_assist_weight,
+                "position_gain": self.controller_position_gain,
+                "orientation_gain": self.controller_orientation_gain,
+                "max_position_step": self.controller_max_position_step,
+                "max_orientation_step": self.controller_max_orientation_step,
             },
         }
 
@@ -473,6 +511,8 @@ class PingPongEEDeltaEnv:
             "target_face_normal": self.controller.target_face_normal if hasattr(self.controller, "target_face_normal") else np.array([0.0, 0.0, -1.0], dtype=float),
             "spawn_ball_height_above_racket": self._spawn_ball_height_above_racket,
             "target_ball_height_above_racket": self._target_ball_height_above_racket(),
+            "minimum_success_height_above_racket": self._target_ball_height_above_racket(),
+            "projected_contact_apex_height_above_racket": None,
             "time_limit_reached": False,
             "terminated": False,
             "truncated": False,
@@ -549,6 +589,14 @@ class PingPongEEDeltaEnv:
                 self.controller.set_target_position(assisted_target)
             else:
                 self.controller.add_target_offset(assisted_target - current_target)
+        tilt_tracking_assist_target = self._tracking_assist_tilt()
+        if tilt_tracking_assist_target is not None and hasattr(self.controller, "set_target_tilt"):
+            current_tilt = self.controller.target_tilt if hasattr(self.controller, "target_tilt") else np.zeros(2, dtype=float)
+            assisted_tilt = (
+                (1.0 - self.tilt_tracking_assist_weight) * current_tilt
+                + self.tilt_tracking_assist_weight * tilt_tracking_assist_target
+            )
+            self.controller.set_target_tilt(assisted_tilt)
         joint_targets = self.controller.compute_joint_targets()
         if hasattr(self.sim, "step_with_contact_trace"):
             contact_trace = self.sim.step_with_contact_trace(
@@ -584,6 +632,11 @@ class PingPongEEDeltaEnv:
         contact_event = contact_active and not self._contact_active_previous_step
         self._update_flight_metrics(contact_event)
         success_reason = self._success_reason(failure_reason, contact_trace, contact_event)
+        projected_contact_apex_height = (
+            self._projected_contact_apex_height_above_racket(contact_trace)
+            if contact_event
+            else None
+        )
         if contact_event:
             self.contact_count += 1
         if success_reason is not None:
@@ -670,6 +723,8 @@ class PingPongEEDeltaEnv:
             "successful_bounce_count": self.successful_bounce_count,
             "spawn_ball_height_above_racket": self._spawn_ball_height_above_racket,
             "target_ball_height_above_racket": self._target_ball_height_above_racket(),
+            "minimum_success_height_above_racket": self._target_ball_height_above_racket(),
+            "projected_contact_apex_height_above_racket": projected_contact_apex_height,
             "time_limit_reached": truncated,
             "terminated": terminated,
             "truncated": truncated,
@@ -701,6 +756,8 @@ class PingPongEEDeltaEnv:
             contact_ball_velocity_z = float(self.sim.ball_velocity[2])
 
         if float(contact_ball_velocity_z) <= self.success_velocity_threshold:
+            return None
+        if self._projected_contact_apex_height_above_racket(contact_trace) + 1.0e-6 < self._target_ball_height_above_racket():
             return None
         return "useful_keepup_bounce"
 
@@ -762,16 +819,37 @@ class PingPongEEDeltaEnv:
         return float(np.linalg.norm(self.sim.ball_position[:2] - self.sim.racket_position[:2]))
 
     def _target_ball_height_above_racket(self) -> float:
-        return self.target_ball_height
+        return max(self.target_ball_height, self._spawn_ball_height_above_racket)
 
     def _failure_z_bounds(self) -> tuple[float, float]:
         dynamic_upper_bound = (
             self.sim.racket_position[2]
-            + self.target_ball_height
+            + self._target_ball_height_above_racket()
             + self.height_tolerance
             + max(self.height_tolerance, 0.20)
         )
         return (-0.05, max(2.0, float(dynamic_upper_bound)))
+
+    def _projected_apex_height_above_racket(self, ball_height_above_racket: float, ball_velocity_z: float) -> float:
+        current_height = max(float(ball_height_above_racket), 0.0)
+        if ball_velocity_z <= 0.0:
+            return current_height
+        gravity_magnitude = max(abs(self._gravity_z()), 1.0e-6)
+        return current_height + float(ball_velocity_z * ball_velocity_z / (2.0 * gravity_magnitude))
+
+    def _projected_contact_apex_height_above_racket(self, contact_trace: dict[str, object] | None) -> float:
+        contact_ball_velocity_z = self._contact_float(
+            contact_trace,
+            "contact_ball_velocity_z",
+            default=float(self.sim.ball_velocity[2]),
+        )
+        return self._projected_apex_height_above_racket(self._ball_height_above_racket(), contact_ball_velocity_z)
+
+    def _required_contact_velocity_z(self, ball_height_above_racket: float | None = None) -> float:
+        current_height = self._ball_height_above_racket() if ball_height_above_racket is None else ball_height_above_racket
+        height_shortfall = max(self._target_ball_height_above_racket() - max(float(current_height), 0.0), 0.0)
+        gravity_magnitude = max(abs(self._gravity_z()), 1.0e-6)
+        return float(np.sqrt(2.0 * gravity_magnitude * height_shortfall))
 
     def _failure_reason(self) -> str | None:
         try:
@@ -915,6 +993,39 @@ class PingPongEEDeltaEnv:
             return None
         return self._keepup_tracking_target()
 
+    def _tracking_assist_tilt(self) -> np.ndarray | None:
+        if self.action_mode != "position_tilt" or self.tilt_tracking_assist_weight <= 0.0:
+            return None
+
+        strike_zone_score = self._strike_zone_score()
+        if strike_zone_score <= 0.0:
+            return None
+
+        capture_radius = max(self.strike_zone_xy_radius, 1.0e-6)
+        predicted_offset_xy = self._predicted_intercept_xy() - self.sim.racket_position[:2]
+        lateral_velocity_xy = np.asarray(self.sim.ball_velocity[:2], dtype=float)
+        offset_component = np.array(
+            [
+                np.clip(predicted_offset_xy[0] / capture_radius, -1.0, 1.0),
+                np.clip(-predicted_offset_xy[1] / capture_radius, -1.0, 1.0),
+            ],
+            dtype=float,
+        )
+        lateral_speed_scale = max(self.useful_contact_velocity_z, 1.0e-6)
+        velocity_component = np.array(
+            [
+                np.clip(lateral_velocity_xy[0] / lateral_speed_scale, -1.0, 1.0),
+                np.clip(-lateral_velocity_xy[1] / lateral_speed_scale, -1.0, 1.0),
+            ],
+            dtype=float,
+        )
+        desired_tilt = self.target_tilt_limit * np.clip(
+            0.65 * offset_component + 0.35 * velocity_component,
+            -1.0,
+            1.0,
+        )
+        return np.clip(strike_zone_score * desired_tilt, -self.target_tilt_limit, self.target_tilt_limit)
+
     def _update_flight_metrics(self, contact_event: bool) -> None:
         current_height = max(self._ball_height_above_racket(), 0.0)
         current_xy_alignment_error = self._xy_alignment_error()
@@ -954,6 +1065,11 @@ class PingPongEEDeltaEnv:
 
     def _filtered_action(self, requested_action: np.ndarray) -> np.ndarray:
         if self.action_filter_alpha <= 0.0:
+            return requested_action.copy()
+        if (
+            float(self.sim.ball_velocity[2]) < self.descending_ball_velocity_threshold
+            and self._tracking_alignment_error() > self.contact_centering_radius
+        ):
             return requested_action.copy()
         previous_action = self._previous_action
         if previous_action.shape != requested_action.shape:
@@ -1076,21 +1192,25 @@ class PingPongEEDeltaEnv:
         if contact_ball_velocity_z is None:
             contact_ball_velocity_z = float(self.sim.ball_velocity[2])
 
+        required_contact_velocity_z = self._required_contact_velocity_z()
+        useful_contact_velocity_z = max(self.useful_contact_velocity_z, 0.75 * required_contact_velocity_z)
+        target_contact_velocity_z = max(self.target_contact_velocity_z, required_contact_velocity_z)
+
         if contact_ball_velocity_z <= 0.0:
             return -active_hit_score * self.lift_reward_weight
-        if contact_ball_velocity_z < self.useful_contact_velocity_z:
-            velocity_shortfall = self.useful_contact_velocity_z - contact_ball_velocity_z
-            return -active_hit_score * self.lift_reward_weight * velocity_shortfall / self.useful_contact_velocity_z
-        if contact_ball_velocity_z <= self.target_contact_velocity_z:
-            usable_velocity_range = max(self.target_contact_velocity_z - self.useful_contact_velocity_z, 1.0e-6)
+        if contact_ball_velocity_z < useful_contact_velocity_z:
+            velocity_shortfall = useful_contact_velocity_z - contact_ball_velocity_z
+            return -active_hit_score * self.lift_reward_weight * velocity_shortfall / max(useful_contact_velocity_z, 1.0e-6)
+        if contact_ball_velocity_z <= target_contact_velocity_z:
+            usable_velocity_range = max(target_contact_velocity_z - useful_contact_velocity_z, 1.0e-6)
             return (
                 active_hit_score
                 * self.lift_reward_weight
-                * (contact_ball_velocity_z - self.useful_contact_velocity_z)
+                * (contact_ball_velocity_z - useful_contact_velocity_z)
                 / usable_velocity_range
             )
 
-        velocity_overshoot = contact_ball_velocity_z - self.target_contact_velocity_z
+        velocity_overshoot = contact_ball_velocity_z - target_contact_velocity_z
         return active_hit_score * max(
             self.lift_reward_weight - self.lift_overshoot_penalty_weight * velocity_overshoot,
             -self.lift_reward_weight,

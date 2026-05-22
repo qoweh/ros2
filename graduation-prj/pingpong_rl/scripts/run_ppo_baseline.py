@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--action-mode",
         type=str,
-        default="position",
+        default="position_tilt",
         choices=("position", "position_tilt"),
         help="Use position-only actions or add limited pitch/roll residual actions.",
     )
@@ -60,13 +60,13 @@ def parse_args() -> argparse.Namespace:
         "--target-ball-height",
         type=float,
         default=None,
-        help="Optional absolute keep-up target height above the racket used by the height reward band.",
+        help="Optional minimum keep-up target height above the racket used by the dynamic height reward band.",
     )
     parser.add_argument(
         "--height-tolerance",
         type=float,
         default=None,
-        help="Optional tolerance band around the absolute --target-ball-height keep-up target.",
+        help="Optional tolerance band around the dynamic keep-up target height.",
     )
     parser.add_argument(
         "--useful-contact-velocity-z",

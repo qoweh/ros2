@@ -248,16 +248,17 @@ class PingPongSimTest(unittest.TestCase):
         np.testing.assert_allclose(target[:2], anchor[:2], atol=1.0e-6)
         self.assertAlmostEqual(float(target[2]), 0.52, places=6)
 
-    def test_target_ball_height_is_fixed_keepup_band_not_spawn_relative(self) -> None:
+    def test_target_ball_height_tracks_spawn_floor_when_spawn_exceeds_config(self) -> None:
         env = PingPongEEDeltaEnv(ball_height=0.50, target_ball_height=0.42)
 
         _, info = env.reset(ball_height=0.63)
 
         self.assertAlmostEqual(float(info["spawn_ball_height_above_racket"]), 0.63, places=6)
-        self.assertAlmostEqual(float(info["target_ball_height_above_racket"]), 0.42, places=6)
+        self.assertAlmostEqual(float(info["target_ball_height_above_racket"]), 0.63, places=6)
+        self.assertAlmostEqual(float(info["minimum_success_height_above_racket"]), 0.63, places=6)
         self.assertEqual(
             env.training_config()["reward_shaping"]["target_ball_height_reference"],
-            "target_height_above_racket",
+            "max(target_height_above_racket, spawn_ball_height_above_racket)",
         )
 
     def test_step_info_exposes_keepup_stability_metrics(self) -> None:
@@ -597,6 +598,113 @@ class PingPongSimTest(unittest.TestCase):
         np.testing.assert_allclose(info["target_tilt"], np.array([env.tilt_action_limit, -env.tilt_action_limit]))
         self.assertEqual(np.asarray(info["target_face_normal"]).shape, (3,))
 
+    def test_ee_delta_env_tilt_tracking_assist_nudges_target_tilt_toward_descending_ball(self) -> None:
+        class FakeOpt:
+            def __init__(self) -> None:
+                self.gravity = np.array([0.0, 0.0, -9.81], dtype=float)
+
+        class FakeModel:
+            def __init__(self) -> None:
+                self.opt = FakeOpt()
+
+        class FakeSim:
+            def __init__(self) -> None:
+                self.n_substeps = 1
+                self.model = FakeModel()
+                self._joint_positions = np.zeros(7, dtype=float)
+                self._joint_velocities = np.zeros(7, dtype=float)
+                self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
+                self._ball_position = np.array([0.60, 0.10, 1.02], dtype=float)
+                self._ball_velocity = np.array([0.20, -0.10, -0.50], dtype=float)
+
+            @property
+            def joint_positions(self) -> np.ndarray:
+                return self._joint_positions.copy()
+
+            @property
+            def joint_velocities(self) -> np.ndarray:
+                return self._joint_velocities.copy()
+
+            @property
+            def racket_position(self) -> np.ndarray:
+                return self._racket_position.copy()
+
+            @property
+            def ball_position(self) -> np.ndarray:
+                return self._ball_position.copy()
+
+            @property
+            def ball_velocity(self) -> np.ndarray:
+                return self._ball_velocity.copy()
+
+            def reset(
+                self,
+                ball_height: float | None = None,
+                ball_velocity: tuple[float, float, float] = (0.0, 0.0, 0.0),
+                ball_xy_offset: tuple[float, float] = (0.0, 0.0),
+            ) -> None:
+                height = 0.50 if ball_height is None else float(ball_height)
+                offset = np.asarray(ball_xy_offset, dtype=float)
+                self._ball_position = self._racket_position + np.array([offset[0], offset[1], height], dtype=float)
+                self._ball_velocity = np.asarray(ball_velocity, dtype=float)
+
+            def step(self, joint_targets: np.ndarray | None = None, n_substeps: int | None = None) -> None:
+                return None
+
+            def has_contact(self, geom_a: str, geom_b: str) -> bool:
+                return False
+
+            def failure_reason(self, z_bounds: tuple[float, float] | None = None) -> None:
+                return None
+
+        class FakeController:
+            def __init__(self, target_position: np.ndarray) -> None:
+                self._target_position = target_position.copy()
+                self._target_tilt = np.zeros(2, dtype=float)
+
+            @property
+            def target_position(self) -> np.ndarray:
+                return self._target_position.copy()
+
+            @property
+            def target_tilt(self) -> np.ndarray:
+                return self._target_tilt.copy()
+
+            @property
+            def target_face_normal(self) -> np.ndarray:
+                return RacketCartesianController._target_face_normal_from_tilt(self._target_tilt)
+
+            def reset(self) -> np.ndarray:
+                self._target_tilt = np.zeros(2, dtype=float)
+                return np.zeros(7, dtype=float)
+
+            def add_target_offset(self, delta: tuple[float, float, float] | np.ndarray) -> np.ndarray:
+                self._target_position = self._target_position + np.asarray(delta, dtype=float)
+                return self.target_position
+
+            def set_target_position(self, position: tuple[float, float, float] | np.ndarray) -> np.ndarray:
+                self._target_position = np.asarray(position, dtype=float)
+                return self.target_position
+
+            def set_target_tilt(self, tilt: tuple[float, float] | np.ndarray) -> np.ndarray:
+                self._target_tilt = np.asarray(tilt, dtype=float)
+                return self.target_tilt
+
+            def compute_joint_targets(self) -> np.ndarray:
+                return np.zeros(7, dtype=float)
+
+        env = PingPongEEDeltaEnv(action_mode="position_tilt", tilt_tracking_assist_weight=1.0)
+        env.sim = FakeSim()
+        env.controller = FakeController(env.sim.racket_position)
+
+        env.reset(ball_height=0.50, ball_velocity=(0.20, -0.10, -0.50))
+        _, _, terminated, truncated, info = env.step((0.0, 0.0, 0.0, 0.0, 0.0))
+
+        self.assertFalse(terminated)
+        self.assertFalse(truncated)
+        self.assertGreater(float(info["target_tilt"][0]), 0.0)
+        self.assertGreater(float(info["target_tilt"][1]), 0.0)
+
     def test_ee_delta_env_truncates_at_time_limit_and_reset_clears_counter(self) -> None:
         env = PingPongEEDeltaEnv(max_episode_steps=2)
         _, reset_info = env.reset()
@@ -931,6 +1039,101 @@ class PingPongSimTest(unittest.TestCase):
         self.assertTrue(success_info["contact_event_during_step"])
         self.assertEqual(float(success_info["reward_success"]), env.success_bonus)
         self.assertGreater(float(success_info["reward_lift_term"]), 0.0)
+
+    def test_ee_delta_env_low_contact_does_not_count_success_without_required_apex(self) -> None:
+        class FakeSim:
+            def __init__(self) -> None:
+                self.n_substeps = 1
+                self._joint_positions = np.zeros(7, dtype=float)
+                self._joint_velocities = np.zeros(7, dtype=float)
+                self._racket_position = np.array([0.55, 0.125, 0.52], dtype=float)
+                self._ball_position = np.array([0.55, 0.125, 0.60], dtype=float)
+                self._ball_velocity = np.zeros(3, dtype=float)
+
+            @property
+            def joint_positions(self) -> np.ndarray:
+                return self._joint_positions.copy()
+
+            @property
+            def joint_velocities(self) -> np.ndarray:
+                return self._joint_velocities.copy()
+
+            @property
+            def racket_position(self) -> np.ndarray:
+                return self._racket_position.copy()
+
+            @property
+            def ball_position(self) -> np.ndarray:
+                return self._ball_position.copy()
+
+            @property
+            def ball_velocity(self) -> np.ndarray:
+                return self._ball_velocity.copy()
+
+            def reset(
+                self,
+                ball_height: float | None = None,
+                ball_velocity: tuple[float, float, float] = (0.0, 0.0, 0.0),
+            ) -> None:
+                self._ball_position = np.array([0.55, 0.125, 0.60], dtype=float)
+                self._ball_velocity = np.asarray(ball_velocity, dtype=float)
+
+            def step_with_contact_trace(self, joint_targets: np.ndarray | None = None, n_substeps: int | None = None) -> dict[str, object]:
+                self._ball_velocity = np.array([0.0, 0.0, 1.0], dtype=float)
+                return {
+                    "contact_observed": True,
+                    "contact_substep": 1,
+                    "contact_ball_velocity_x": 0.0,
+                    "contact_ball_velocity_y": 0.0,
+                    "contact_ball_velocity_z": 1.0,
+                    "contact_ball_speed_norm": 1.0,
+                    "contact_racket_velocity_x": 0.0,
+                    "contact_racket_velocity_y": 0.0,
+                    "contact_racket_velocity_z": 0.35,
+                    "contact_racket_speed_norm": 0.35,
+                    "contact_racket_acceleration_x": 0.0,
+                    "contact_racket_acceleration_y": 0.0,
+                    "contact_racket_acceleration_z": 6.0,
+                    "contact_racket_acceleration_norm": 6.0,
+                }
+
+            def failure_reason(self) -> None:
+                return None
+
+            def has_contact(self, geom_a: str, geom_b: str) -> bool:
+                return False
+
+        class FakeController:
+            def __init__(self, target_position: np.ndarray) -> None:
+                self._target_position = target_position.copy()
+
+            @property
+            def target_position(self) -> np.ndarray:
+                return self._target_position.copy()
+
+            def reset(self) -> np.ndarray:
+                return np.zeros(7, dtype=float)
+
+            def add_target_offset(self, delta: tuple[float, float, float] | np.ndarray) -> np.ndarray:
+                self._target_position = self._target_position + np.asarray(delta, dtype=float)
+                return self.target_position
+
+            def compute_joint_targets(self) -> np.ndarray:
+                return np.zeros(7, dtype=float)
+
+        env = PingPongEEDeltaEnv(success_velocity_threshold=0.5, ball_height=0.5)
+        fake_sim = FakeSim()
+        env.sim = fake_sim
+        env.controller = FakeController(fake_sim.racket_position)
+
+        env.reset()
+        _, _, terminated, truncated, info = env.step((0.0, 0.0, 0.0))
+
+        self.assertFalse(terminated)
+        self.assertFalse(truncated)
+        self.assertIsNone(info["success_reason"])
+        self.assertEqual(float(info["reward_success"]), 0.0)
+        self.assertLess(float(info["projected_contact_apex_height_above_racket"]), float(info["minimum_success_height_above_racket"]))
 
     def test_ee_delta_env_height_reward_prefers_target_band_over_excessive_height(self) -> None:
         class FakeSim:
