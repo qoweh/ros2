@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -42,6 +43,13 @@ def parse_args() -> argparse.Namespace:
         help="Success threshold forwarded to the env. This script does not tune it automatically.",
     )
     parser.add_argument(
+        "--action-mode",
+        type=str,
+        default="auto",
+        choices=("auto", "position", "position_tilt"),
+        help="Action mode for the eval env. Use auto to infer from the run summary when available.",
+    )
+    parser.add_argument(
         "--hold-final-seconds",
         type=float,
         default=1.5,
@@ -66,6 +74,21 @@ def _resolve_model_path(model_path: Path | None) -> Path:
     return candidates[0]
 
 
+def _resolve_action_mode(model_path: Path, requested_action_mode: str) -> str:
+    if requested_action_mode != "auto":
+        return requested_action_mode
+
+    model_name = model_path.name
+    if model_name.endswith("_model.zip"):
+        summary_name = model_name.replace("_model.zip", "_training_summary.json")
+        summary_path = model_path.with_name(summary_name)
+        if summary_path.is_file():
+            with summary_path.open() as handle:
+                summary = json.load(handle)
+            return str(summary.get("config", {}).get("action_mode", "position"))
+    return "position"
+
+
 def _episode_summary(index: int, episode_return: float, episode_steps: int, info: dict[str, object]) -> str:
     return (
         f"episode={index} steps={episode_steps} return={episode_return:.4f} "
@@ -83,8 +106,10 @@ def main() -> None:
         raise ValueError(f"episodes must be positive, got {args.episodes}.")
     if not model_path.is_file():
         raise FileNotFoundError(f"Saved PPO model not found: {model_path}")
+    action_mode = _resolve_action_mode(model_path, args.action_mode)
 
     env = PingPongEEDeltaGymEnv(
+        action_mode=action_mode,
         max_episode_steps=args.max_episode_steps,
         ball_height=args.ball_height,
         success_velocity_threshold=args.success_velocity_threshold,
@@ -97,7 +122,7 @@ def main() -> None:
     print(f"render_model={model_path}")
     print(
         f"episodes={args.episodes} deterministic={not args.stochastic} "
-        f"max_episode_steps={args.max_episode_steps} ball_height={args.ball_height}"
+        f"max_episode_steps={args.max_episode_steps} ball_height={args.ball_height} action_mode={action_mode}"
     )
     print(f"default_run_name={DEFAULT_PPO_RUN_NAME}")
     print("Close the MuJoCo viewer window to stop early.")

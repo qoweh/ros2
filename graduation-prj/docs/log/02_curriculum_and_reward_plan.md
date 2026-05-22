@@ -84,3 +84,68 @@
 2. 150k~200k마다 렌더로 upward strike 패턴 확인
 3. strike는 있는데 motion이 거칠면 smoothness 계열 weight만 미세 조정
 4. strike 자체가 약하면 reward보다 controller/threshold를 먼저 다시 확인
+
+## 6. 현재 코드 기준 curriculum 역할
+
+현재 `keepup_v1` curriculum은 단순한 옵션이 아니라 실제로 아래를 stage별로 바꾼다.
+
+`bootstrap`
+
+- `reset_ball_height_range = 0.0`
+- `reset_xy_range = 0.0`
+- `reset_velocity_xy_range = 0.0`
+- `reset_velocity_z_range = (0.0, 0.0)`
+- `success_velocity_threshold = 0.35`
+- `tracking_assist_weight = 0.35`
+- `tracking_alignment_reward_weight = 2.0`
+- `contact_centering_reward_weight = 0.5`
+- tilt/joint/smoothness regularization off
+
+`stabilize`
+
+- 약한 randomization 복귀
+- `success_velocity_threshold = 0.45`
+- `tracking_assist_weight = 0.20`
+- `tracking_alignment_reward_weight = 1.5`
+- `contact_centering_reward_weight = 1.0`
+- tilt/joint/smoothness penalty 약하게 on
+
+`refine`
+
+- full randomization 복귀
+- `success_velocity_threshold = 0.5`
+- `tracking_assist_weight = 0.10`
+- `tracking_alignment_reward_weight = 0.75`
+- `contact_centering_reward_weight = 1.25`
+- tilt/joint/smoothness penalty 강화
+
+즉 지금 curriculum의 역할은 아래 두 줄로 요약할 수 있다.
+
+- 초반에는 heuristic과 쉬운 reset으로 `공을 치는 패턴`부터 만들고
+- 후반에는 assist를 줄이고 penalty를 키워 `정교한 반복 keep-up` 쪽으로 이동시킨다.
+
+## 7. curriculum이 필요한가
+
+현재 task에서는 `필요하다`는 쪽이 맞다.
+
+이유:
+
+1. 목표가 단순 contact가 아니라 `정렬`, `위로 올려치기`, `중앙 적중`, `자세 유지`를 동시에 요구한다.
+2. action이 `position_tilt`로 확장되면 exploration 난도가 더 올라간다.
+3. 실제 40k run들에서 후반부 `robot_body_contact`가 커지는 경향이 보였다.
+
+즉 curriculum이 없으면 정책이 처음부터 너무 많은 것을 동시에 맞추려다가, 아예 유의미한 strike 패턴을 만들기 전에 무너질 가능성이 높다.
+
+## 8. 현재 판단
+
+최근 실험 기준으로 보면:
+
+- reward-only shaping만으로는 부족했다.
+- predicted-intercept 정렬과 중앙 적중 shaping은 필요한 보강이었다.
+- `position_tilt` action 추가는 구조적으로 맞는 방향이지만, `40k`에서는 아직 `v6`를 넘지 못했다.
+
+따라서 현재 우선순위는 아래다.
+
+1. `position_tilt` 모드를 더 긴 budget으로 돌려 보기
+2. bootstrap assist를 더 오래 유지하거나 adaptive curriculum으로 바꾸기
+3. 그 다음에야 reward 미세조정을 다시 보기

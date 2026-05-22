@@ -40,6 +40,13 @@ def _schedule_value(value: object) -> float | None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a PPO baseline with rollout-aligned logging.")
+    parser.add_argument(
+        "--action-mode",
+        type=str,
+        default="position",
+        choices=("position", "position_tilt"),
+        help="Use position-only actions or add limited pitch/roll residual actions.",
+    )
     parser.add_argument("--total-timesteps", type=int, default=DEFAULT_PPO_TOTAL_TIMESTEPS, help="Total PPO training timesteps.")
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS, help="Env time limit.")
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT, help="Spawn height above racket_center.")
@@ -244,6 +251,7 @@ def main() -> None:
 
     def make_env() -> PingPongEEDeltaGymEnv:
         env_kwargs: dict[str, object] = {
+            "action_mode": args.action_mode,
             "max_episode_steps": args.max_episode_steps,
             "ball_height": args.ball_height,
             "success_velocity_threshold": args.success_velocity_threshold,
@@ -336,6 +344,7 @@ def main() -> None:
         output_dir=output_dir,
         run_name=args.run_name,
         summary_config={
+            "action_mode": str(core_config["action_mode"]),
             "total_timesteps": int(args.total_timesteps),
             "max_episode_steps": int(core_config["max_episode_steps"]),
             "ball_height": float(core_config["ball_height"]),
@@ -354,10 +363,15 @@ def main() -> None:
             "target_active_racket_acceleration_z": float(reward_config["target_active_racket_acceleration_z"]),
             "active_hit_reward_weight": float(reward_config["active_hit_reward_weight"]),
             "passive_contact_penalty": float(reward_config["passive_contact_penalty"]),
+            "tracking_alignment_reward_weight": float(reward_config["tracking_alignment_reward_weight"]),
+            "contact_centering_reward_weight": float(reward_config["contact_centering_reward_weight"]),
+            "contact_centering_radius": float(reward_config["contact_centering_radius"]),
             "target_rebound_vertical_ratio": float(reward_config["target_rebound_vertical_ratio"]),
             "rebound_direction_reward_weight": float(reward_config["rebound_direction_reward_weight"]),
             "tracking_assist_weight": float(controller_config["tracking_assist_weight"]),
             "tracking_assist_preview_time": float(controller_config["tracking_assist_preview_time"]),
+            "target_tilt_limit": list(controller_config["target_tilt_limit"]),
+            "tilt_action_limit": float(core_config["tilt_action_limit"]),
             "reset_xy_range": float(reset_config["reset_xy_range"]),
             "reset_velocity_xy_range": float(reset_config["reset_velocity_xy_range"]),
             "reset_velocity_z_range": list(reset_config["reset_velocity_z_range"]),

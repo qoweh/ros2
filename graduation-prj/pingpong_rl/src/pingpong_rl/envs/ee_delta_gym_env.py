@@ -20,11 +20,10 @@ class PingPongEEDeltaGymEnv(gym.Env[np.ndarray, np.ndarray]):
             shape=observation_shape,
             dtype=np.float32,
         )
-        action_limit = np.full((3,), self.base_env.action_limit, dtype=np.float32)
         self.action_space = spaces.Box(
-            low=-action_limit,
-            high=action_limit,
-            shape=(3,),
+            low=self.base_env.action_low.astype(np.float32),
+            high=self.base_env.action_high.astype(np.float32),
+            shape=(self.base_env.action_size,),
             dtype=np.float32,
         )
 

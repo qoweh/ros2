@@ -22,3 +22,5 @@
   - stable repeated bouncing 기준으로 task/action/reward/reset/bottleneck을 다시 검토한 보고서
 - `12_keepup_v3_followup_and_control_assist_report.md`
   - `ppo_keepup_v3` 40k 재학습 분석, reward-only rebound shaping 실패, control-side tracking assist 비교 결과
+- `13_v7_check_position_tilt_and_curriculum_report.md`
+  - `ppo_keepup_v7` 확인, `position_tilt` action 실험, reward/policy/curriculum 역할과 현재 판단 정리
