@@ -592,7 +592,7 @@ class PingPongEEDeltaEnv:
             else:
                 self.controller.add_target_offset(assisted_target - current_target)
         current_target = self.controller.target_position
-        safe_target_position = self._body_safe_target_position(current_target)
+        safe_target_position = self._guarded_target_position(current_target)
         if hasattr(self.controller, "set_target_position"):
             self.controller.set_target_position(safe_target_position)
         else:
@@ -1002,6 +1002,21 @@ class PingPongEEDeltaEnv:
             return None
         return self._keepup_tracking_target()
 
+    def _controller_anchor_position(self) -> np.ndarray:
+        anchor_position = getattr(self.controller, "_anchor_position", None)
+        if anchor_position is None:
+            return np.asarray(self.sim.racket_position, dtype=float)
+        return np.asarray(anchor_position, dtype=float)
+
+    def _pre_contact_upward_ready(self) -> bool:
+        if self.contact_count > 0:
+            return True
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return False
+        if self._ball_height_above_racket() > float(np.clip(self._preparation_target_height_above_racket() + 0.08, 0.16, 0.20)):
+            return False
+        return self._tracking_alignment_error() <= max(1.5 * self.contact_centering_radius, 0.6 * self.strike_zone_xy_radius)
+
     def _body_safe_target_position(self, target_position: Sequence[float]) -> np.ndarray:
         safe_target = np.asarray(target_position, dtype=float).copy()
         if safe_target.shape != (3,):
@@ -1041,6 +1056,16 @@ class PingPongEEDeltaEnv:
                 delta_direction = delta_xy / distance_xy
 
             safe_target[:2] = body_position[:2] + keepout_radius * delta_direction
+        return safe_target
+
+    def _guarded_target_position(self, target_position: Sequence[float]) -> np.ndarray:
+        safe_target = self._body_safe_target_position(target_position)
+        if self._pre_contact_upward_ready():
+            return safe_target
+
+        anchor_position = self._controller_anchor_position()
+        pre_contact_z_cap = float(anchor_position[2] + np.clip(self._tracking_strike_plane_offset(), 0.0, 0.02))
+        safe_target[2] = min(float(safe_target[2]), pre_contact_z_cap)
         return safe_target
 
     def _tracking_assist_tilt(self) -> np.ndarray | None:
