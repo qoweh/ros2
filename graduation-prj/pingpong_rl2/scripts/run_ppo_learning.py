@@ -35,13 +35,24 @@ from pingpong_rl2.defaults import (
 )
 from pingpong_rl2.envs import PingPongKeepUpGymEnv
 from pingpong_rl2.training import make_sb3_async_vector_env
-from pingpong_rl2.utils import PPO_RUNS_ROOT, resolve_output_path
+from pingpong_rl2.utils import PPO_RUNS_ROOT, resolve_input_path, resolve_output_path
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the minimal pingpong_rl2 PPO baseline.")
     parser.add_argument("--run-name", type=str, default=DEFAULT_PPO_RUN_NAME)
     parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument(
+        "--resume-from",
+        type=Path,
+        default=None,
+        help="Optional checkpoint zip to continue from. Default behavior resumes <run-name>_model.zip when it exists.",
+    )
+    parser.add_argument(
+        "--reset-model",
+        action="store_true",
+        help="Start a fresh model even when the target run directory already has a saved checkpoint.",
+    )
     parser.add_argument("--total-timesteps", type=int, default=DEFAULT_PPO_TOTAL_TIMESTEPS)
     parser.add_argument("--n-envs", type=int, default=4)
     parser.add_argument("--n-steps", type=int, default=DEFAULT_PPO_N_STEPS)
@@ -78,6 +89,38 @@ def build_run_dir(run_name: str, output_dir: Path | None) -> Path:
         run_dir = resolve_output_path(output_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
+
+
+def default_model_path(run_dir: Path, run_name: str) -> Path:
+    return run_dir / f"{run_name}_model.zip"
+
+
+def resolve_starting_checkpoint(args: argparse.Namespace, run_dir: Path) -> tuple[str, Path | None]:
+    if args.reset_model and args.resume_from is not None:
+        raise ValueError("--reset-model and --resume-from cannot be used together.")
+
+    if args.reset_model:
+        return "new", None
+
+    if args.resume_from is not None:
+        checkpoint_path = resolve_input_path(args.resume_from)
+        if not checkpoint_path.is_file():
+            raise FileNotFoundError(f"Resume checkpoint not found: {checkpoint_path}")
+        return "resume", checkpoint_path
+
+    checkpoint_path = default_model_path(run_dir, args.run_name)
+    if checkpoint_path.is_file():
+        return "resume", checkpoint_path
+    return "new", None
+
+
+def build_session_monitor_path(run_dir: Path) -> Path:
+    session_index = 1
+    while True:
+        candidate = run_dir / f"monitor_{session_index:03d}.monitor.csv"
+        if not candidate.exists():
+            return candidate
+        session_index += 1
 
 
 def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
@@ -138,6 +181,7 @@ def main() -> None:
         raise ValueError(f"batch-size must be <= n_steps * n_envs ({rollout_size}), got {args.batch_size}.")
 
     run_dir = build_run_dir(args.run_name, args.output_dir)
+    training_mode, starting_checkpoint = resolve_starting_checkpoint(args, run_dir)
     env_kwargs = env_kwargs_from_args(args)
     config_env = PingPongKeepUpGymEnv(**env_kwargs)
     try:
@@ -145,22 +189,34 @@ def main() -> None:
     finally:
         config_env.close()
     vec_env = make_sb3_async_vector_env(num_envs=args.n_envs, env_kwargs=env_kwargs, seed=args.seed)
-    monitored_env = VecMonitor(venv=vec_env, filename=str(run_dir / "monitor.csv"))
+    monitor_path = build_session_monitor_path(run_dir)
+    monitored_env = VecMonitor(venv=vec_env, filename=str(monitor_path))
 
-    model = PPO(
-        "MlpPolicy",
-        monitored_env,
-        n_steps=args.n_steps,
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-        gamma=args.gamma,
-        verbose=1,
-        tensorboard_log=str(run_dir / "tb"),
-        seed=args.seed,
-        device=args.device,
-    )
+    if starting_checkpoint is None:
+        model = PPO(
+            "MlpPolicy",
+            monitored_env,
+            n_steps=args.n_steps,
+            batch_size=args.batch_size,
+            learning_rate=args.learning_rate,
+            gamma=args.gamma,
+            verbose=1,
+            tensorboard_log=str(run_dir / "tb"),
+            seed=args.seed,
+            device=args.device,
+        )
+    else:
+        model = PPO.load(
+            str(starting_checkpoint),
+            env=monitored_env,
+            device=args.device,
+        )
     try:
-        model.learn(total_timesteps=args.total_timesteps, progress_bar=False)
+        model.learn(
+            total_timesteps=args.total_timesteps,
+            progress_bar=False,
+            reset_num_timesteps=starting_checkpoint is None,
+        )
         model_path = run_dir / f"{args.run_name}_model"
         model.save(str(model_path))
         evaluation = evaluate_model(model, env_kwargs=env_kwargs, episodes=args.eval_episodes, seed=args.seed + 10_000)
@@ -169,7 +225,10 @@ def main() -> None:
 
     summary = {
         "run_name": args.run_name,
+        "training_mode": training_mode,
+        "starting_checkpoint": None if starting_checkpoint is None else str(starting_checkpoint.resolve()),
         "model_path": str((run_dir / f"{args.run_name}_model.zip").resolve()),
+        "monitor_path": str(monitor_path.resolve()),
         "config": {
             "total_timesteps": args.total_timesteps,
             "n_envs": args.n_envs,
@@ -186,8 +245,12 @@ def main() -> None:
     }
     summary_path = run_dir / f"{args.run_name}_training_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"training_mode={training_mode}")
+    if starting_checkpoint is not None:
+        print(f"starting_checkpoint={starting_checkpoint}")
     print(f"run_dir={run_dir}")
     print(f"model_path={run_dir / f'{args.run_name}_model.zip'}")
+    print(f"monitor_path={monitor_path}")
     print(f"summary_path={summary_path}")
     print(
         "evaluation "

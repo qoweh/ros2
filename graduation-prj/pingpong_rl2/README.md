@@ -26,6 +26,13 @@
 - `python pingpong_rl2/scripts/run_viewer.py --mode zero_action`
 - `python pingpong_rl2/scripts/benchmark_vector_env.py --n-envs 4`
 
+학습 재개 규칙:
+
+- 기본적으로 `<run-name>_model.zip`가 이미 있으면 같은 이름으로 이어서 학습한다.
+- 새 이름을 주고 그 이름의 체크포인트가 아직 없으면 새 모델이 생성된다.
+- 같은 이름으로 처음부터 다시 시작하려면 `--reset-model`을 사용한다.
+- 다른 체크포인트를 이어받으려면 `--resume-from <zip>`을 사용한다.
+
 ## 현재 baseline 범위
 
 현재 baseline은 “assist 없이 racket-first contact와 반복 bounce가 다시 생기는가”만 본다. tilt, curriculum, rebound-direction shaping, single-bounce-out penalty는 기본 세트에 넣지 않았다.
