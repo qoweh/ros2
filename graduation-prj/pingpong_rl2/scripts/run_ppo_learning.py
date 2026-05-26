@@ -35,12 +35,23 @@ from pingpong_rl2.defaults import (
 )
 from pingpong_rl2.envs import PingPongKeepUpGymEnv
 from pingpong_rl2.training import make_sb3_async_vector_env
-from pingpong_rl2.utils import PPO_RUNS_ROOT, resolve_input_path, resolve_output_path
+from pingpong_rl2.utils import (
+    PPO_RUNS_ROOT,
+    resolve_input_path,
+    resolve_output_path,
+    resolve_requested_run_name,
+)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the minimal pingpong_rl2 PPO baseline.")
-    parser.add_argument("--run-name", type=str, default=DEFAULT_PPO_RUN_NAME)
+    parser.add_argument("--run-name", type=str, default=None)
+    parser.add_argument(
+        "--run-version",
+        type=str,
+        default=None,
+        help="Optional suffix appended as <run-name>_<run-version> so A/B runs stay in separate directories.",
+    )
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument(
         "--resume-from",
@@ -61,6 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gamma", type=float, default=DEFAULT_PPO_GAMMA)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument("--action-mode", type=str, default="position", choices=("position", "position_tilt"))
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--reset-xy-range", type=float, default=DEFAULT_RESET_XY_RANGE)
@@ -76,6 +88,16 @@ def parse_args() -> argparse.Namespace:
         "--success-velocity-threshold",
         type=float,
         default=DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
+    )
+    parser.add_argument("--lateral-action-limit", type=float, default=None)
+    parser.add_argument("--vertical-action-limit", type=float, default=None)
+    parser.add_argument("--tilt-action-limit", type=float, default=None)
+    parser.add_argument(
+        "--target-tilt-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
     )
     parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument("--smoke", action="store_true")
@@ -95,7 +117,7 @@ def default_model_path(run_dir: Path, run_name: str) -> Path:
     return run_dir / f"{run_name}_model.zip"
 
 
-def resolve_starting_checkpoint(args: argparse.Namespace, run_dir: Path) -> tuple[str, Path | None]:
+def resolve_starting_checkpoint(args: argparse.Namespace, run_dir: Path, resolved_run_name: str) -> tuple[str, Path | None]:
     if args.reset_model and args.resume_from is not None:
         raise ValueError("--reset-model and --resume-from cannot be used together.")
 
@@ -108,7 +130,7 @@ def resolve_starting_checkpoint(args: argparse.Namespace, run_dir: Path) -> tupl
             raise FileNotFoundError(f"Resume checkpoint not found: {checkpoint_path}")
         return "resume", checkpoint_path
 
-    checkpoint_path = default_model_path(run_dir, args.run_name)
+    checkpoint_path = default_model_path(run_dir, resolved_run_name)
     if checkpoint_path.is_file():
         return "resume", checkpoint_path
     return "new", None
@@ -124,7 +146,8 @@ def build_session_monitor_path(run_dir: Path) -> Path:
 
 
 def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
-    return {
+    env_kwargs: dict[str, object] = {
+        "action_mode": args.action_mode,
         "ball_height": args.ball_height,
         "target_ball_height": args.ball_height,
         "max_episode_steps": args.max_episode_steps,
@@ -133,6 +156,15 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         "reset_velocity_z_range": tuple(args.reset_velocity_z_range),
         "success_velocity_threshold": args.success_velocity_threshold,
     }
+    if args.lateral_action_limit is not None:
+        env_kwargs["lateral_action_limit"] = args.lateral_action_limit
+    if args.vertical_action_limit is not None:
+        env_kwargs["vertical_action_limit"] = args.vertical_action_limit
+    if args.tilt_action_limit is not None:
+        env_kwargs["tilt_action_limit"] = args.tilt_action_limit
+    if args.target_tilt_limit is not None:
+        env_kwargs["target_tilt_limit"] = tuple(args.target_tilt_limit)
+    return env_kwargs
 
 
 def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, seed: int) -> dict[str, object]:
@@ -171,17 +203,22 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
 def main() -> None:
     args = parse_args()
     if args.smoke:
-        args.run_name = SMOKE_PPO_RUN_NAME if args.run_name == DEFAULT_PPO_RUN_NAME else args.run_name
         args.total_timesteps = SMOKE_PPO_TOTAL_TIMESTEPS
         args.n_steps = SMOKE_PPO_N_STEPS
         args.batch_size = SMOKE_PPO_BATCH_SIZE
         args.n_envs = min(args.n_envs, 2)
+    resolved_run_name = resolve_requested_run_name(
+        args.run_name,
+        args.run_version,
+        action_mode=args.action_mode,
+        smoke=args.smoke,
+    )
     rollout_size = args.n_steps * args.n_envs
     if args.batch_size > rollout_size:
         raise ValueError(f"batch-size must be <= n_steps * n_envs ({rollout_size}), got {args.batch_size}.")
 
-    run_dir = build_run_dir(args.run_name, args.output_dir)
-    training_mode, starting_checkpoint = resolve_starting_checkpoint(args, run_dir)
+    run_dir = build_run_dir(resolved_run_name, args.output_dir)
+    training_mode, starting_checkpoint = resolve_starting_checkpoint(args, run_dir, resolved_run_name)
     env_kwargs = env_kwargs_from_args(args)
     config_env = PingPongKeepUpGymEnv(**env_kwargs)
     try:
@@ -217,19 +254,20 @@ def main() -> None:
             progress_bar=False,
             reset_num_timesteps=starting_checkpoint is None,
         )
-        model_path = run_dir / f"{args.run_name}_model"
+        model_path = run_dir / f"{resolved_run_name}_model"
         model.save(str(model_path))
         evaluation = evaluate_model(model, env_kwargs=env_kwargs, episodes=args.eval_episodes, seed=args.seed + 10_000)
     finally:
         monitored_env.close()
 
     summary = {
-        "run_name": args.run_name,
+        "run_name": resolved_run_name,
         "training_mode": training_mode,
         "starting_checkpoint": None if starting_checkpoint is None else str(starting_checkpoint.resolve()),
-        "model_path": str((run_dir / f"{args.run_name}_model.zip").resolve()),
+        "model_path": str((run_dir / f"{resolved_run_name}_model.zip").resolve()),
         "monitor_path": str(monitor_path.resolve()),
         "config": {
+            "run_version": args.run_version,
             "total_timesteps": args.total_timesteps,
             "n_envs": args.n_envs,
             "n_steps": args.n_steps,
@@ -243,13 +281,14 @@ def main() -> None:
         "env_config": resolved_env_config,
         "evaluation": evaluation,
     }
-    summary_path = run_dir / f"{args.run_name}_training_summary.json"
+    summary_path = run_dir / f"{resolved_run_name}_training_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"resolved_run_name={resolved_run_name}")
     print(f"training_mode={training_mode}")
     if starting_checkpoint is not None:
         print(f"starting_checkpoint={starting_checkpoint}")
     print(f"run_dir={run_dir}")
-    print(f"model_path={run_dir / f'{args.run_name}_model.zip'}")
+    print(f"model_path={run_dir / f'{resolved_run_name}_model.zip'}")
     print(f"monitor_path={monitor_path}")
     print(f"summary_path={summary_path}")
     print(

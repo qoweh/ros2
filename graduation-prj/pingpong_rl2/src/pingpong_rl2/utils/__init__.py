@@ -11,6 +11,16 @@ from pingpong_rl2.utils.paths import (
     resolve_input_path,
     resolve_output_path,
 )
+from pingpong_rl2.utils.ppo_runs import (
+    compose_run_name,
+    infer_run_name_from_model_path,
+    load_env_config_for_model,
+    model_path_for_run_name,
+    resolve_env_kwargs_for_model,
+    resolve_requested_run_name,
+    resolve_saved_model_path,
+    training_summary_path_for_run_name,
+)
 
 __all__ = [
     "ARTIFACT_ROOT",
@@ -22,6 +32,14 @@ __all__ = [
     "PROJECT_ROOT",
     "SCENE_XML_PATH",
     "WORKSPACE_ROOT",
+    "compose_run_name",
+    "infer_run_name_from_model_path",
+    "load_env_config_for_model",
+    "model_path_for_run_name",
+    "resolve_env_kwargs_for_model",
     "resolve_input_path",
     "resolve_output_path",
+    "resolve_requested_run_name",
+    "resolve_saved_model_path",
+    "training_summary_path_for_run_name",
 ]

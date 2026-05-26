@@ -29,15 +29,19 @@ DEFAULT_PPO_BATCH_SIZE = 256
 DEFAULT_PPO_LEARNING_RATE = 3.0e-4
 DEFAULT_PPO_GAMMA = 0.99
 DEFAULT_PPO_RUN_NAME = "ppo_minimal_keepup"
+DEFAULT_PPO_POSITION_TILT_RUN_NAME = "ppo_position_tilt_keepup"
 
 SMOKE_PPO_TOTAL_TIMESTEPS = 1_024
 SMOKE_PPO_N_STEPS = 64
 SMOKE_PPO_BATCH_SIZE = 64
 SMOKE_PPO_RUN_NAME = "ppo_smoke"
+SMOKE_PPO_POSITION_TILT_RUN_NAME = "ppo_position_tilt_smoke"
 
 
 def default_ppo_model_candidates(ppo_runs_root: Path) -> list[Path]:
     return [
         ppo_runs_root / DEFAULT_PPO_RUN_NAME / f"{DEFAULT_PPO_RUN_NAME}_model.zip",
+        ppo_runs_root / DEFAULT_PPO_POSITION_TILT_RUN_NAME / f"{DEFAULT_PPO_POSITION_TILT_RUN_NAME}_model.zip",
         ppo_runs_root / SMOKE_PPO_RUN_NAME / f"{SMOKE_PPO_RUN_NAME}_model.zip",
+        ppo_runs_root / SMOKE_PPO_POSITION_TILT_RUN_NAME / f"{SMOKE_PPO_POSITION_TILT_RUN_NAME}_model.zip",
     ]

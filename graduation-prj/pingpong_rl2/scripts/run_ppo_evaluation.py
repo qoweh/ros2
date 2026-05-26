@@ -15,69 +15,60 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from pingpong_rl2.defaults import (
-    DEFAULT_BALL_HEIGHT,
-    DEFAULT_MAX_EPISODE_STEPS,
     DEFAULT_PPO_RUN_NAME,
-    DEFAULT_RESET_VELOCITY_XY_RANGE,
-    DEFAULT_RESET_VELOCITY_Z_RANGE,
-    DEFAULT_RESET_XY_RANGE,
-    DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
-    default_ppo_model_candidates,
 )
 from pingpong_rl2.envs import PingPongKeepUpGymEnv
-from pingpong_rl2.utils import PPO_RUNS_ROOT, resolve_input_path
+from pingpong_rl2.utils import infer_run_name_from_model_path, resolve_env_kwargs_for_model, resolve_requested_run_name, resolve_saved_model_path
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate a saved pingpong_rl2 PPO policy headlessly.")
     parser.add_argument("--model-path", type=Path, default=None)
+    parser.add_argument("--run-name", type=str, default=None)
+    parser.add_argument("--run-version", type=str, default=None)
     parser.add_argument("--episodes", type=int, default=5)
     parser.add_argument("--seed", type=int, default=23)
-    parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
-    parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
-    parser.add_argument("--reset-xy-range", type=float, default=DEFAULT_RESET_XY_RANGE)
-    parser.add_argument("--reset-velocity-xy-range", type=float, default=DEFAULT_RESET_VELOCITY_XY_RANGE)
+    parser.add_argument("--max-episode-steps", type=int, default=None)
+    parser.add_argument("--ball-height", type=float, default=None)
+    parser.add_argument("--reset-xy-range", type=float, default=None)
+    parser.add_argument("--reset-velocity-xy-range", type=float, default=None)
     parser.add_argument(
         "--reset-velocity-z-range",
         type=float,
         nargs=2,
         metavar=("LOW", "HIGH"),
-        default=DEFAULT_RESET_VELOCITY_Z_RANGE,
+        default=None,
     )
     parser.add_argument(
         "--success-velocity-threshold",
         type=float,
-        default=DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
+        default=None,
     )
     parser.add_argument("--stochastic", action="store_true")
     return parser.parse_args()
 
 
-def resolve_model_path(model_path: Path | None) -> Path:
-    if model_path is not None:
-        return resolve_input_path(model_path)
-    candidates = default_ppo_model_candidates(PPO_RUNS_ROOT)
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    return candidates[0]
-
-
 def main() -> None:
     args = parse_args()
-    model_path = resolve_model_path(args.model_path)
+    resolved_run_name = None
+    if args.run_name is not None:
+        resolved_run_name = resolve_requested_run_name(args.run_name, args.run_version)
+    model_path = resolve_saved_model_path(args.model_path, resolved_run_name)
     if not model_path.is_file():
         raise FileNotFoundError(f"Saved PPO model not found: {model_path}")
 
-    env = PingPongKeepUpGymEnv(
+    run_name = infer_run_name_from_model_path(model_path)
+    env_kwargs = resolve_env_kwargs_for_model(
+        model_path,
         ball_height=args.ball_height,
-        target_ball_height=args.ball_height,
         max_episode_steps=args.max_episode_steps,
         reset_xy_range=args.reset_xy_range,
         reset_velocity_xy_range=args.reset_velocity_xy_range,
-        reset_velocity_z_range=tuple(args.reset_velocity_z_range),
+        reset_velocity_z_range=args.reset_velocity_z_range,
         success_velocity_threshold=args.success_velocity_threshold,
     )
+
+    env = PingPongKeepUpGymEnv(**env_kwargs)
     env_config = env.training_config()
     model = PPO.load(str(model_path))
     returns: list[float] = []
@@ -124,7 +115,7 @@ def main() -> None:
     bounce_array = np.asarray(useful_bounces, dtype=float)
     summary = {
         "model_path": str(model_path.resolve()),
-        "run_name": DEFAULT_PPO_RUN_NAME,
+        "run_name": run_name,
         "episodes": args.episodes,
         "env_config": env_config,
         "mean_return": float(returns_array.mean()) if returns_array.size else 0.0,

@@ -23,29 +23,47 @@ from pingpong_rl2.defaults import (
 )
 from pingpong_rl2.envs.pingpong_sim import PingPongSim
 
-_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
+_ACTION_MODES = ("position", "position_tilt")
+
+_POSITION_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
     ("joint_positions", 7),
     ("joint_velocities", 7),
     ("racket_position", 3),
+    ("racket_velocity", 3),
     ("target_position", 3),
     ("ball_position", 3),
     ("ball_velocity", 3),
     ("ball_relative_position", 3),
 )
 
-_OBSERVATION_SLICES: dict[str, slice] = {}
-_observation_offset = 0
-for component_name, component_size in _OBSERVATION_COMPONENTS:
-    _OBSERVATION_SLICES[component_name] = slice(_observation_offset, _observation_offset + component_size)
-    _observation_offset += component_size
-_OBSERVATION_SIZE = _observation_offset
+_POSITION_TILT_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
+    ("racket_face_normal", 3),
+    ("target_tilt", 2),
+)
+
+
+def _build_observation_layout(action_mode: str) -> tuple[tuple[tuple[str, int], ...], dict[str, slice], int]:
+    components = _POSITION_OBSERVATION_COMPONENTS
+    if action_mode == "position_tilt":
+        components = components + _POSITION_TILT_OBSERVATION_COMPONENTS
+
+    observation_slices: dict[str, slice] = {}
+    observation_offset = 0
+    for component_name, component_size in components:
+        observation_slices[component_name] = slice(observation_offset, observation_offset + component_size)
+        observation_offset += component_size
+    return components, observation_slices, observation_offset
 
 
 class PingPongKeepUpEnv:
     def __init__(
         self,
         sim: PingPongSim | None = None,
+        action_mode: str = "position",
         action_limit: float = DEFAULT_ACTION_LIMIT,
+        lateral_action_limit: float | None = None,
+        vertical_action_limit: float | None = None,
+        tilt_action_limit: float = 0.05,
         max_episode_steps: int = DEFAULT_MAX_EPISODE_STEPS,
         success_velocity_threshold: float = DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
         ball_height: float = DEFAULT_BALL_HEIGHT,
@@ -68,13 +86,20 @@ class PingPongKeepUpEnv:
         reset_velocity_z_range: tuple[float, float] = DEFAULT_RESET_VELOCITY_Z_RANGE,
         target_offset_low: Sequence[float] = (-0.12, -0.12, -0.04),
         target_offset_high: Sequence[float] = (0.12, 0.12, 0.12),
+        target_tilt_limit: Sequence[float] = (0.18, 0.18),
         controller_position_gain: float = 1.6,
         controller_orientation_gain: float = 0.45,
         controller_max_position_step: float = 0.06,
         controller_max_orientation_step: float = 0.12,
     ) -> None:
         self.sim = PingPongSim() if sim is None else sim
+        self.action_mode = str(action_mode)
         self.action_limit = float(action_limit)
+        self.lateral_action_limit = (
+            0.75 * self.action_limit if lateral_action_limit is None else float(lateral_action_limit)
+        )
+        self.vertical_action_limit = self.action_limit if vertical_action_limit is None else float(vertical_action_limit)
+        self.tilt_action_limit = float(tilt_action_limit)
         self.max_episode_steps = int(max_episode_steps)
         self.success_velocity_threshold = float(success_velocity_threshold)
         self.ball_height = float(ball_height)
@@ -97,12 +122,25 @@ class PingPongKeepUpEnv:
         self.reset_velocity_z_range = (float(reset_velocity_z_range[0]), float(reset_velocity_z_range[1]))
         self.target_offset_low = np.asarray(target_offset_low, dtype=float)
         self.target_offset_high = np.asarray(target_offset_high, dtype=float)
+        self.target_tilt_limit = np.asarray(target_tilt_limit, dtype=float)
         self.controller_position_gain = float(controller_position_gain)
         self.controller_orientation_gain = float(controller_orientation_gain)
         self.controller_max_position_step = float(controller_max_position_step)
         self.controller_max_orientation_step = float(controller_max_orientation_step)
+        if self.action_mode not in _ACTION_MODES:
+            raise ValueError(f"action_mode must be one of {_ACTION_MODES}, got {self.action_mode!r}.")
         if self.action_limit <= 0.0:
             raise ValueError(f"action_limit must be positive, got {self.action_limit}.")
+        if self.lateral_action_limit <= 0.0:
+            raise ValueError(
+                f"lateral_action_limit must be positive, got {self.lateral_action_limit}."
+            )
+        if self.vertical_action_limit <= 0.0:
+            raise ValueError(
+                f"vertical_action_limit must be positive, got {self.vertical_action_limit}."
+            )
+        if self.tilt_action_limit <= 0.0:
+            raise ValueError(f"tilt_action_limit must be positive, got {self.tilt_action_limit}.")
         if self.max_episode_steps < 1:
             raise ValueError(f"max_episode_steps must be positive, got {self.max_episode_steps}.")
         if self.height_tolerance <= 0.0:
@@ -112,6 +150,10 @@ class PingPongKeepUpEnv:
                 "reset_velocity_z_range must be ordered as (low, high), got "
                 f"{self.reset_velocity_z_range}."
             )
+        if self.target_tilt_limit.shape != (2,):
+            raise ValueError(f"target_tilt_limit must have shape (2,), got {self.target_tilt_limit.shape}.")
+        if np.any(self.target_tilt_limit < 0.0):
+            raise ValueError(f"target_tilt_limit must be non-negative, got {self.target_tilt_limit}.")
         self.controller = RacketCartesianController(
             self.sim,
             position_gain=self.controller_position_gain,
@@ -120,11 +162,22 @@ class PingPongKeepUpEnv:
             max_orientation_step=self.controller_max_orientation_step,
             target_offset_low=self.target_offset_low,
             target_offset_high=self.target_offset_high,
+            target_tilt_limit=self.target_tilt_limit,
         )
-        self.action_low = -np.full(3, self.action_limit, dtype=float)
-        self.action_high = np.full(3, self.action_limit, dtype=float)
-        self.action_size = 3
-        self.observation_size = _OBSERVATION_SIZE
+        position_action_limit = np.array(
+            [self.lateral_action_limit, self.lateral_action_limit, self.vertical_action_limit],
+            dtype=float,
+        )
+        if self.action_mode == "position_tilt":
+            tilt_action_limit = np.full(2, self.tilt_action_limit, dtype=float)
+            self.action_high = np.concatenate([position_action_limit, tilt_action_limit])
+        else:
+            self.action_high = position_action_limit
+        self.action_low = -self.action_high.copy()
+        self.action_size = int(self.action_high.shape[0])
+        self._observation_components, self._observation_slices, self.observation_size = _build_observation_layout(
+            self.action_mode
+        )
         self._rng = np.random.default_rng()
         self._spawn_ball_height_above_racket = self.ball_height
         self.step_count = 0
@@ -135,7 +188,7 @@ class PingPongKeepUpEnv:
 
     @property
     def observation_slices(self) -> dict[str, slice]:
-        return dict(_OBSERVATION_SLICES)
+        return dict(self._observation_slices)
 
     def seed(self, seed: int | None = None) -> int | None:
         self._rng = np.random.default_rng(seed)
@@ -143,17 +196,24 @@ class PingPongKeepUpEnv:
 
     def observation(self) -> np.ndarray:
         ball_relative_position = self.sim.ball_position - self.sim.racket_position
-        return np.concatenate(
-            [
-                self.sim.joint_positions,
-                self.sim.joint_velocities,
-                self.sim.racket_position,
-                self.controller.target_position,
-                self.sim.ball_position,
-                self.sim.ball_velocity,
-                ball_relative_position,
-            ]
-        )
+        observation_parts: list[np.ndarray] = [
+            self.sim.joint_positions,
+            self.sim.joint_velocities,
+            self.sim.racket_position,
+            self.sim.racket_velocity,
+            self.controller.target_position,
+            self.sim.ball_position,
+            self.sim.ball_velocity,
+            ball_relative_position,
+        ]
+        if self.action_mode == "position_tilt":
+            observation_parts.extend(
+                [
+                    self.sim.racket_face_normal,
+                    self.controller.target_tilt,
+                ]
+            )
+        return np.concatenate(observation_parts)
 
     def reset(
         self,
@@ -185,10 +245,12 @@ class PingPongKeepUpEnv:
 
     def step(self, action: Sequence[float]) -> tuple[np.ndarray, float, bool, bool, dict[str, object]]:
         action_array = np.asarray(action, dtype=float)
-        if action_array.shape != (3,):
-            raise ValueError(f"EE delta action must have shape (3,), got {action_array.shape}.")
+        if action_array.shape != (self.action_size,):
+            raise ValueError(f"EE delta action must have shape ({self.action_size},), got {action_array.shape}.")
         applied_action = np.clip(action_array, self.action_low, self.action_high)
-        self.controller.add_target_offset(applied_action)
+        self.controller.add_target_offset(applied_action[:3])
+        if self.action_mode == "position_tilt":
+            self.controller.set_target_tilt(self.controller.target_tilt + applied_action[3:])
         safe_target_position = self._guarded_target_position(self.controller.target_position)
         self.controller.set_target_position(safe_target_position)
         joint_targets = self.controller.compute_joint_targets()
@@ -225,14 +287,22 @@ class PingPongKeepUpEnv:
             "ball_height_above_racket": self._ball_height_above_racket(),
             "target_ball_height_above_racket": self._target_ball_height_above_racket(),
             "xy_alignment_error": self._xy_alignment_error(),
+            "racket_face_normal": self.sim.racket_face_normal,
+            "target_tilt": self.controller.target_tilt,
             "projected_contact_apex_height_above_racket": (
                 self._projected_contact_apex_height_above_racket(contact_trace) if contact_event else None
             ),
+            "contact_ball_velocity_x": contact_trace.get("contact_ball_velocity_x"),
+            "contact_ball_velocity_y": contact_trace.get("contact_ball_velocity_y"),
             "contact_ball_height_above_racket": contact_trace.get("contact_ball_height_above_racket"),
             "contact_xy_alignment_error": contact_trace.get("contact_xy_alignment_error"),
+            "contact_ball_speed_norm": contact_trace.get("contact_ball_speed_norm"),
+            "contact_racket_velocity_x": contact_trace.get("contact_racket_velocity_x"),
+            "contact_racket_velocity_y": contact_trace.get("contact_racket_velocity_y"),
             "racket_velocity_z": float(self.sim.racket_velocity[2]),
             "contact_ball_velocity_z": contact_trace.get("contact_ball_velocity_z"),
             "contact_racket_velocity_z": contact_trace.get("contact_racket_velocity_z"),
+            "contact_racket_speed_norm": contact_trace.get("contact_racket_speed_norm"),
             "terminated": terminated,
             "truncated": truncated,
         }
@@ -242,7 +312,11 @@ class PingPongKeepUpEnv:
 
     def training_config(self) -> dict[str, object]:
         return {
+            "action_mode": self.action_mode,
             "action_limit": self.action_limit,
+            "lateral_action_limit": self.lateral_action_limit,
+            "vertical_action_limit": self.vertical_action_limit,
+            "tilt_action_limit": self.tilt_action_limit,
             "max_episode_steps": self.max_episode_steps,
             "success_velocity_threshold": self.success_velocity_threshold,
             "ball_height": self.ball_height,
@@ -262,6 +336,7 @@ class PingPongKeepUpEnv:
             "reset_velocity_z_range": list(self.reset_velocity_z_range),
             "target_offset_low": self.target_offset_low.tolist(),
             "target_offset_high": self.target_offset_high.tolist(),
+            "target_tilt_limit": self.target_tilt_limit.tolist(),
         }
 
     def close(self) -> None:
