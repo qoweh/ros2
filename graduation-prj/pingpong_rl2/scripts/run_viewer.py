@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render a pingpong_rl2 policy or zero-action rollout in the MuJoCo viewer.")
     parser.add_argument("--mode", type=str, default="policy", choices=("policy", "zero_action"))
     parser.add_argument("--model-path", type=Path, default=None)
-    parser.add_argument("--episodes", type=int, default=3)
+    parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
