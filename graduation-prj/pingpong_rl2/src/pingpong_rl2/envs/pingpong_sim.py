@@ -263,6 +263,8 @@ class PingPongSim:
             "contact_ball_velocity_x": None,
             "contact_ball_velocity_y": None,
             "contact_ball_velocity_z": None,
+            "contact_ball_height_above_racket": None,
+            "contact_xy_alignment_error": None,
             "contact_ball_speed_norm": None,
             "contact_racket_velocity_x": None,
             "contact_racket_velocity_y": None,
@@ -285,12 +287,16 @@ class PingPongSim:
                 continue
 
             ball_velocity = self.ball_velocity
+            ball_position = self.ball_position
+            racket_position = self.racket_position
             contact_trace = {
                 "contact_observed": True,
                 "contact_substep": substep_index,
                 "contact_ball_velocity_x": float(ball_velocity[0]),
                 "contact_ball_velocity_y": float(ball_velocity[1]),
                 "contact_ball_velocity_z": float(ball_velocity[2]),
+                "contact_ball_height_above_racket": float(ball_position[2] - racket_position[2]),
+                "contact_xy_alignment_error": float(np.linalg.norm(ball_position[:2] - racket_position[:2])),
                 "contact_ball_speed_norm": float(np.linalg.norm(ball_velocity)),
                 "contact_racket_velocity_x": float(racket_velocity[0]),
                 "contact_racket_velocity_y": float(racket_velocity[1]),

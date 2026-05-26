@@ -14,7 +14,14 @@ SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from pingpong_rl2.defaults import DEFAULT_BALL_HEIGHT, DEFAULT_MAX_EPISODE_STEPS, default_ppo_model_candidates
+from pingpong_rl2.defaults import (
+    DEFAULT_BALL_HEIGHT,
+    DEFAULT_MAX_EPISODE_STEPS,
+    DEFAULT_RESET_VELOCITY_XY_RANGE,
+    DEFAULT_RESET_VELOCITY_Z_RANGE,
+    DEFAULT_RESET_XY_RANGE,
+    default_ppo_model_candidates,
+)
 from pingpong_rl2.envs import PingPongKeepUpGymEnv
 from pingpong_rl2.utils import PPO_RUNS_ROOT, resolve_input_path
 
@@ -27,6 +34,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
+    parser.add_argument("--reset-xy-range", type=float, default=DEFAULT_RESET_XY_RANGE)
+    parser.add_argument("--reset-velocity-xy-range", type=float, default=DEFAULT_RESET_VELOCITY_XY_RANGE)
+    parser.add_argument(
+        "--reset-velocity-z-range",
+        type=float,
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        default=DEFAULT_RESET_VELOCITY_Z_RANGE,
+    )
     parser.add_argument("--hold-final-seconds", type=float, default=1.5)
     parser.add_argument("--stochastic", action="store_true")
     return parser.parse_args()
@@ -44,7 +60,14 @@ def resolve_model_path(model_path: Path | None) -> Path:
 
 def main() -> None:
     args = parse_args()
-    env = PingPongKeepUpGymEnv(ball_height=args.ball_height, target_ball_height=args.ball_height, max_episode_steps=args.max_episode_steps)
+    env = PingPongKeepUpGymEnv(
+        ball_height=args.ball_height,
+        target_ball_height=args.ball_height,
+        max_episode_steps=args.max_episode_steps,
+        reset_xy_range=args.reset_xy_range,
+        reset_velocity_xy_range=args.reset_velocity_xy_range,
+        reset_velocity_z_range=tuple(args.reset_velocity_z_range),
+    )
     model = None
     if args.mode == "policy":
         model_path = resolve_model_path(args.model_path)

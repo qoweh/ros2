@@ -62,12 +62,12 @@
 
 `pingpong_rl2` baseline은 아래 정도로 제한한다.
 
-1. descending strike window 안에서의 XY alignment reward
+1. 매 바운스의 descending strike window 안에서의 XY/height alignment reward
 2. useful upward contact bonus
 3. projected apex가 target height에 가까울수록 주는 작은 품질 보정 reward
 4. floor / body contact / out-of-bounds failure penalty
 
-이 네 가지면 “공 아래로 들어간다 -> 적절한 순간 contact를 만든다 -> 목표 높이 근처로 올린다”라는 최소 과정을 유지할 수 있다.
+이 네 가지면 “공 아래로 들어간다 -> 적절한 순간 contact를 만든다 -> 목표 높이 근처로 올린다”라는 최소 과정을 유지할 수 있다. 첫 contact 이후에도 같은 strike-window alignment를 유지해야 반복 바운스 학습 신호가 사라지지 않는다.
 
 ## 기본 baseline에서 의도적으로 뺄 항목
 

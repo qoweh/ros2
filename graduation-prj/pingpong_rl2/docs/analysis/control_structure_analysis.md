@@ -42,8 +42,8 @@
 
 - `RacketCartesianController`의 Jacobian 기반 작은 IK step
 - anchor-relative workspace clip
-- pre-contact XY clamp
-- pre-contact upward Z cap
+- strike-window XY clamp
+- strike-window upward Z cap
 - body keep-out
 
 ### 제거
@@ -75,6 +75,6 @@ baseline에는 아래만 둔다.
 
 ## v2에서 검증할 가설
 
-가설: assist 없이도, pre-contact guard + relative observation + 단순 reward만 있으면 policy는 최소한 racket-first contact와 반복 bounce로 향하는 행동을 다시 학습할 수 있다.
+가설: assist 없이도, strike-window guard + relative observation + 단순 reward만 있으면 policy는 최소한 racket-first contact와 반복 bounce로 향하는 행동을 다시 학습할 수 있다.
 
 이 가설이 틀리면 그때 observation 확장이나 action 구조 변경을 검토한다.

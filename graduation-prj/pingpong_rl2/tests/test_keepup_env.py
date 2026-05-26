@@ -39,6 +39,24 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertTrue(np.all(np.abs(guarded_target[:2] - anchor_position[:2]) <= xy_limit + 1.0e-9))
 
 
+    def test_tracking_term_stays_active_after_first_contact(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset()
+        env.contact_count = 1
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        self.assertGreater(env._tracking_term(), 0.0)
+
+
+    def test_strike_guard_reapplies_after_first_contact(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0)
+        env.reset(ball_height=env.ball_height, ball_velocity=(0.0, 0.0, 0.0))
+        env.contact_count = 1
+        anchor_position = env._controller_anchor_position()
+        guarded_target = env._guarded_target_position(anchor_position + np.array([0.0, 0.0, 0.12]))
+        self.assertLessEqual(guarded_target[2], anchor_position[2] + 0.02 + 1.0e-9)
+
+
     def test_gym_wrapper_exposes_box_spaces(self) -> None:
         env = PingPongKeepUpGymEnv(reset_xy_range=0.0)
         observation, _ = env.reset(seed=7)

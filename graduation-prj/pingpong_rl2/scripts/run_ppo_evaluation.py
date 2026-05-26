@@ -18,6 +18,9 @@ from pingpong_rl2.defaults import (
     DEFAULT_BALL_HEIGHT,
     DEFAULT_MAX_EPISODE_STEPS,
     DEFAULT_PPO_RUN_NAME,
+    DEFAULT_RESET_VELOCITY_XY_RANGE,
+    DEFAULT_RESET_VELOCITY_Z_RANGE,
+    DEFAULT_RESET_XY_RANGE,
     DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
     default_ppo_model_candidates,
 )
@@ -32,7 +35,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=23)
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
-    parser.add_argument("--reset-xy-range", type=float, default=0.06)
+    parser.add_argument("--reset-xy-range", type=float, default=DEFAULT_RESET_XY_RANGE)
+    parser.add_argument("--reset-velocity-xy-range", type=float, default=DEFAULT_RESET_VELOCITY_XY_RANGE)
+    parser.add_argument(
+        "--reset-velocity-z-range",
+        type=float,
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        default=DEFAULT_RESET_VELOCITY_Z_RANGE,
+    )
     parser.add_argument(
         "--success-velocity-threshold",
         type=float,
@@ -63,8 +74,11 @@ def main() -> None:
         target_ball_height=args.ball_height,
         max_episode_steps=args.max_episode_steps,
         reset_xy_range=args.reset_xy_range,
+        reset_velocity_xy_range=args.reset_velocity_xy_range,
+        reset_velocity_z_range=tuple(args.reset_velocity_z_range),
         success_velocity_threshold=args.success_velocity_threshold,
     )
+    env_config = env.training_config()
     model = PPO.load(str(model_path))
     returns: list[float] = []
     useful_bounces: list[int] = []
@@ -112,6 +126,7 @@ def main() -> None:
         "model_path": str(model_path.resolve()),
         "run_name": DEFAULT_PPO_RUN_NAME,
         "episodes": args.episodes,
+        "env_config": env_config,
         "mean_return": float(returns_array.mean()) if returns_array.size else 0.0,
         "mean_useful_bounces": float(bounce_array.mean()) if bounce_array.size else 0.0,
         "max_useful_bounces": int(bounce_array.max()) if bounce_array.size else 0,

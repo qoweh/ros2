@@ -228,6 +228,8 @@ class PingPongKeepUpEnv:
             "projected_contact_apex_height_above_racket": (
                 self._projected_contact_apex_height_above_racket(contact_trace) if contact_event else None
             ),
+            "contact_ball_height_above_racket": contact_trace.get("contact_ball_height_above_racket"),
+            "contact_xy_alignment_error": contact_trace.get("contact_xy_alignment_error"),
             "racket_velocity_z": float(self.sim.racket_velocity[2]),
             "contact_ball_velocity_z": contact_trace.get("contact_ball_velocity_z"),
             "contact_racket_velocity_z": contact_trace.get("contact_racket_velocity_z"),
@@ -310,7 +312,12 @@ class PingPongKeepUpEnv:
             "contact_ball_velocity_z",
             default=float(self.sim.ball_velocity[2]),
         )
-        return self._projected_apex_height_above_racket(self._ball_height_above_racket(), contact_ball_velocity_z)
+        contact_ball_height = self._contact_float(
+            contact_trace,
+            "contact_ball_height_above_racket",
+            default=self._ball_height_above_racket(),
+        )
+        return self._projected_apex_height_above_racket(contact_ball_height, contact_ball_velocity_z)
 
     def _apex_match_term(self, contact_trace: dict[str, object] | None) -> float:
         projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
@@ -322,16 +329,15 @@ class PingPongKeepUpEnv:
         return float(np.clip(min(self._target_ball_height_above_racket(), 0.18), 0.12, 0.18))
 
     def _tracking_term(self) -> float:
-        if self.contact_count > 0:
-            return 0.0
         if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
             return 0.0
         ball_height_above_racket = self._ball_height_above_racket()
         vertical_error = abs(ball_height_above_racket - self._preparation_target_height_above_racket())
         if vertical_error > self.strike_zone_height_tolerance:
             return 0.0
+        vertical_score = max(1.0 - vertical_error / self.strike_zone_height_tolerance, 0.0)
         xy_score = max(1.0 - self._xy_alignment_error() / self.strike_zone_xy_radius, 0.0)
-        return float(self.tracking_reward_weight * xy_score)
+        return float(self.tracking_reward_weight * xy_score * vertical_score)
 
     def _success_reason(
         self,
@@ -403,8 +409,6 @@ class PingPongKeepUpEnv:
         return np.asarray(anchor_position, dtype=float)
 
     def _pre_contact_readiness(self) -> float:
-        if self.contact_count > 0:
-            return 1.0
         if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
             return 0.0
         preparation_height = self._preparation_target_height_above_racket()
@@ -426,8 +430,6 @@ class PingPongKeepUpEnv:
     def _pre_contact_xy_limit(self) -> float:
         full_xy_limit = min(self.strike_zone_xy_radius, float(np.min(self.target_offset_high[:2])))
         base_xy_limit = min(max(self.contact_centering_radius, 0.4 * full_xy_limit), full_xy_limit)
-        if self.contact_count > 0:
-            return float(full_xy_limit)
         readiness = self._pre_contact_readiness()
         return float(base_xy_limit + readiness * (full_xy_limit - base_xy_limit))
 
@@ -456,14 +458,13 @@ class PingPongKeepUpEnv:
 
     def _guarded_target_position(self, target_position: Sequence[float]) -> np.ndarray:
         safe_target = self._body_safe_target_position(target_position)
-        if self.contact_count <= 0:
-            anchor_position = self._controller_anchor_position()
-            pre_contact_xy_limit = self._pre_contact_xy_limit()
-            safe_target[:2] = anchor_position[:2] + np.clip(
-                safe_target[:2] - anchor_position[:2],
-                -pre_contact_xy_limit,
-                pre_contact_xy_limit,
-            )
-            if not self._pre_contact_upward_ready():
-                safe_target[2] = min(float(safe_target[2]), float(anchor_position[2] + 0.02))
+        anchor_position = self._controller_anchor_position()
+        pre_contact_xy_limit = self._pre_contact_xy_limit()
+        safe_target[:2] = anchor_position[:2] + np.clip(
+            safe_target[:2] - anchor_position[:2],
+            -pre_contact_xy_limit,
+            pre_contact_xy_limit,
+        )
+        if not self._pre_contact_upward_ready():
+            safe_target[2] = min(float(safe_target[2]), float(anchor_position[2] + 0.02))
         return safe_target

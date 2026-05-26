@@ -24,6 +24,8 @@ from pingpong_rl2.defaults import (
     DEFAULT_PPO_N_STEPS,
     DEFAULT_PPO_RUN_NAME,
     DEFAULT_PPO_TOTAL_TIMESTEPS,
+    DEFAULT_RESET_VELOCITY_XY_RANGE,
+    DEFAULT_RESET_VELOCITY_Z_RANGE,
     DEFAULT_RESET_XY_RANGE,
     DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
     SMOKE_PPO_BATCH_SIZE,
@@ -51,6 +53,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--reset-xy-range", type=float, default=DEFAULT_RESET_XY_RANGE)
+    parser.add_argument("--reset-velocity-xy-range", type=float, default=DEFAULT_RESET_VELOCITY_XY_RANGE)
+    parser.add_argument(
+        "--reset-velocity-z-range",
+        type=float,
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        default=DEFAULT_RESET_VELOCITY_Z_RANGE,
+    )
     parser.add_argument(
         "--success-velocity-threshold",
         type=float,
@@ -76,6 +86,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         "target_ball_height": args.ball_height,
         "max_episode_steps": args.max_episode_steps,
         "reset_xy_range": args.reset_xy_range,
+        "reset_velocity_xy_range": args.reset_velocity_xy_range,
+        "reset_velocity_z_range": tuple(args.reset_velocity_z_range),
         "success_velocity_threshold": args.success_velocity_threshold,
     }
 
@@ -127,6 +139,11 @@ def main() -> None:
 
     run_dir = build_run_dir(args.run_name, args.output_dir)
     env_kwargs = env_kwargs_from_args(args)
+    config_env = PingPongKeepUpGymEnv(**env_kwargs)
+    try:
+        resolved_env_config = config_env.training_config()
+    finally:
+        config_env.close()
     vec_env = make_sb3_async_vector_env(num_envs=args.n_envs, env_kwargs=env_kwargs, seed=args.seed)
     monitored_env = VecMonitor(venv=vec_env, filename=str(run_dir / "monitor.csv"))
 
@@ -164,6 +181,7 @@ def main() -> None:
             "device": args.device,
             **env_kwargs,
         },
+        "env_config": resolved_env_config,
         "evaluation": evaluation,
     }
     summary_path = run_dir / f"{args.run_name}_training_summary.json"
