@@ -34,6 +34,8 @@ _POSITION_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
     ("ball_position", 3),
     ("ball_velocity", 3),
     ("ball_relative_position", 3),
+    ("predicted_intercept_relative_xy", 2),
+    ("predicted_intercept_time", 1),
 )
 
 _POSITION_TILT_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
@@ -263,6 +265,10 @@ class PingPongKeepUpEnv:
 
     def observation(self) -> np.ndarray:
         ball_relative_position = self.sim.ball_position - self.sim.racket_position
+        predicted_intercept_time = self._predicted_intercept_time()
+        predicted_intercept_relative_xy = (
+            self.sim.ball_position[:2] + predicted_intercept_time * self.sim.ball_velocity[:2] - self.sim.racket_position[:2]
+        )
         observation_parts: list[np.ndarray] = [
             self.sim.joint_positions,
             self.sim.joint_velocities,
@@ -272,6 +278,8 @@ class PingPongKeepUpEnv:
             self.sim.ball_position,
             self.sim.ball_velocity,
             ball_relative_position,
+            predicted_intercept_relative_xy,
+            np.array([predicted_intercept_time], dtype=float),
         ]
         if self.action_mode == "position_tilt":
             observation_parts.extend(
@@ -365,6 +373,8 @@ class PingPongKeepUpEnv:
             "ball_height_above_racket": self._ball_height_above_racket(),
             "target_ball_height_above_racket": self._target_ball_height_above_racket(),
             "xy_alignment_error": self._xy_alignment_error(),
+            "predicted_intercept_xy_error": self._tracking_alignment_error(),
+            "predicted_intercept_time": self._predicted_intercept_time(),
             "racket_face_normal": self.sim.racket_face_normal,
             "target_tilt": self.controller.target_tilt,
             "projected_contact_apex_height_above_racket": (
@@ -441,6 +451,45 @@ class PingPongKeepUpEnv:
     def _xy_alignment_error(self) -> float:
         return float(np.linalg.norm(self.sim.ball_position[:2] - self.sim.racket_position[:2]))
 
+    def _tracking_strike_plane_offset(self) -> float:
+        return float(np.clip(0.02, self.target_offset_low[2], self.target_offset_high[2]))
+
+    def _predicted_intercept_time(self) -> float:
+        fallback_time = 0.0
+        max_intercept_time = 0.35
+        target_z = float(self.sim.racket_position[2]) + self._tracking_strike_plane_offset()
+        quadratic_a = 0.5 * self._gravity_z()
+        quadratic_b = float(self.sim.ball_velocity[2])
+        quadratic_c = float(self.sim.ball_position[2] - target_z)
+
+        candidate_times: list[float] = []
+        if abs(quadratic_a) < 1.0e-9:
+            if abs(quadratic_b) > 1.0e-9:
+                candidate_times.append(-quadratic_c / quadratic_b)
+        else:
+            discriminant = quadratic_b * quadratic_b - 4.0 * quadratic_a * quadratic_c
+            if discriminant >= 0.0:
+                sqrt_discriminant = float(np.sqrt(discriminant))
+                denominator = 2.0 * quadratic_a
+                candidate_times.extend(
+                    [
+                        (-quadratic_b - sqrt_discriminant) / denominator,
+                        (-quadratic_b + sqrt_discriminant) / denominator,
+                    ]
+                )
+
+        valid_times = [time_value for time_value in candidate_times if 0.0 <= time_value <= max_intercept_time]
+        if valid_times:
+            return min(valid_times)
+        return float(np.clip(fallback_time, 0.0, max_intercept_time))
+
+    def _predicted_intercept_xy(self) -> np.ndarray:
+        intercept_time = self._predicted_intercept_time()
+        return np.asarray(self.sim.ball_position[:2] + intercept_time * self.sim.ball_velocity[:2], dtype=float)
+
+    def _tracking_alignment_error(self) -> float:
+        return float(np.linalg.norm(self._predicted_intercept_xy() - self.sim.racket_position[:2]))
+
     def _gravity_z(self) -> float:
         return float(self.sim.model.opt.gravity[2])
 
@@ -516,7 +565,7 @@ class PingPongKeepUpEnv:
         if vertical_error > self.strike_zone_height_tolerance:
             return 0.0
         vertical_score = max(1.0 - vertical_error / self.strike_zone_height_tolerance, 0.0)
-        xy_score = max(1.0 - self._xy_alignment_error() / self.strike_zone_xy_radius, 0.0)
+        xy_score = max(1.0 - self._tracking_alignment_error() / self.strike_zone_xy_radius, 0.0)
         return float(self.tracking_reward_weight * xy_score * vertical_score)
 
     def _success_reason(
@@ -618,7 +667,7 @@ class PingPongKeepUpEnv:
             0.0,
             1.0,
         )
-        xy_score = max(1.0 - self._xy_alignment_error() / self.strike_zone_xy_radius, 0.0)
+        xy_score = max(1.0 - self._tracking_alignment_error() / self.strike_zone_xy_radius, 0.0)
         return float(np.clip(min(height_score, xy_score), 0.0, 1.0))
 
     def _pre_contact_height_readiness(self) -> float:

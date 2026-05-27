@@ -21,6 +21,28 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         racket_velocity_slice = env.observation_slices["racket_velocity"]
         self.assertTrue(np.allclose(observation[racket_velocity_slice], env.sim.racket_velocity))
 
+    def test_observation_includes_predicted_intercept_relative_xy_slice(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.4, 0.0, -1.0))
+        observation = env.observation()
+        predicted_intercept_slice = env.observation_slices["predicted_intercept_relative_xy"]
+        expected_value = env._predicted_intercept_xy() - env.sim.racket_position[:2]
+        self.assertTrue(np.allclose(observation[predicted_intercept_slice], expected_value))
+        self.assertGreater(float(observation[predicted_intercept_slice][0]), 0.0)
+
+    def test_observation_includes_predicted_intercept_time_slice(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.4, 0.0, -1.0))
+        observation = env.observation()
+        predicted_intercept_time_slice = env.observation_slices["predicted_intercept_time"]
+        expected_value = env._predicted_intercept_time()
+        self.assertAlmostEqual(float(observation[predicted_intercept_time_slice][0]), expected_value)
+        self.assertGreater(expected_value, 0.0)
+
     def test_default_action_limits_bias_vertical_motion(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0)
         self.assertLess(env.action_high[0], env.action_high[2])
@@ -126,6 +148,26 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
         env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
         self.assertGreater(env._tracking_term(), 0.0)
+
+    def test_tracking_term_uses_predicted_intercept_xy(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        stationary_tracking_term = env._tracking_term()
+        env.sim.spawn_ball(ball_position, velocity=(0.4, 0.0, -1.0))
+        moving_tracking_term = env._tracking_term()
+        self.assertLess(moving_tracking_term, stationary_tracking_term)
+
+    def test_pre_contact_readiness_uses_predicted_intercept_xy(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        stationary_readiness = env._pre_contact_readiness()
+        env.sim.spawn_ball(ball_position, velocity=(0.4, 0.0, -1.0))
+        moving_readiness = env._pre_contact_readiness()
+        self.assertLess(moving_readiness, stationary_readiness)
 
     def test_contact_active_suppresses_tracking_reward(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
