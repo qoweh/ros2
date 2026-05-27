@@ -72,6 +72,7 @@ def main() -> None:
     env_config = env.training_config()
     model = PPO.load(str(model_path))
     returns: list[float] = []
+    contact_counts: list[int] = []
     useful_bounces: list[int] = []
     failure_counts: Counter[str] = Counter()
     summaries: list[dict[str, object]] = []
@@ -92,26 +93,31 @@ def main() -> None:
             failure_reason = info.get("failure_reason")
             if failure_reason is None:
                 failure_reason = "time_limit" if bool(info.get("truncated", False)) else "none"
+            contact_count = int(info.get("contact_count", 0))
             useful_bounce_count = int(info.get("successful_bounce_count", 0))
             failure_counts[str(failure_reason)] += 1
             returns.append(episode_return)
+            contact_counts.append(contact_count)
             useful_bounces.append(useful_bounce_count)
             episode_summary = {
                 "episode": episode,
                 "return": episode_return,
                 "steps": step_count,
+                "contact_count": contact_count,
                 "useful_bounces": useful_bounce_count,
                 "failure_reason": failure_reason,
             }
             summaries.append(episode_summary)
             print(
                 f"episode={episode} steps={step_count} return={episode_return:.3f} "
+                f"contacts={contact_count} "
                 f"useful_bounces={useful_bounce_count} failure_reason={failure_reason}"
             )
     finally:
         env.close()
 
     returns_array = np.asarray(returns, dtype=float)
+    contact_array = np.asarray(contact_counts, dtype=float)
     bounce_array = np.asarray(useful_bounces, dtype=float)
     summary = {
         "model_path": str(model_path.resolve()),
@@ -119,6 +125,8 @@ def main() -> None:
         "episodes": args.episodes,
         "env_config": env_config,
         "mean_return": float(returns_array.mean()) if returns_array.size else 0.0,
+        "mean_contacts": float(contact_array.mean()) if contact_array.size else 0.0,
+        "max_contacts": int(contact_array.max()) if contact_array.size else 0,
         "mean_useful_bounces": float(bounce_array.mean()) if bounce_array.size else 0.0,
         "max_useful_bounces": int(bounce_array.max()) if bounce_array.size else 0,
         "failure_counts": dict(failure_counts),

@@ -99,6 +99,7 @@ def main() -> None:
                     continue
                 print(
                     f"episode={episode_index} steps={episode_steps} return={episode_return:.3f} "
+                    f"contacts={info.get('contact_count', 0)} "
                     f"useful_bounces={info.get('successful_bounce_count', 0)} "
                     f"failure_reason={info.get('failure_reason')}"
                 )

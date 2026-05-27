@@ -563,13 +563,34 @@ class PingPongKeepUpEnv:
         xy_score = max(1.0 - self._xy_alignment_error() / self.strike_zone_xy_radius, 0.0)
         return float(np.clip(min(height_score, xy_score), 0.0, 1.0))
 
+    def _pre_contact_height_readiness(self) -> float:
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return 0.0
+        preparation_height = self._preparation_target_height_above_racket()
+        activation_height = float(np.clip(preparation_height + 0.08, 0.16, 0.22))
+        ball_height = self._ball_height_above_racket()
+        if ball_height >= activation_height:
+            return 0.0
+        return float(
+            1.0
+            - np.clip(
+                (ball_height - preparation_height) / max(activation_height - preparation_height, 1.0e-6),
+                0.0,
+                1.0,
+            )
+        )
+
     def _pre_contact_upward_ready(self) -> bool:
         return self._pre_contact_readiness() >= 0.95
 
     def _pre_contact_xy_limit(self) -> float:
-        full_xy_limit = min(self.strike_zone_xy_radius, float(np.min(self.target_offset_high[:2])))
+        full_xy_limit = min(
+            float(np.min(self.target_offset_high[:2])),
+            self.strike_zone_xy_radius + self.contact_centering_radius,
+        )
         base_xy_limit = min(max(self.contact_centering_radius, 0.4 * full_xy_limit), full_xy_limit)
-        readiness = self._pre_contact_readiness()
+        height_catchup_weight = 1.0 if self.action_mode == "position" else 0.5
+        readiness = max(self._pre_contact_readiness(), height_catchup_weight * self._pre_contact_height_readiness())
         return float(base_xy_limit + readiness * (full_xy_limit - base_xy_limit))
 
     def _body_safe_target_position(self, target_position: Sequence[float]) -> np.ndarray:

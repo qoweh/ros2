@@ -68,6 +68,22 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         xy_limit = env._pre_contact_xy_limit()
         self.assertTrue(np.all(np.abs(guarded_target[:2] - anchor_position[:2]) <= xy_limit + 1.0e-9))
 
+    def test_pre_contact_xy_limit_expands_for_low_descending_ball_even_when_misaligned(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.08, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        self.assertGreater(env._pre_contact_xy_limit(), 0.11)
+
+    def test_position_tilt_xy_limit_stays_more_conservative_than_position(self) -> None:
+        position_env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        tilt_env = PingPongKeepUpEnv(action_mode="position_tilt", reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        for env in (position_env, tilt_env):
+            env.reset(ball_height=env.ball_height)
+            ball_position = env.sim.racket_position + np.array([0.08, 0.0, env._preparation_target_height_above_racket()])
+            env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        self.assertGreater(position_env._pre_contact_xy_limit(), tilt_env._pre_contact_xy_limit())
+
 
     def test_tracking_term_stays_active_after_first_contact(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
