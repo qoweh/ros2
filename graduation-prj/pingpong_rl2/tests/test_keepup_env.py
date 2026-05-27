@@ -77,6 +77,36 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
         self.assertGreater(env._tracking_term(), 0.0)
 
+    def test_contact_active_suppresses_tracking_reward(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset()
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=False,
+            contact_active=True,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={},
+        )
+        self.assertEqual(reward_terms["tracking_term"], 0.0)
+
+    def test_position_tilt_penalties_are_negative_when_tilt_changes(self) -> None:
+        env = PingPongKeepUpEnv(action_mode="position_tilt", reset_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        env.controller.set_target_tilt((0.03, -0.03))
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=False,
+            contact_active=False,
+            applied_action=np.array([0.0, 0.0, 0.0, 0.015, -0.015], dtype=float),
+            contact_trace={},
+        )
+        self.assertLess(reward_terms["tilt_angle_penalty"], 0.0)
+        self.assertLess(reward_terms["tilt_action_delta_penalty"], 0.0)
+
 
     def test_strike_guard_reapplies_after_first_contact(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0)

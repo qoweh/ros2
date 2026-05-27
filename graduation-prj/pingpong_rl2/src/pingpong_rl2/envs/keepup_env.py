@@ -70,8 +70,11 @@ class PingPongKeepUpEnv:
         target_ball_height: float = DEFAULT_BALL_HEIGHT,
         height_tolerance: float = 0.10,
         tracking_reward_weight: float = DEFAULT_TRACKING_REWARD_WEIGHT,
+        tracking_during_contact_scale: float = 0.0,
         contact_bonus: float = DEFAULT_CONTACT_BONUS,
         apex_match_reward_weight: float = DEFAULT_APEX_MATCH_REWARD_WEIGHT,
+        tilt_angle_penalty_weight: float | None = None,
+        tilt_action_delta_penalty_weight: float | None = None,
         descending_ball_velocity_threshold: float = -0.05,
         strike_zone_xy_radius: float = 0.10,
         strike_zone_height_tolerance: float = 0.16,
@@ -106,8 +109,21 @@ class PingPongKeepUpEnv:
         self.target_ball_height = float(target_ball_height)
         self.height_tolerance = float(height_tolerance)
         self.tracking_reward_weight = float(tracking_reward_weight)
+        self.tracking_during_contact_scale = float(tracking_during_contact_scale)
         self.contact_bonus = float(contact_bonus)
         self.apex_match_reward_weight = float(apex_match_reward_weight)
+        default_tilt_angle_penalty_weight = 0.04 if self.action_mode == "position_tilt" else 0.0
+        default_tilt_action_delta_penalty_weight = 0.10 if self.action_mode == "position_tilt" else 0.0
+        self.tilt_angle_penalty_weight = float(
+            default_tilt_angle_penalty_weight
+            if tilt_angle_penalty_weight is None
+            else tilt_angle_penalty_weight
+        )
+        self.tilt_action_delta_penalty_weight = float(
+            default_tilt_action_delta_penalty_weight
+            if tilt_action_delta_penalty_weight is None
+            else tilt_action_delta_penalty_weight
+        )
         self.descending_ball_velocity_threshold = float(descending_ball_velocity_threshold)
         self.strike_zone_xy_radius = float(strike_zone_xy_radius)
         self.strike_zone_height_tolerance = float(strike_zone_height_tolerance)
@@ -141,6 +157,20 @@ class PingPongKeepUpEnv:
             )
         if self.tilt_action_limit <= 0.0:
             raise ValueError(f"tilt_action_limit must be positive, got {self.tilt_action_limit}.")
+        if not 0.0 <= self.tracking_during_contact_scale <= 1.0:
+            raise ValueError(
+                "tracking_during_contact_scale must be within [0, 1], got "
+                f"{self.tracking_during_contact_scale}."
+            )
+        if self.tilt_angle_penalty_weight < 0.0:
+            raise ValueError(
+                f"tilt_angle_penalty_weight must be non-negative, got {self.tilt_angle_penalty_weight}."
+            )
+        if self.tilt_action_delta_penalty_weight < 0.0:
+            raise ValueError(
+                "tilt_action_delta_penalty_weight must be non-negative, got "
+                f"{self.tilt_action_delta_penalty_weight}."
+            )
         if self.max_episode_steps < 1:
             raise ValueError(f"max_episode_steps must be positive, got {self.max_episode_steps}.")
         if self.height_tolerance <= 0.0:
@@ -266,7 +296,14 @@ class PingPongKeepUpEnv:
         if success_reason is not None:
             self.successful_bounce_count += 1
 
-        reward_terms = self._reward_terms(failure_reason, success_reason, contact_event, contact_trace)
+        reward_terms = self._reward_terms(
+            failure_reason,
+            success_reason,
+            contact_event,
+            contact_active,
+            applied_action,
+            contact_trace,
+        )
         reward = float(sum(reward_terms.values()))
         terminated = failure_reason is not None
         truncated = (not terminated) and self.step_count >= self.max_episode_steps
@@ -303,6 +340,8 @@ class PingPongKeepUpEnv:
             "contact_ball_velocity_z": contact_trace.get("contact_ball_velocity_z"),
             "contact_racket_velocity_z": contact_trace.get("contact_racket_velocity_z"),
             "contact_racket_speed_norm": contact_trace.get("contact_racket_speed_norm"),
+            "tilt_magnitude_norm": self._normalized_tilt_magnitude(),
+            "tilt_action_delta_norm": self._normalized_tilt_action_delta(applied_action),
             "terminated": terminated,
             "truncated": truncated,
         }
@@ -323,8 +362,11 @@ class PingPongKeepUpEnv:
             "target_ball_height": self.target_ball_height,
             "height_tolerance": self.height_tolerance,
             "tracking_reward_weight": self.tracking_reward_weight,
+            "tracking_during_contact_scale": self.tracking_during_contact_scale,
             "contact_bonus": self.contact_bonus,
             "apex_match_reward_weight": self.apex_match_reward_weight,
+            "tilt_angle_penalty_weight": self.tilt_angle_penalty_weight,
+            "tilt_action_delta_penalty_weight": self.tilt_action_delta_penalty_weight,
             "descending_ball_velocity_threshold": self.descending_ball_velocity_threshold,
             "strike_zone_xy_radius": self.strike_zone_xy_radius,
             "strike_zone_height_tolerance": self.strike_zone_height_tolerance,
@@ -400,6 +442,18 @@ class PingPongKeepUpEnv:
         height_match = max(1.0 - height_error / self.height_tolerance, 0.0)
         return float(self.apex_match_reward_weight * height_match)
 
+    def _normalized_tilt_magnitude(self) -> float:
+        if self.action_mode != "position_tilt":
+            return 0.0
+        normalized_tilt = self.controller.target_tilt / np.maximum(self.target_tilt_limit, 1.0e-6)
+        return float(np.linalg.norm(normalized_tilt) / np.sqrt(2.0))
+
+    def _normalized_tilt_action_delta(self, action: np.ndarray) -> float:
+        if self.action_mode != "position_tilt":
+            return 0.0
+        tilt_delta = action[3:] - self._previous_action[3:]
+        return float(np.linalg.norm(tilt_delta) / max(np.sqrt(2.0) * self.tilt_action_limit, 1.0e-6))
+
     def _preparation_target_height_above_racket(self) -> float:
         return float(np.clip(min(self._target_ball_height_above_racket(), 0.18), 0.12, 0.18))
 
@@ -441,14 +495,24 @@ class PingPongKeepUpEnv:
         failure_reason: str | None,
         success_reason: str | None,
         contact_event: bool,
+        contact_active: bool,
+        applied_action: np.ndarray,
         contact_trace: dict[str, object],
     ) -> dict[str, float]:
+        tracking_scale = self.tracking_during_contact_scale if contact_active else 1.0
         reward_terms = {
-            "tracking_term": self._tracking_term(),
+            "tracking_term": tracking_scale * self._tracking_term(),
             "contact_bonus": 0.0,
             "apex_match_term": 0.0,
             "failure_penalty": 0.0,
+            "tilt_angle_penalty": 0.0,
+            "tilt_action_delta_penalty": 0.0,
         }
+        if self.action_mode == "position_tilt":
+            reward_terms["tilt_angle_penalty"] = -self.tilt_angle_penalty_weight * self._normalized_tilt_magnitude()
+            reward_terms["tilt_action_delta_penalty"] = (
+                -self.tilt_action_delta_penalty_weight * self._normalized_tilt_action_delta(applied_action)
+            )
         if contact_event and success_reason is not None:
             reward_terms["contact_bonus"] = self.contact_bonus
             reward_terms["apex_match_term"] = self._apex_match_term(contact_trace)

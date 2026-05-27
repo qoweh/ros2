@@ -8,3 +8,5 @@
   - `pingpong_rl2` 최소 keep-up 재설계, 학습 상태, 현재 병목, 검증 결과를 한 번에 정리한 상태 보고서
 - `02_pingpong_rl2_position_tilt_and_rebound_report.md`
   - versioned run-name 실험 표면, `position_tilt` branch, rebound analysis 도구와 최신 결과를 정리한 보고서
+- `03_pingpong_rl2_position_tilt_chatter_fix_report.md`
+  - `position_tilt` chatter exploit 진단, anti-chatter reward/control 수정, staged tilt profile A/B 결과를 정리한 보고서

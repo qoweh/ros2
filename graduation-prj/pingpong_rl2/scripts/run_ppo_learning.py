@@ -42,6 +42,33 @@ from pingpong_rl2.utils import (
     resolve_requested_run_name,
 )
 
+_TILT_PROFILES: dict[str, dict[str, object]] = {
+    "early": {
+        "tilt_action_limit": 0.015,
+        "target_tilt_limit": (0.06, 0.06),
+        "tilt_angle_penalty_weight": 0.06,
+        "tilt_action_delta_penalty_weight": 0.12,
+    },
+    "mid": {
+        "tilt_action_limit": 0.025,
+        "target_tilt_limit": (0.09, 0.09),
+        "tilt_angle_penalty_weight": 0.05,
+        "tilt_action_delta_penalty_weight": 0.10,
+    },
+    "late": {
+        "tilt_action_limit": 0.035,
+        "target_tilt_limit": (0.12, 0.12),
+        "tilt_angle_penalty_weight": 0.04,
+        "tilt_action_delta_penalty_weight": 0.08,
+    },
+    "final": {
+        "tilt_action_limit": 0.04,
+        "target_tilt_limit": (0.12, 0.12),
+        "tilt_angle_penalty_weight": 0.03,
+        "tilt_action_delta_penalty_weight": 0.06,
+    },
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the minimal pingpong_rl2 PPO baseline.")
@@ -73,6 +100,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--action-mode", type=str, default="position", choices=("position", "position_tilt"))
+    parser.add_argument(
+        "--tilt-profile",
+        type=str,
+        default="auto",
+        choices=("auto", "custom", "early", "mid", "late", "final"),
+        help="Convenience preset for position_tilt limits and regularization. 'auto' resolves to 'early'.",
+    )
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--reset-xy-range", type=float, default=DEFAULT_RESET_XY_RANGE)
@@ -92,6 +126,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lateral-action-limit", type=float, default=None)
     parser.add_argument("--vertical-action-limit", type=float, default=None)
     parser.add_argument("--tilt-action-limit", type=float, default=None)
+    parser.add_argument("--tracking-during-contact-scale", type=float, default=None)
+    parser.add_argument("--tilt-angle-penalty-weight", type=float, default=None)
+    parser.add_argument("--tilt-action-delta-penalty-weight", type=float, default=None)
     parser.add_argument(
         "--target-tilt-limit",
         type=float,
@@ -145,6 +182,38 @@ def build_session_monitor_path(run_dir: Path) -> Path:
         session_index += 1
 
 
+def resolve_tilt_profile(args: argparse.Namespace) -> str:
+    if args.action_mode != "position_tilt":
+        if args.tracking_during_contact_scale is None:
+            args.tracking_during_contact_scale = 0.0
+        return "disabled"
+
+    profile_name = "early" if args.tilt_profile == "auto" else args.tilt_profile
+    if profile_name == "custom":
+        if args.tracking_during_contact_scale is None:
+            args.tracking_during_contact_scale = 0.0
+        return profile_name
+
+    profile = _TILT_PROFILES[profile_name]
+    if args.tilt_action_limit is None:
+        args.tilt_action_limit = float(profile["tilt_action_limit"])
+    if args.target_tilt_limit is None:
+        args.target_tilt_limit = tuple(profile["target_tilt_limit"])
+    if args.tilt_angle_penalty_weight is None:
+        args.tilt_angle_penalty_weight = float(profile["tilt_angle_penalty_weight"])
+    if args.tilt_action_delta_penalty_weight is None:
+        args.tilt_action_delta_penalty_weight = float(profile["tilt_action_delta_penalty_weight"])
+    if args.tracking_during_contact_scale is None:
+        args.tracking_during_contact_scale = 0.0
+    return profile_name
+
+
+def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
+    if args.action_mode != "position_tilt" or args.tilt_action_limit is None or args.target_tilt_limit is None:
+        return None
+    return float(args.tilt_action_limit / max(min(args.target_tilt_limit), 1.0e-6))
+
+
 def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
     env_kwargs: dict[str, object] = {
         "action_mode": args.action_mode,
@@ -162,6 +231,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["vertical_action_limit"] = args.vertical_action_limit
     if args.tilt_action_limit is not None:
         env_kwargs["tilt_action_limit"] = args.tilt_action_limit
+    if args.tracking_during_contact_scale is not None:
+        env_kwargs["tracking_during_contact_scale"] = args.tracking_during_contact_scale
+    if args.tilt_angle_penalty_weight is not None:
+        env_kwargs["tilt_angle_penalty_weight"] = args.tilt_angle_penalty_weight
+    if args.tilt_action_delta_penalty_weight is not None:
+        env_kwargs["tilt_action_delta_penalty_weight"] = args.tilt_action_delta_penalty_weight
     if args.target_tilt_limit is not None:
         env_kwargs["target_tilt_limit"] = tuple(args.target_tilt_limit)
     return env_kwargs
@@ -213,6 +288,7 @@ def main() -> None:
         action_mode=args.action_mode,
         smoke=args.smoke,
     )
+    resolved_tilt_profile = resolve_tilt_profile(args)
     rollout_size = args.n_steps * args.n_envs
     if args.batch_size > rollout_size:
         raise ValueError(f"batch-size must be <= n_steps * n_envs ({rollout_size}), got {args.batch_size}.")
@@ -268,6 +344,7 @@ def main() -> None:
         "monitor_path": str(monitor_path.resolve()),
         "config": {
             "run_version": args.run_version,
+            "resolved_tilt_profile": resolved_tilt_profile,
             "total_timesteps": args.total_timesteps,
             "n_envs": args.n_envs,
             "n_steps": args.n_steps,
@@ -284,9 +361,17 @@ def main() -> None:
     summary_path = run_dir / f"{resolved_run_name}_training_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"resolved_run_name={resolved_run_name}")
+    print(f"resolved_tilt_profile={resolved_tilt_profile}")
     print(f"training_mode={training_mode}")
     if starting_checkpoint is not None:
         print(f"starting_checkpoint={starting_checkpoint}")
+        if args.resume_from is None and not args.reset_model:
+            print("resume_note=existing_checkpoint_in_run_dir")
+    resolved_tilt_limit_ratio = tilt_limit_ratio(args)
+    if resolved_tilt_limit_ratio is not None:
+        print(f"tilt_limit_ratio={resolved_tilt_limit_ratio:.3f}")
+        if resolved_tilt_limit_ratio > 0.33:
+            print("tilt_limit_warning=tilt_action_limit is large relative to target_tilt_limit and may encourage chatter")
     print(f"run_dir={run_dir}")
     print(f"model_path={run_dir / f'{resolved_run_name}_model.zip'}")
     print(f"monitor_path={monitor_path}")
