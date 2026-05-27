@@ -99,7 +99,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gamma", type=float, default=DEFAULT_PPO_GAMMA)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", type=str, default="auto")
-    parser.add_argument("--action-mode", type=str, default="position", choices=("position", "position_tilt"))
+    parser.add_argument(
+        "--action-mode",
+        type=str,
+        default="position",
+        choices=("position", "position_strike", "position_tilt"),
+    )
     parser.add_argument(
         "--tilt-profile",
         type=str,
@@ -151,6 +156,20 @@ def parse_args() -> argparse.Namespace:
         metavar=("PITCH", "ROLL"),
         default=None,
         help="Optional initial target tilt applied at env reset. Useful for breaking the zero-tilt symmetry in tilt A/B runs.",
+    )
+    parser.add_argument(
+        "--strike-tilt-assist-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+        help="Optional pre-contact tilt assist limit for position_strike. The assist ramps toward center-seeking tilt and returns to neutral after contact.",
+    )
+    parser.add_argument(
+        "--strike-tilt-assist-deadband",
+        type=float,
+        default=None,
+        help="Deadband in meters below which position_strike tilt assist stays neutral.",
     )
     parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument("--smoke", action="store_true")
@@ -259,6 +278,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["target_pitch_range"] = tuple(args.target_pitch_range)
     if args.initial_target_tilt is not None:
         env_kwargs["initial_target_tilt"] = tuple(args.initial_target_tilt)
+    if args.strike_tilt_assist_limit is not None:
+        env_kwargs["strike_tilt_assist_limit"] = tuple(args.strike_tilt_assist_limit)
+    if args.strike_tilt_assist_deadband is not None:
+        env_kwargs["strike_tilt_assist_deadband"] = args.strike_tilt_assist_deadband
     return env_kwargs
 
 

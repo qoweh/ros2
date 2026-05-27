@@ -28,20 +28,33 @@ DEFAULT_PPO_N_STEPS = 256
 DEFAULT_PPO_BATCH_SIZE = 256
 DEFAULT_PPO_LEARNING_RATE = 3.0e-4
 DEFAULT_PPO_GAMMA = 0.99
-DEFAULT_PPO_RUN_NAME = "ppo_minimal_keepup"
-DEFAULT_PPO_POSITION_TILT_RUN_NAME = "ppo_position_tilt_keepup"
+DEFAULT_PPO_RUN_NAME = "pmk"
+DEFAULT_PPO_POSITION_STRIKE_RUN_NAME = "pmk_s"
+DEFAULT_PPO_POSITION_TILT_RUN_NAME = "pmk_t"
 
 SMOKE_PPO_TOTAL_TIMESTEPS = 1_024
 SMOKE_PPO_N_STEPS = 64
 SMOKE_PPO_BATCH_SIZE = 64
-SMOKE_PPO_RUN_NAME = "ppo_smoke"
-SMOKE_PPO_POSITION_TILT_RUN_NAME = "ppo_position_tilt_smoke"
+SMOKE_PPO_RUN_NAME = "pmk_smoke"
+SMOKE_PPO_POSITION_STRIKE_RUN_NAME = "pmk_s_smoke"
+SMOKE_PPO_POSITION_TILT_RUN_NAME = "pmk_t_smoke"
+
+LEGACY_PPO_RUN_NAMES = (
+    "ppo_minimal_keepup",
+    "ppo_position_tilt_keepup",
+    "ppo_smoke",
+    "ppo_position_tilt_smoke",
+)
 
 
 def default_ppo_model_candidates(ppo_runs_root: Path) -> list[Path]:
-    return [
-        ppo_runs_root / DEFAULT_PPO_RUN_NAME / f"{DEFAULT_PPO_RUN_NAME}_model.zip",
-        ppo_runs_root / DEFAULT_PPO_POSITION_TILT_RUN_NAME / f"{DEFAULT_PPO_POSITION_TILT_RUN_NAME}_model.zip",
-        ppo_runs_root / SMOKE_PPO_RUN_NAME / f"{SMOKE_PPO_RUN_NAME}_model.zip",
-        ppo_runs_root / SMOKE_PPO_POSITION_TILT_RUN_NAME / f"{SMOKE_PPO_POSITION_TILT_RUN_NAME}_model.zip",
-    ]
+    candidate_names = (
+        DEFAULT_PPO_RUN_NAME,
+        DEFAULT_PPO_POSITION_STRIKE_RUN_NAME,
+        DEFAULT_PPO_POSITION_TILT_RUN_NAME,
+        SMOKE_PPO_RUN_NAME,
+        SMOKE_PPO_POSITION_STRIKE_RUN_NAME,
+        SMOKE_PPO_POSITION_TILT_RUN_NAME,
+        *LEGACY_PPO_RUN_NAMES,
+    )
+    return [ppo_runs_root / run_name / f"{run_name}_model.zip" for run_name in candidate_names]

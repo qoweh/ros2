@@ -60,6 +60,76 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         )
         self.assertTrue(np.allclose(observation[env.observation_slices["target_tilt"]], env.controller.target_tilt))
 
+    def test_position_strike_mode_keeps_three_dim_action(self) -> None:
+        env = PingPongKeepUpEnv(action_mode="position_strike", reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        observation, _ = env.reset()
+        self.assertEqual(env.action_size, 3)
+        self.assertEqual(observation.shape, (env.observation_size,))
+
+    def test_position_strike_reset_applies_initial_target_tilt(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_tilt_limit=(0.06, 0.06),
+            initial_target_tilt=(0.03, 0.0),
+        )
+        _, info = env.reset(ball_height=env.ball_height)
+        self.assertTrue(np.allclose(info["target_tilt"], np.array([0.03, 0.0])))
+
+    def test_position_strike_step_preserves_initial_target_tilt(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_tilt_limit=(0.06, 0.06),
+            initial_target_tilt=(0.03, 0.0),
+        )
+        env.reset(ball_height=env.ball_height)
+        _, _, _, _, info = env.step(np.zeros(3, dtype=float))
+        self.assertTrue(np.allclose(info["target_tilt"], np.array([0.03, 0.0])))
+
+    def test_position_strike_tilt_assist_targets_robot_center_in_xy(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            strike_tilt_assist_limit=(0.03, 0.03),
+            strike_tilt_assist_deadband=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.03, -0.03, env._preparation_target_height_above_racket() + 0.01])
+        env.sim.spawn_ball(ball_position, velocity=(0.2, 0.0, -1.0))
+        target_tilt = env._strike_tilt_assist_target()
+        self.assertLess(float(target_tilt[0]), -0.01)
+        self.assertLess(float(target_tilt[1]), -0.01)
+
+    def test_position_strike_tilt_assist_returns_neutral_after_contact(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            strike_tilt_assist_limit=(0.03, 0.03),
+            strike_tilt_assist_deadband=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        env._contact_active_previous_step = True
+        self.assertTrue(np.allclose(env._strike_tilt_assist_target(), np.zeros(2, dtype=float)))
+
+    def test_position_strike_step_applies_tilt_assist(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            strike_tilt_assist_limit=(0.03, 0.03),
+            strike_tilt_assist_deadband=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.03, 0.0, env._preparation_target_height_above_racket() + 0.01])
+        env.sim.spawn_ball(ball_position, velocity=(0.2, 0.0, -1.0))
+        _, _, _, _, info = env.step(np.zeros(3, dtype=float))
+        self.assertLess(float(info["target_tilt"][0]), -0.01)
+
     def test_position_tilt_step_accepts_five_dim_action(self) -> None:
         env = PingPongKeepUpEnv(action_mode="position_tilt", reset_xy_range=0.0)
         env.reset(ball_height=env.ball_height)
@@ -169,6 +239,26 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         moving_readiness = env._pre_contact_readiness()
         self.assertLess(moving_readiness, stationary_readiness)
 
+    def test_position_strike_step_anchors_xy_to_predicted_intercept(self) -> None:
+        env = PingPongKeepUpEnv(action_mode="position_strike", reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket() + 0.01])
+        env.sim.spawn_ball(ball_position, velocity=(0.3, -0.1, -1.0))
+        expected_xy = env._predicted_intercept_xy()
+        _, _, _, _, info = env.step(np.zeros(3, dtype=float))
+        self.assertTrue(np.allclose(info["target_position"][:2], expected_xy, atol=1.0e-6))
+
+    def test_strike_lift_feedforward_raises_pre_contact_z_cap(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket() + 0.04])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.4))
+        anchor_position = env._controller_anchor_position()
+        strike_lift_feedforward = env._strike_lift_feedforward()
+        guarded_target = env._guarded_target_position(anchor_position + np.array([0.0, 0.0, 0.12]))
+        self.assertGreater(strike_lift_feedforward, 0.0)
+        self.assertAlmostEqual(float(guarded_target[2]), float(anchor_position[2] + 0.02 + strike_lift_feedforward))
+
     def test_contact_active_suppresses_tracking_reward(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
         env.reset()
@@ -258,6 +348,12 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         observation, _ = env.reset(seed=7)
         self.assertEqual(observation.shape, env.observation_space.shape)
         self.assertEqual(env.action_space.shape, (5,))
+
+    def test_gym_wrapper_exposes_position_strike_spaces(self) -> None:
+        env = PingPongKeepUpGymEnv(action_mode="position_strike", reset_xy_range=0.0)
+        observation, _ = env.reset(seed=7)
+        self.assertEqual(observation.shape, env.observation_space.shape)
+        self.assertEqual(env.action_space.shape, (3,))
 
 
 if __name__ == "__main__":

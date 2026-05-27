@@ -6,12 +6,14 @@ from pathlib import Path
 from pingpong_rl2.defaults import (
     DEFAULT_BALL_HEIGHT,
     DEFAULT_MAX_EPISODE_STEPS,
+    DEFAULT_PPO_POSITION_STRIKE_RUN_NAME,
     DEFAULT_PPO_POSITION_TILT_RUN_NAME,
     DEFAULT_PPO_RUN_NAME,
     DEFAULT_RESET_VELOCITY_XY_RANGE,
     DEFAULT_RESET_VELOCITY_Z_RANGE,
     DEFAULT_RESET_XY_RANGE,
     DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
+    SMOKE_PPO_POSITION_STRIKE_RUN_NAME,
     SMOKE_PPO_POSITION_TILT_RUN_NAME,
     SMOKE_PPO_RUN_NAME,
     default_ppo_model_candidates,
@@ -20,9 +22,23 @@ from pingpong_rl2.utils.paths import PPO_RUNS_ROOT, resolve_input_path
 
 
 def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> str:
+    smoke_run_names = {
+        "position": SMOKE_PPO_RUN_NAME,
+        "position_strike": SMOKE_PPO_POSITION_STRIKE_RUN_NAME,
+        "position_tilt": SMOKE_PPO_POSITION_TILT_RUN_NAME,
+    }
+    standard_run_names = {
+        "position": DEFAULT_PPO_RUN_NAME,
+        "position_strike": DEFAULT_PPO_POSITION_STRIKE_RUN_NAME,
+        "position_tilt": DEFAULT_PPO_POSITION_TILT_RUN_NAME,
+    }
     if smoke:
-        return SMOKE_PPO_POSITION_TILT_RUN_NAME if action_mode == "position_tilt" else SMOKE_PPO_RUN_NAME
-    return DEFAULT_PPO_POSITION_TILT_RUN_NAME if action_mode == "position_tilt" else DEFAULT_PPO_RUN_NAME
+        if action_mode not in smoke_run_names:
+            raise ValueError(f"Unsupported action_mode for smoke run naming: {action_mode!r}.")
+        return smoke_run_names[action_mode]
+    if action_mode not in standard_run_names:
+        raise ValueError(f"Unsupported action_mode for run naming: {action_mode!r}.")
+    return standard_run_names[action_mode]
 
 
 def compose_run_name(base_run_name: str, run_version: str | None = None) -> str:

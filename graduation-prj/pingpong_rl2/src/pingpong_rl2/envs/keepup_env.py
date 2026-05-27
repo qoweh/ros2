@@ -23,7 +23,7 @@ from pingpong_rl2.defaults import (
 )
 from pingpong_rl2.envs.pingpong_sim import PingPongSim
 
-_ACTION_MODES = ("position", "position_tilt")
+_ACTION_MODES = ("position", "position_strike", "position_tilt")
 
 _POSITION_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
     ("joint_positions", 7),
@@ -94,6 +94,8 @@ class PingPongKeepUpEnv:
         target_tilt_limit: Sequence[float] = (0.18, 0.18),
         target_pitch_range: Sequence[float] | None = None,
         initial_target_tilt: Sequence[float] | None = None,
+        strike_tilt_assist_limit: Sequence[float] | None = None,
+        strike_tilt_assist_deadband: float = 0.015,
         controller_position_gain: float = 1.6,
         controller_orientation_gain: float = 0.45,
         controller_max_position_step: float = 0.06,
@@ -147,6 +149,10 @@ class PingPongKeepUpEnv:
         self.initial_target_tilt = (
             None if initial_target_tilt is None else np.asarray(initial_target_tilt, dtype=float)
         )
+        self.strike_tilt_assist_limit = (
+            None if strike_tilt_assist_limit is None else np.asarray(strike_tilt_assist_limit, dtype=float)
+        )
+        self.strike_tilt_assist_deadband = float(strike_tilt_assist_deadband)
         self.controller_position_gain = float(controller_position_gain)
         self.controller_orientation_gain = float(controller_orientation_gain)
         self.controller_max_position_step = float(controller_max_position_step)
@@ -192,6 +198,25 @@ class PingPongKeepUpEnv:
             raise ValueError(f"target_tilt_limit must have shape (2,), got {self.target_tilt_limit.shape}.")
         if np.any(self.target_tilt_limit < 0.0):
             raise ValueError(f"target_tilt_limit must be non-negative, got {self.target_tilt_limit}.")
+        if self.strike_tilt_assist_limit is not None:
+            if self.strike_tilt_assist_limit.shape != (2,):
+                raise ValueError(
+                    "strike_tilt_assist_limit must have shape (2,), got "
+                    f"{self.strike_tilt_assist_limit.shape}."
+                )
+            if np.any(self.strike_tilt_assist_limit < 0.0):
+                raise ValueError(
+                    f"strike_tilt_assist_limit must be non-negative, got {self.strike_tilt_assist_limit}."
+                )
+            if np.any(self.strike_tilt_assist_limit > self.target_tilt_limit + 1.0e-9):
+                raise ValueError(
+                    "strike_tilt_assist_limit must stay within target_tilt_limit, got "
+                    f"{self.strike_tilt_assist_limit} with target_tilt_limit={self.target_tilt_limit}."
+                )
+        if self.strike_tilt_assist_deadband < 0.0:
+            raise ValueError(
+                f"strike_tilt_assist_deadband must be non-negative, got {self.strike_tilt_assist_deadband}."
+            )
         if self.target_pitch_range is not None:
             if self.target_pitch_range.shape != (2,):
                 raise ValueError(
@@ -302,7 +327,7 @@ class PingPongKeepUpEnv:
         spawn_xy_offset = self._sample_reset_xy_offset() if ball_xy_offset is None else np.asarray(ball_xy_offset, dtype=float)
         self.sim.reset(ball_height=spawn_height, ball_velocity=spawn_velocity, ball_xy_offset=spawn_xy_offset)
         self.controller.reset()
-        if self.action_mode == "position_tilt" and self.initial_target_tilt is not None:
+        if self.action_mode in ("position_tilt", "position_strike") and self.initial_target_tilt is not None:
             self.controller.set_target_tilt(self.initial_target_tilt)
         self.step_count = 0
         self.contact_count = 0
@@ -326,11 +351,17 @@ class PingPongKeepUpEnv:
         if action_array.shape != (self.action_size,):
             raise ValueError(f"EE delta action must have shape ({self.action_size},), got {action_array.shape}.")
         applied_action = np.clip(action_array, self.action_low, self.action_high)
-        self.controller.add_target_offset(applied_action[:3])
+        if self.action_mode == "position_strike":
+            requested_target_position = self._strike_action_target_position(applied_action[:3])
+        else:
+            self.controller.add_target_offset(applied_action[:3])
+            requested_target_position = self.controller.target_position
         if self.action_mode == "position_tilt":
             next_target_tilt = self._constrained_target_tilt(self.controller.target_tilt + applied_action[3:])
             self.controller.set_target_tilt(next_target_tilt)
-        safe_target_position = self._guarded_target_position(self.controller.target_position)
+        elif self.action_mode == "position_strike" and self.strike_tilt_assist_limit is not None:
+            self.controller.set_target_tilt(self._constrained_target_tilt(self._strike_tilt_assist_target()))
+        safe_target_position = self._guarded_target_position(requested_target_position)
         self.controller.set_target_position(safe_target_position)
         joint_targets = self.controller.compute_joint_targets()
         contact_trace = self.sim.step_with_contact_trace(joint_targets=joint_targets, n_substeps=self.sim.n_substeps)
@@ -375,6 +406,7 @@ class PingPongKeepUpEnv:
             "xy_alignment_error": self._xy_alignment_error(),
             "predicted_intercept_xy_error": self._tracking_alignment_error(),
             "predicted_intercept_time": self._predicted_intercept_time(),
+            "strike_lift_feedforward": self._strike_lift_feedforward(),
             "racket_face_normal": self.sim.racket_face_normal,
             "target_tilt": self.controller.target_tilt,
             "projected_contact_apex_height_above_racket": (
@@ -432,6 +464,10 @@ class PingPongKeepUpEnv:
             "target_tilt_limit": self.target_tilt_limit.tolist(),
             "target_pitch_range": None if self.target_pitch_range is None else self.target_pitch_range.tolist(),
             "initial_target_tilt": None if self.initial_target_tilt is None else self.initial_target_tilt.tolist(),
+            "strike_tilt_assist_limit": (
+                None if self.strike_tilt_assist_limit is None else self.strike_tilt_assist_limit.tolist()
+            ),
+            "strike_tilt_assist_deadband": self.strike_tilt_assist_deadband,
         }
 
     def close(self) -> None:
@@ -535,7 +571,7 @@ class PingPongKeepUpEnv:
         return float(self.apex_match_reward_weight * height_match)
 
     def _normalized_tilt_magnitude(self) -> float:
-        if self.action_mode != "position_tilt":
+        if self.action_mode not in ("position_tilt", "position_strike"):
             return 0.0
         normalized_tilt = self.controller.target_tilt / np.maximum(self.target_tilt_limit, 1.0e-6)
         return float(np.linalg.norm(normalized_tilt) / np.sqrt(2.0))
@@ -547,7 +583,7 @@ class PingPongKeepUpEnv:
         return float(np.linalg.norm(tilt_delta) / max(np.sqrt(2.0) * self.tilt_action_limit, 1.0e-6))
 
     def _constrained_target_tilt(self, tilt: np.ndarray) -> np.ndarray:
-        if self.action_mode != "position_tilt":
+        if self.action_mode not in ("position_tilt", "position_strike"):
             return np.asarray(tilt, dtype=float)
         constrained_tilt = np.asarray(tilt, dtype=float).copy()
         if self.target_pitch_range is not None:
@@ -696,9 +732,56 @@ class PingPongKeepUpEnv:
             self.strike_zone_xy_radius + self.contact_centering_radius,
         )
         base_xy_limit = min(max(self.contact_centering_radius, 0.4 * full_xy_limit), full_xy_limit)
-        height_catchup_weight = 1.0 if self.action_mode == "position" else 0.5
+        height_catchup_weight = 1.0 if self.action_mode in ("position", "position_strike") else 0.5
         readiness = max(self._pre_contact_readiness(), height_catchup_weight * self._pre_contact_height_readiness())
         return float(base_xy_limit + readiness * (full_xy_limit - base_xy_limit))
+
+    def _strike_lift_feedforward(self) -> float:
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return 0.0
+        height_readiness = self._pre_contact_height_readiness()
+        if height_readiness <= 0.0:
+            return 0.0
+        intercept_time = self._predicted_intercept_time()
+        urgency = 1.0 - np.clip(intercept_time / 0.12, 0.0, 1.0)
+        return float(np.clip(0.04 * height_readiness * urgency, 0.0, 0.04))
+
+    def _strike_tilt_assist_target(self) -> np.ndarray:
+        if self.action_mode != "position_strike" or self.strike_tilt_assist_limit is None:
+            return np.zeros(2, dtype=float)
+        if self._contact_active_previous_step:
+            return np.zeros(2, dtype=float)
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return np.zeros(2, dtype=float)
+
+        correction_xy = self._controller_anchor_position()[:2] - self._predicted_intercept_xy()
+        axis_active = np.abs(correction_xy) > self.strike_tilt_assist_deadband
+        if not np.any(axis_active):
+            return np.zeros(2, dtype=float)
+
+        height_readiness = self._pre_contact_height_readiness()
+        intercept_time = self._predicted_intercept_time()
+        urgency = 1.0 - np.clip(intercept_time / 0.16, 0.0, 1.0)
+        ramp = float(np.clip(max(height_readiness, urgency), 0.0, 1.0))
+        pitch = 0.0
+        roll = 0.0
+        if axis_active[0]:
+            pitch = self.strike_tilt_assist_limit[0] * ramp * float(np.sign(correction_xy[0]))
+        if axis_active[1]:
+            roll = -self.strike_tilt_assist_limit[1] * ramp * float(np.sign(correction_xy[1]))
+        return np.array([pitch, roll], dtype=float)
+
+    def _strike_action_target_position(self, action: Sequence[float]) -> np.ndarray:
+        action_array = np.asarray(action, dtype=float)
+        if action_array.shape != (3,):
+            raise ValueError(f"Strike action must have shape (3,), got {action_array.shape}.")
+        anchor_position = self._controller_anchor_position()
+        target_position = anchor_position.copy()
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return target_position + action_array
+        target_position[:2] = self._predicted_intercept_xy() + action_array[:2]
+        target_position[2] = anchor_position[2] + self._strike_lift_feedforward() + action_array[2]
+        return target_position
 
     def _body_safe_target_position(self, target_position: Sequence[float]) -> np.ndarray:
         safe_target = np.asarray(target_position, dtype=float).copy()
@@ -733,5 +816,6 @@ class PingPongKeepUpEnv:
             pre_contact_xy_limit,
         )
         if not self._pre_contact_upward_ready():
-            safe_target[2] = min(float(safe_target[2]), float(anchor_position[2] + 0.02))
+            pre_contact_lift_limit = 0.02 + self._strike_lift_feedforward()
+            safe_target[2] = min(float(safe_target[2]), float(anchor_position[2] + pre_contact_lift_limit))
         return safe_target
