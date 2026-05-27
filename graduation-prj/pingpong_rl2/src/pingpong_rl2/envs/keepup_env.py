@@ -90,6 +90,8 @@ class PingPongKeepUpEnv:
         target_offset_low: Sequence[float] = (-0.12, -0.12, -0.04),
         target_offset_high: Sequence[float] = (0.12, 0.12, 0.12),
         target_tilt_limit: Sequence[float] = (0.18, 0.18),
+        target_pitch_range: Sequence[float] | None = None,
+        initial_target_tilt: Sequence[float] | None = None,
         controller_position_gain: float = 1.6,
         controller_orientation_gain: float = 0.45,
         controller_max_position_step: float = 0.06,
@@ -139,6 +141,10 @@ class PingPongKeepUpEnv:
         self.target_offset_low = np.asarray(target_offset_low, dtype=float)
         self.target_offset_high = np.asarray(target_offset_high, dtype=float)
         self.target_tilt_limit = np.asarray(target_tilt_limit, dtype=float)
+        self.target_pitch_range = None if target_pitch_range is None else np.asarray(target_pitch_range, dtype=float)
+        self.initial_target_tilt = (
+            None if initial_target_tilt is None else np.asarray(initial_target_tilt, dtype=float)
+        )
         self.controller_position_gain = float(controller_position_gain)
         self.controller_orientation_gain = float(controller_orientation_gain)
         self.controller_max_position_step = float(controller_max_position_step)
@@ -184,6 +190,37 @@ class PingPongKeepUpEnv:
             raise ValueError(f"target_tilt_limit must have shape (2,), got {self.target_tilt_limit.shape}.")
         if np.any(self.target_tilt_limit < 0.0):
             raise ValueError(f"target_tilt_limit must be non-negative, got {self.target_tilt_limit}.")
+        if self.target_pitch_range is not None:
+            if self.target_pitch_range.shape != (2,):
+                raise ValueError(
+                    f"target_pitch_range must have shape (2,), got {self.target_pitch_range.shape}."
+                )
+            if self.target_pitch_range[0] > self.target_pitch_range[1]:
+                raise ValueError(
+                    f"target_pitch_range must be ordered as (low, high), got {self.target_pitch_range}."
+                )
+            if self.target_pitch_range[0] < -self.target_tilt_limit[0] or self.target_pitch_range[1] > self.target_tilt_limit[0]:
+                raise ValueError(
+                    "target_pitch_range must stay within +/- target_tilt_limit[0], got "
+                    f"{self.target_pitch_range} with target_tilt_limit={self.target_tilt_limit}."
+                )
+        if self.initial_target_tilt is not None:
+            if self.initial_target_tilt.shape != (2,):
+                raise ValueError(
+                    f"initial_target_tilt must have shape (2,), got {self.initial_target_tilt.shape}."
+                )
+            if np.any(np.abs(self.initial_target_tilt) > self.target_tilt_limit + 1.0e-9):
+                raise ValueError(
+                    "initial_target_tilt must stay within target_tilt_limit, got "
+                    f"{self.initial_target_tilt} with target_tilt_limit={self.target_tilt_limit}."
+                )
+            if self.target_pitch_range is not None and not (
+                self.target_pitch_range[0] <= self.initial_target_tilt[0] <= self.target_pitch_range[1]
+            ):
+                raise ValueError(
+                    "initial_target_tilt pitch must stay within target_pitch_range, got "
+                    f"pitch={self.initial_target_tilt[0]} with target_pitch_range={self.target_pitch_range}."
+                )
         self.controller = RacketCartesianController(
             self.sim,
             position_gain=self.controller_position_gain,
@@ -257,6 +294,8 @@ class PingPongKeepUpEnv:
         spawn_xy_offset = self._sample_reset_xy_offset() if ball_xy_offset is None else np.asarray(ball_xy_offset, dtype=float)
         self.sim.reset(ball_height=spawn_height, ball_velocity=spawn_velocity, ball_xy_offset=spawn_xy_offset)
         self.controller.reset()
+        if self.action_mode == "position_tilt" and self.initial_target_tilt is not None:
+            self.controller.set_target_tilt(self.initial_target_tilt)
         self.step_count = 0
         self.contact_count = 0
         self.successful_bounce_count = 0
@@ -268,6 +307,7 @@ class PingPongKeepUpEnv:
             "successful_bounce_count": self.successful_bounce_count,
             "step_count": self.step_count,
             "target_position": self.controller.target_position,
+            "target_tilt": self.controller.target_tilt,
             "ball_height_above_racket": self._ball_height_above_racket(),
             "spawn_ball_height_above_racket": self._spawn_ball_height_above_racket,
         }
@@ -280,7 +320,8 @@ class PingPongKeepUpEnv:
         applied_action = np.clip(action_array, self.action_low, self.action_high)
         self.controller.add_target_offset(applied_action[:3])
         if self.action_mode == "position_tilt":
-            self.controller.set_target_tilt(self.controller.target_tilt + applied_action[3:])
+            next_target_tilt = self._constrained_target_tilt(self.controller.target_tilt + applied_action[3:])
+            self.controller.set_target_tilt(next_target_tilt)
         safe_target_position = self._guarded_target_position(self.controller.target_position)
         self.controller.set_target_position(safe_target_position)
         joint_targets = self.controller.compute_joint_targets()
@@ -379,6 +420,8 @@ class PingPongKeepUpEnv:
             "target_offset_low": self.target_offset_low.tolist(),
             "target_offset_high": self.target_offset_high.tolist(),
             "target_tilt_limit": self.target_tilt_limit.tolist(),
+            "target_pitch_range": None if self.target_pitch_range is None else self.target_pitch_range.tolist(),
+            "initial_target_tilt": None if self.initial_target_tilt is None else self.initial_target_tilt.tolist(),
         }
 
     def close(self) -> None:
@@ -454,6 +497,14 @@ class PingPongKeepUpEnv:
         tilt_delta = action[3:] - self._previous_action[3:]
         return float(np.linalg.norm(tilt_delta) / max(np.sqrt(2.0) * self.tilt_action_limit, 1.0e-6))
 
+    def _constrained_target_tilt(self, tilt: np.ndarray) -> np.ndarray:
+        if self.action_mode != "position_tilt":
+            return np.asarray(tilt, dtype=float)
+        constrained_tilt = np.asarray(tilt, dtype=float).copy()
+        if self.target_pitch_range is not None:
+            constrained_tilt[0] = np.clip(constrained_tilt[0], self.target_pitch_range[0], self.target_pitch_range[1])
+        return constrained_tilt
+
     def _preparation_target_height_above_racket(self) -> float:
         return float(np.clip(min(self._target_ball_height_above_racket(), 0.18), 0.12, 0.18))
 
@@ -482,9 +533,16 @@ class PingPongKeepUpEnv:
             "contact_racket_velocity_z",
             float(self.sim.racket_velocity[2]),
         )
+        contact_xy_alignment_error = self._contact_float(
+            contact_trace,
+            "contact_xy_alignment_error",
+            self._xy_alignment_error(),
+        )
         if contact_ball_velocity_z <= self.success_velocity_threshold:
             return None
         if contact_racket_velocity_z <= self.min_upward_racket_velocity_z:
+            return None
+        if contact_xy_alignment_error > self.contact_centering_radius:
             return None
         if self._projected_contact_apex_height_above_racket(contact_trace) + 1.0e-6 < self._target_ball_height_above_racket():
             return None

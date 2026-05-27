@@ -45,6 +45,40 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertEqual(observation.shape, (env.observation_size,))
         self.assertIn("target_tilt", info)
 
+    def test_position_tilt_target_pitch_range_clips_outward_pitch(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_tilt",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_tilt_limit=(0.06, 0.06),
+            target_pitch_range=(0.0, 0.06),
+        )
+        env.reset(ball_height=env.ball_height)
+        _, _, _, _, info = env.step(np.array([0.0, 0.0, 0.0, -0.015, 0.0], dtype=float))
+        self.assertAlmostEqual(float(info["target_tilt"][0]), 0.0)
+
+    def test_position_tilt_target_pitch_range_is_reported_in_training_config(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_tilt",
+            reset_xy_range=0.0,
+            target_tilt_limit=(0.06, 0.06),
+            target_pitch_range=(0.0, 0.06),
+        )
+        self.assertEqual(env.training_config()["target_pitch_range"], [0.0, 0.06])
+
+    def test_position_tilt_reset_applies_initial_target_tilt(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_tilt",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_tilt_limit=(0.06, 0.06),
+            target_pitch_range=(0.0, 0.06),
+            initial_target_tilt=(0.03, 0.0),
+        )
+        observation, info = env.reset(ball_height=env.ball_height)
+        self.assertTrue(np.allclose(observation[env.observation_slices["target_tilt"]], np.array([0.03, 0.0])))
+        self.assertTrue(np.allclose(info["target_tilt"], np.array([0.03, 0.0])))
+
 
     def test_keepup_env_seed_repeats_reset_sample(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.05, reset_velocity_xy_range=0.01)
@@ -122,6 +156,36 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         )
         self.assertLess(reward_terms["tilt_angle_penalty"], 0.0)
         self.assertLess(reward_terms["tilt_action_delta_penalty"], 0.0)
+
+    def test_success_reason_requires_centered_contact(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        success_reason = env._success_reason(
+            failure_reason=None,
+            contact_trace={
+                "contact_ball_velocity_z": 4.0,
+                "contact_racket_velocity_z": 0.2,
+                "contact_xy_alignment_error": env.contact_centering_radius + 0.01,
+                "contact_ball_height_above_racket": 0.02,
+            },
+            contact_event=True,
+        )
+        self.assertIsNone(success_reason)
+
+    def test_success_reason_accepts_centered_upward_contact(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        success_reason = env._success_reason(
+            failure_reason=None,
+            contact_trace={
+                "contact_ball_velocity_z": 4.0,
+                "contact_racket_velocity_z": 0.2,
+                "contact_xy_alignment_error": env.contact_centering_radius - 0.01,
+                "contact_ball_height_above_racket": 0.02,
+            },
+            contact_event=True,
+        )
+        self.assertEqual(success_reason, "useful_keepup_bounce")
 
 
     def test_strike_guard_reapplies_after_first_contact(self) -> None:

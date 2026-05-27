@@ -10,3 +10,5 @@
   - versioned run-name 실험 표면, `position_tilt` branch, rebound analysis 도구와 최신 결과를 정리한 보고서
 - `03_pingpong_rl2_position_tilt_chatter_fix_report.md`
   - `position_tilt` chatter exploit 진단, anti-chatter reward/control 수정, staged tilt profile A/B 결과를 정리한 보고서
+- `04_pingpong_rl2_inward_tilt_direction_report.md`
+  - outward rebound 편향 진단, inward-only pitch clamp 및 initial tilt bias A/B, 그리고 왜 아직 tilt 사용이 살아나지 않았는지 정리한 보고서

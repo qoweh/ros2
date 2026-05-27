@@ -136,6 +136,22 @@ def parse_args() -> argparse.Namespace:
         metavar=("PITCH", "ROLL"),
         default=None,
     )
+    parser.add_argument(
+        "--target-pitch-range",
+        type=float,
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        default=None,
+        help="Optional target pitch clamp applied after tilt integration. Use this for inward-only rebound A/B runs.",
+    )
+    parser.add_argument(
+        "--initial-target-tilt",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+        help="Optional initial target tilt applied at env reset. Useful for breaking the zero-tilt symmetry in tilt A/B runs.",
+    )
     parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument("--smoke", action="store_true")
     return parser.parse_args()
@@ -239,6 +255,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["tilt_action_delta_penalty_weight"] = args.tilt_action_delta_penalty_weight
     if args.target_tilt_limit is not None:
         env_kwargs["target_tilt_limit"] = tuple(args.target_tilt_limit)
+    if args.target_pitch_range is not None:
+        env_kwargs["target_pitch_range"] = tuple(args.target_pitch_range)
+    if args.initial_target_tilt is not None:
+        env_kwargs["initial_target_tilt"] = tuple(args.initial_target_tilt)
     return env_kwargs
 
 
