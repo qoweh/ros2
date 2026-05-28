@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from pingpong_rl2.defaults import (
@@ -19,6 +20,8 @@ from pingpong_rl2.defaults import (
     default_ppo_model_candidates,
 )
 from pingpong_rl2.utils.paths import PPO_RUNS_ROOT, resolve_input_path
+
+_CHECKPOINT_MODEL_STEM_PATTERN = re.compile(r"^(?P<run_name>.+)_step_\d+_model$")
 
 
 def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> str:
@@ -70,6 +73,24 @@ def infer_run_name_from_model_path(model_path: Path) -> str:
     return model_stem[:-6] if model_stem.endswith("_model") else model_stem
 
 
+def infer_training_run_name_from_model_path(model_path: Path) -> str:
+    model_stem = model_path.stem
+    if model_stem.endswith("_best_model"):
+        return model_stem[:-11]
+    checkpoint_match = _CHECKPOINT_MODEL_STEM_PATTERN.match(model_stem)
+    if checkpoint_match is not None:
+        return str(checkpoint_match.group("run_name"))
+    return infer_run_name_from_model_path(model_path)
+
+
+def training_summary_candidates_for_model(model_path: Path) -> list[Path]:
+    run_name = infer_training_run_name_from_model_path(model_path)
+    candidates = [model_path.parent / f"{run_name}_training_summary.json"]
+    if model_path.parent.name == "checkpoints":
+        candidates.append(model_path.parent.parent / f"{run_name}_training_summary.json")
+    return candidates
+
+
 def resolve_saved_model_path(model_path: Path | None = None, run_name: str | None = None) -> Path:
     if model_path is not None:
         return resolve_input_path(model_path)
@@ -89,13 +110,14 @@ def load_training_summary(summary_path: Path) -> dict[str, object] | None:
 
 
 def load_env_config_for_model(model_path: Path) -> dict[str, object] | None:
-    run_name = infer_run_name_from_model_path(model_path)
-    summary_path = model_path.parent / f"{run_name}_training_summary.json"
-    summary = load_training_summary(summary_path)
-    if summary is None:
-        return None
-    env_config = summary.get("env_config")
-    return dict(env_config) if isinstance(env_config, dict) else None
+    for summary_path in training_summary_candidates_for_model(model_path):
+        summary = load_training_summary(summary_path)
+        if summary is None:
+            continue
+        env_config = summary.get("env_config")
+        if isinstance(env_config, dict):
+            return dict(env_config)
+    return None
 
 
 def resolve_env_kwargs_for_model(

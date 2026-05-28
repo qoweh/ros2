@@ -4,10 +4,10 @@
 
 ## 설계 원칙
 
-- env 내부 tracking assist를 기본 사용하지 않는다.
+- env-side assist는 실험으로만 넣고, 현재 winner만 preset으로 고정한다.
 - heuristic keep-up policy를 학습 경로에 섞지 않는다.
 - curriculum을 기본 꺼 둔다.
-- 기본 action은 `position-only EE delta`다.
+- 현재 주력 action은 `position_strike`다.
 - reward는 strike-window alignment, useful contact, apex quality, failure penalty만 남긴다.
 
 ## 디렉터리
@@ -21,8 +21,9 @@
 ## 주요 스크립트
 
 - `python pingpong_rl2/scripts/run_bounce_sanity.py`
-- `python pingpong_rl2/scripts/run_ppo_learning.py --smoke`
+- `python pingpong_rl2/scripts/run_ppo_learning.py --preset final_candidate --run-name <name> --run-version <version> --reset-model`
 - `python pingpong_rl2/scripts/run_ppo_evaluation.py --model-path <zip>`
+- `python pingpong_rl2/scripts/run_ppo_rebound_analysis.py --model-path <zip> --episodes 50 --analysis-name <name>`
 - `python pingpong_rl2/scripts/run_viewer.py --mode zero_action`
 - `python pingpong_rl2/scripts/benchmark_vector_env.py --n-envs 4`
 
@@ -35,4 +36,11 @@
 
 ## 현재 baseline 범위
 
-현재 baseline은 “assist 없이 racket-first contact와 반복 bounce가 다시 생기는가”만 본다. tilt, curriculum, rebound-direction shaping, single-bounce-out penalty는 기본 세트에 넣지 않았다.
+현재 active candidate는 `position_strike` 기반 control 설정이다.
+
+- `strike_tilt_ramp_pitch=-0.03`
+- `strike_tilt_ramp_xy_tolerance=0.04`
+- `post_contact_return_assist_weight=0.5`
+- `post_contact_return_max_intercept_time=0.6`
+- velocity-domain observation은 기본으로 넣지 않는다.
+- reward-side inward-return shaping은 기본 세트에 넣지 않는다.

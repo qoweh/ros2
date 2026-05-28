@@ -88,7 +88,8 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "action_mode": "position_strike",
         "strike_tilt_ramp_pitch": -0.03,
         "strike_tilt_ramp_xy_tolerance": 0.04,
-        "include_velocity_domain_observation": True,
+        "post_contact_return_assist_weight": 0.5,
+        "post_contact_return_max_intercept_time": 0.6,
     },
 }
 
@@ -97,6 +98,8 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "tilt_profile": "auto",
     "strike_tilt_ramp_pitch": None,
     "strike_tilt_ramp_xy_tolerance": None,
+    "post_contact_return_assist_weight": None,
+    "post_contact_return_max_intercept_time": None,
     "include_velocity_domain_observation": False,
 }
 
@@ -172,6 +175,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tracking-during-contact-scale", type=float, default=None)
     parser.add_argument("--useful-contact-outgoing-x-penalty-weight", type=float, default=None)
     parser.add_argument("--desired-outgoing-ball-velocity-x", type=float, default=None)
+    parser.add_argument("--useful-contact-return-target-xy-reward-weight", type=float, default=None)
+    parser.add_argument(
+        "--return-target-xy-source",
+        type=str,
+        choices=("controller_anchor", "racket_home", "racket_position", "target_position"),
+        default=None,
+    )
+    parser.add_argument("--return-target-xy-tolerance", type=float, default=None)
     parser.add_argument("--tilt-angle-penalty-weight", type=float, default=None)
     parser.add_argument("--tilt-action-delta-penalty-weight", type=float, default=None)
     parser.add_argument(
@@ -223,12 +234,32 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Maximum XY alignment error allowed before the position_strike pitch ramp stays neutral.",
     )
+    parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
+    parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
     parser.add_argument(
         "--include-velocity-domain-observation",
         action="store_true",
         help="Add relative velocity and racket face normal to the observation for velocity-domain rebound experiments.",
     )
     parser.add_argument("--eval-episodes", type=int, default=5)
+    parser.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=10_000,
+        help="Timesteps between periodic checkpoint saves and interim evaluations. Set 0 to disable interim checkpointing.",
+    )
+    parser.add_argument(
+        "--checkpoint-eval-episodes",
+        type=int,
+        default=10,
+        help="Number of deterministic episodes used for periodic checkpoint evaluation.",
+    )
+    parser.add_argument(
+        "--early-stop-patience-evals",
+        type=int,
+        default=0,
+        help="Optional number of consecutive non-improving checkpoint evaluations before training stops early. Set 0 to disable.",
+    )
     parser.add_argument("--smoke", action="store_true")
     return parser.parse_args()
 
@@ -292,6 +323,12 @@ def build_session_monitor_path(run_dir: Path) -> Path:
         session_index += 1
 
 
+def build_checkpoint_dir(run_dir: Path) -> Path:
+    checkpoint_dir = run_dir / "checkpoints"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    return checkpoint_dir
+
+
 def resolve_tilt_profile(args: argparse.Namespace) -> str:
     if args.action_mode != "position_tilt":
         if args.tracking_during_contact_scale is None:
@@ -347,6 +384,14 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["useful_contact_outgoing_x_penalty_weight"] = args.useful_contact_outgoing_x_penalty_weight
     if args.desired_outgoing_ball_velocity_x is not None:
         env_kwargs["desired_outgoing_ball_velocity_x"] = args.desired_outgoing_ball_velocity_x
+    if args.useful_contact_return_target_xy_reward_weight is not None:
+        env_kwargs["useful_contact_return_target_xy_reward_weight"] = (
+            args.useful_contact_return_target_xy_reward_weight
+        )
+    if args.return_target_xy_source is not None:
+        env_kwargs["return_target_xy_source"] = args.return_target_xy_source
+    if args.return_target_xy_tolerance is not None:
+        env_kwargs["return_target_xy_tolerance"] = args.return_target_xy_tolerance
     if args.tilt_angle_penalty_weight is not None:
         env_kwargs["tilt_angle_penalty_weight"] = args.tilt_angle_penalty_weight
     if args.tilt_action_delta_penalty_weight is not None:
@@ -365,6 +410,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["strike_tilt_ramp_pitch"] = args.strike_tilt_ramp_pitch
     if args.strike_tilt_ramp_xy_tolerance is not None:
         env_kwargs["strike_tilt_ramp_xy_tolerance"] = args.strike_tilt_ramp_xy_tolerance
+    if args.post_contact_return_assist_weight is not None:
+        env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
+    if args.post_contact_return_max_intercept_time is not None:
+        env_kwargs["post_contact_return_max_intercept_time"] = args.post_contact_return_max_intercept_time
     if args.include_velocity_domain_observation:
         env_kwargs["include_velocity_domain_observation"] = True
     return env_kwargs
@@ -394,13 +443,107 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
     env.close()
     returns_array = np.asarray(returns, dtype=float)
     bounce_array = np.asarray(useful_bounces, dtype=float)
+    one_or_more_useful = int(np.count_nonzero(bounce_array >= 1.0)) if bounce_array.size else 0
+    two_or_more_useful = int(np.count_nonzero(bounce_array >= 2.0)) if bounce_array.size else 0
+    ball_out_of_bounds_count = int(failure_counts.get("ball_out_of_bounds", 0))
     return {
         "episodes": episodes,
         "mean_return": float(returns_array.mean()) if returns_array.size else 0.0,
         "mean_useful_bounces": float(bounce_array.mean()) if bounce_array.size else 0.0,
         "max_useful_bounces": int(bounce_array.max()) if bounce_array.size else 0,
+        "episodes_with_one_or_more_useful_bounces": one_or_more_useful,
+        "one_or_more_useful_bounce_rate": (one_or_more_useful / episodes) if episodes > 0 else 0.0,
+        "episodes_with_two_or_more_useful_bounces": two_or_more_useful,
+        "two_or_more_useful_bounce_rate": (two_or_more_useful / episodes) if episodes > 0 else 0.0,
+        "ball_out_of_bounds_rate": (ball_out_of_bounds_count / episodes) if episodes > 0 else 0.0,
         "failure_counts": dict(failure_counts),
     }
+
+
+def evaluation_sort_key(evaluation: dict[str, object]) -> tuple[float, float, int, float, float]:
+    failure_counts = evaluation.get("failure_counts", {})
+    if not isinstance(failure_counts, dict):
+        failure_counts = {}
+    return (
+        float(evaluation.get("two_or_more_useful_bounce_rate", 0.0)),
+        float(evaluation.get("mean_useful_bounces", 0.0)),
+        int(evaluation.get("max_useful_bounces", 0)),
+        -float(failure_counts.get("ball_out_of_bounds", 0)),
+        float(evaluation.get("mean_return", 0.0)),
+    )
+
+
+def save_periodic_checkpoints(
+    *,
+    model: PPO,
+    run_dir: Path,
+    resolved_run_name: str,
+    env_kwargs: dict[str, object],
+    total_timesteps: int,
+    checkpoint_interval: int,
+    checkpoint_eval_episodes: int,
+    early_stop_patience_evals: int,
+    initial_reset_num_timesteps: bool,
+    seed: int,
+) -> tuple[dict[str, object], list[dict[str, object]], dict[str, object] | None, int, bool]:
+    if checkpoint_interval < 0:
+        raise ValueError(f"checkpoint-interval must be non-negative, got {checkpoint_interval}.")
+    if checkpoint_eval_episodes < 1:
+        raise ValueError(
+            f"checkpoint-eval-episodes must be positive, got {checkpoint_eval_episodes}."
+        )
+    if early_stop_patience_evals < 0:
+        raise ValueError(
+            f"early-stop-patience-evals must be non-negative, got {early_stop_patience_evals}."
+        )
+
+    checkpoint_dir = build_checkpoint_dir(run_dir)
+    effective_interval = total_timesteps if checkpoint_interval == 0 else checkpoint_interval
+    completed_timesteps = 0
+    no_improvement_evals = 0
+    stopped_early = False
+    best_evaluation: dict[str, object] | None = None
+    best_checkpoint_record: dict[str, object] | None = None
+    checkpoint_history: list[dict[str, object]] = []
+
+    while completed_timesteps < total_timesteps:
+        learn_chunk = min(effective_interval, total_timesteps - completed_timesteps)
+        model.learn(
+            total_timesteps=learn_chunk,
+            progress_bar=False,
+            reset_num_timesteps=initial_reset_num_timesteps and completed_timesteps == 0,
+        )
+        completed_timesteps += learn_chunk
+
+        checkpoint_path = checkpoint_dir / f"{resolved_run_name}_step_{completed_timesteps:07d}_model"
+        model.save(str(checkpoint_path))
+        checkpoint_evaluation = evaluate_model(
+            model,
+            env_kwargs=env_kwargs,
+            episodes=checkpoint_eval_episodes,
+            seed=seed + 20_000,
+        )
+        checkpoint_record = {
+            "timesteps": completed_timesteps,
+            "model_path": str(checkpoint_path.with_suffix(".zip").resolve()),
+            "evaluation": checkpoint_evaluation,
+        }
+        checkpoint_history.append(checkpoint_record)
+
+        if best_evaluation is None or evaluation_sort_key(checkpoint_evaluation) > evaluation_sort_key(best_evaluation):
+            best_evaluation = checkpoint_evaluation
+            best_checkpoint_record = checkpoint_record
+            best_model_path = run_dir / f"{resolved_run_name}_best_model"
+            model.save(str(best_model_path))
+            no_improvement_evals = 0
+        else:
+            no_improvement_evals += 1
+
+        if early_stop_patience_evals > 0 and no_improvement_evals >= early_stop_patience_evals:
+            stopped_early = True
+            break
+
+    return checkpoint_dir, checkpoint_history, best_checkpoint_record, completed_timesteps, stopped_early
 
 
 def main() -> None:
@@ -410,6 +553,12 @@ def main() -> None:
         args.n_steps = SMOKE_PPO_N_STEPS
         args.batch_size = SMOKE_PPO_BATCH_SIZE
         args.n_envs = min(args.n_envs, 2)
+        if args.checkpoint_interval > args.total_timesteps:
+            args.checkpoint_interval = args.total_timesteps
+        if args.checkpoint_eval_episodes > 2:
+            args.checkpoint_eval_episodes = 2
+        if args.eval_episodes > 2:
+            args.eval_episodes = 2
     resolved_preset = apply_env_preset(args)
     resolved_run_name = resolve_requested_run_name(
         args.run_name,
@@ -454,10 +603,17 @@ def main() -> None:
             device=args.device,
         )
     try:
-        model.learn(
+        checkpoint_dir, checkpoint_history, best_checkpoint_record, completed_timesteps, stopped_early = save_periodic_checkpoints(
+            model=model,
+            run_dir=run_dir,
+            resolved_run_name=resolved_run_name,
+            env_kwargs=env_kwargs,
             total_timesteps=args.total_timesteps,
-            progress_bar=False,
-            reset_num_timesteps=starting_checkpoint is None,
+            checkpoint_interval=args.checkpoint_interval,
+            checkpoint_eval_episodes=args.checkpoint_eval_episodes,
+            early_stop_patience_evals=args.early_stop_patience_evals,
+            initial_reset_num_timesteps=starting_checkpoint is None,
+            seed=args.seed,
         )
         model_path = run_dir / f"{resolved_run_name}_model"
         model.save(str(model_path))
@@ -465,12 +621,16 @@ def main() -> None:
     finally:
         monitored_env.close()
 
+    checkpoint_history_path = run_dir / f"{resolved_run_name}_checkpoint_evaluations.json"
+    checkpoint_history_path.write_text(json.dumps(checkpoint_history, indent=2), encoding="utf-8")
+
     summary = {
         "run_name": resolved_run_name,
         "training_mode": training_mode,
         "starting_checkpoint": None if starting_checkpoint is None else str(starting_checkpoint.resolve()),
         "model_path": str((run_dir / f"{resolved_run_name}_model.zip").resolve()),
         "monitor_path": str(monitor_path.resolve()),
+        "completed_timesteps": completed_timesteps,
         "config": {
             "preset": resolved_preset,
             "run_version": args.run_version,
@@ -483,9 +643,24 @@ def main() -> None:
             "gamma": args.gamma,
             "seed": args.seed,
             "device": args.device,
+            "checkpoint_interval": args.checkpoint_interval,
+            "checkpoint_eval_episodes": args.checkpoint_eval_episodes,
+            "early_stop_patience_evals": args.early_stop_patience_evals,
             **env_kwargs,
         },
         "env_config": resolved_env_config,
+        "checkpointing": {
+            "checkpoint_dir": str(checkpoint_dir.resolve()),
+            "checkpoint_history_path": str(checkpoint_history_path.resolve()),
+            "checkpoint_count": len(checkpoint_history),
+            "stopped_early": stopped_early,
+            "best_checkpoint": best_checkpoint_record,
+            "best_model_path": (
+                None
+                if best_checkpoint_record is None
+                else str((run_dir / f"{resolved_run_name}_best_model.zip").resolve())
+            ),
+        },
         "evaluation": evaluation,
     }
     summary_path = run_dir / f"{resolved_run_name}_training_summary.json"
@@ -494,6 +669,7 @@ def main() -> None:
     print(f"resolved_preset={resolved_preset}")
     print(f"resolved_tilt_profile={resolved_tilt_profile}")
     print(f"training_mode={training_mode}")
+    print(f"completed_timesteps={completed_timesteps}")
     if starting_checkpoint is not None:
         print(f"starting_checkpoint={starting_checkpoint}")
         if args.resume_from is None and not args.reset_model:
@@ -505,13 +681,18 @@ def main() -> None:
             print("tilt_limit_warning=tilt_action_limit is large relative to target_tilt_limit and may encourage chatter")
     print(f"run_dir={run_dir}")
     print(f"model_path={run_dir / f'{resolved_run_name}_model.zip'}")
+    print(f"checkpoint_history_path={checkpoint_history_path}")
+    if best_checkpoint_record is not None:
+        print(f"best_model_path={run_dir / f'{resolved_run_name}_best_model.zip'}")
+        print(f"best_checkpoint_timesteps={best_checkpoint_record['timesteps']}")
     print(f"monitor_path={monitor_path}")
     print(f"summary_path={summary_path}")
     print(
         "evaluation "
         f"mean_return={evaluation['mean_return']:.3f} "
         f"mean_useful_bounces={evaluation['mean_useful_bounces']:.3f} "
-        f"max_useful_bounces={evaluation['max_useful_bounces']}"
+        f"max_useful_bounces={evaluation['max_useful_bounces']} "
+        f"two_or_more_rate={evaluation['two_or_more_useful_bounce_rate']:.3f}"
     )
 
 

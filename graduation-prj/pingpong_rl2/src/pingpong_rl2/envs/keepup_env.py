@@ -24,6 +24,7 @@ from pingpong_rl2.defaults import (
 from pingpong_rl2.envs.pingpong_sim import PingPongSim
 
 _ACTION_MODES = ("position", "position_strike", "position_tilt")
+_RETURN_TARGET_XY_SOURCES = ("controller_anchor", "racket_home", "racket_position", "target_position")
 
 _POSITION_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
     ("joint_positions", 7),
@@ -88,6 +89,9 @@ class PingPongKeepUpEnv:
         apex_match_reward_weight: float = DEFAULT_APEX_MATCH_REWARD_WEIGHT,
         useful_contact_outgoing_x_penalty_weight: float = 0.0,
         desired_outgoing_ball_velocity_x: float = 0.0,
+        useful_contact_return_target_xy_reward_weight: float = 0.0,
+        return_target_xy_source: str = "controller_anchor",
+        return_target_xy_tolerance: float | None = None,
         tilt_angle_penalty_weight: float | None = None,
         tilt_action_delta_penalty_weight: float | None = None,
         descending_ball_velocity_threshold: float = -0.05,
@@ -111,6 +115,8 @@ class PingPongKeepUpEnv:
         strike_tilt_assist_deadband: float = 0.015,
         strike_tilt_ramp_pitch: float | None = None,
         strike_tilt_ramp_xy_tolerance: float | None = None,
+        post_contact_return_assist_weight: float = 0.0,
+        post_contact_return_max_intercept_time: float = 0.6,
         include_velocity_domain_observation: bool = False,
         controller_position_gain: float = 1.6,
         controller_orientation_gain: float = 0.45,
@@ -136,6 +142,8 @@ class PingPongKeepUpEnv:
         self.apex_match_reward_weight = float(apex_match_reward_weight)
         self.useful_contact_outgoing_x_penalty_weight = float(useful_contact_outgoing_x_penalty_weight)
         self.desired_outgoing_ball_velocity_x = float(desired_outgoing_ball_velocity_x)
+        self.useful_contact_return_target_xy_reward_weight = float(useful_contact_return_target_xy_reward_weight)
+        self.return_target_xy_source = str(return_target_xy_source)
         default_tilt_angle_penalty_weight = 0.04 if self.action_mode == "position_tilt" else 0.0
         default_tilt_action_delta_penalty_weight = 0.10 if self.action_mode == "position_tilt" else 0.0
         self.tilt_angle_penalty_weight = float(
@@ -151,6 +159,9 @@ class PingPongKeepUpEnv:
         self.descending_ball_velocity_threshold = float(descending_ball_velocity_threshold)
         self.strike_zone_xy_radius = float(strike_zone_xy_radius)
         self.strike_zone_height_tolerance = float(strike_zone_height_tolerance)
+        self.return_target_xy_tolerance = (
+            self.strike_zone_xy_radius if return_target_xy_tolerance is None else float(return_target_xy_tolerance)
+        )
         self.contact_centering_radius = float(contact_centering_radius)
         self.min_upward_racket_velocity_z = float(min_upward_racket_velocity_z)
         self.floor_penalty = float(floor_penalty)
@@ -177,6 +188,8 @@ class PingPongKeepUpEnv:
             if strike_tilt_ramp_xy_tolerance is None
             else float(strike_tilt_ramp_xy_tolerance)
         )
+        self.post_contact_return_assist_weight = float(post_contact_return_assist_weight)
+        self.post_contact_return_max_intercept_time = float(post_contact_return_max_intercept_time)
         self.include_velocity_domain_observation = bool(include_velocity_domain_observation)
         self.controller_position_gain = float(controller_position_gain)
         self.controller_orientation_gain = float(controller_orientation_gain)
@@ -205,6 +218,19 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 "useful_contact_outgoing_x_penalty_weight must be non-negative, got "
                 f"{self.useful_contact_outgoing_x_penalty_weight}."
+            )
+        if self.useful_contact_return_target_xy_reward_weight < 0.0:
+            raise ValueError(
+                "useful_contact_return_target_xy_reward_weight must be non-negative, got "
+                f"{self.useful_contact_return_target_xy_reward_weight}."
+            )
+        if self.return_target_xy_source not in _RETURN_TARGET_XY_SOURCES:
+            raise ValueError(
+                f"return_target_xy_source must be one of {_RETURN_TARGET_XY_SOURCES}, got {self.return_target_xy_source!r}."
+            )
+        if self.return_target_xy_tolerance <= 0.0:
+            raise ValueError(
+                f"return_target_xy_tolerance must be positive, got {self.return_target_xy_tolerance}."
             )
         if self.tilt_angle_penalty_weight < 0.0:
             raise ValueError(
@@ -258,6 +284,16 @@ class PingPongKeepUpEnv:
                     "strike_tilt_ramp_pitch cannot be combined with strike_tilt_assist_limit. "
                     "Choose one strike tilt experiment at a time."
                 )
+        if not 0.0 <= self.post_contact_return_assist_weight <= 1.0:
+            raise ValueError(
+                "post_contact_return_assist_weight must be within [0, 1], got "
+                f"{self.post_contact_return_assist_weight}."
+            )
+        if self.post_contact_return_max_intercept_time <= 0.0:
+            raise ValueError(
+                "post_contact_return_max_intercept_time must be positive, got "
+                f"{self.post_contact_return_max_intercept_time}."
+            )
         if self.strike_tilt_ramp_xy_tolerance < 0.0:
             raise ValueError(
                 "strike_tilt_ramp_xy_tolerance must be non-negative, got "
@@ -518,6 +554,9 @@ class PingPongKeepUpEnv:
             "apex_match_reward_weight": self.apex_match_reward_weight,
             "useful_contact_outgoing_x_penalty_weight": self.useful_contact_outgoing_x_penalty_weight,
             "desired_outgoing_ball_velocity_x": self.desired_outgoing_ball_velocity_x,
+            "useful_contact_return_target_xy_reward_weight": self.useful_contact_return_target_xy_reward_weight,
+            "return_target_xy_source": self.return_target_xy_source,
+            "return_target_xy_tolerance": self.return_target_xy_tolerance,
             "tilt_angle_penalty_weight": self.tilt_angle_penalty_weight,
             "tilt_action_delta_penalty_weight": self.tilt_action_delta_penalty_weight,
             "descending_ball_velocity_threshold": self.descending_ball_velocity_threshold,
@@ -540,6 +579,8 @@ class PingPongKeepUpEnv:
             "strike_tilt_assist_deadband": self.strike_tilt_assist_deadband,
             "strike_tilt_ramp_pitch": self.strike_tilt_ramp_pitch,
             "strike_tilt_ramp_xy_tolerance": self.strike_tilt_ramp_xy_tolerance,
+            "post_contact_return_assist_weight": self.post_contact_return_assist_weight,
+            "post_contact_return_max_intercept_time": self.post_contact_return_max_intercept_time,
             "include_velocity_domain_observation": self.include_velocity_domain_observation,
         }
 
@@ -563,9 +604,8 @@ class PingPongKeepUpEnv:
     def _tracking_strike_plane_offset(self) -> float:
         return float(np.clip(0.02, self.target_offset_low[2], self.target_offset_high[2]))
 
-    def _predicted_intercept_time(self) -> float:
+    def _predicted_intercept_time(self, max_intercept_time: float = 0.35) -> float:
         fallback_time = 0.0
-        max_intercept_time = 0.35
         target_z = float(self.sim.racket_position[2]) + self._tracking_strike_plane_offset()
         quadratic_a = 0.5 * self._gravity_z()
         quadratic_b = float(self.sim.ball_velocity[2])
@@ -592,8 +632,8 @@ class PingPongKeepUpEnv:
             return min(valid_times)
         return float(np.clip(fallback_time, 0.0, max_intercept_time))
 
-    def _predicted_intercept_xy(self) -> np.ndarray:
-        intercept_time = self._predicted_intercept_time()
+    def _predicted_intercept_xy(self, max_intercept_time: float = 0.35) -> np.ndarray:
+        intercept_time = self._predicted_intercept_time(max_intercept_time=max_intercept_time)
         return np.asarray(self.sim.ball_position[:2] + intercept_time * self.sim.ball_velocity[:2], dtype=float)
 
     def _tracking_alignment_error(self) -> float:
@@ -636,6 +676,56 @@ class PingPongKeepUpEnv:
             default=self._ball_height_above_racket(),
         )
         return self._projected_apex_height_above_racket(contact_ball_height, contact_ball_velocity_z)
+
+    def _projected_contact_apex_xy(self, contact_trace: dict[str, object] | None) -> np.ndarray | None:
+        if contact_trace is None:
+            return None
+        contact_ball_position_x = contact_trace.get("contact_ball_position_x")
+        contact_ball_position_y = contact_trace.get("contact_ball_position_y")
+        if contact_ball_position_x is None or contact_ball_position_y is None:
+            return None
+        contact_ball_velocity_z = self._contact_float(
+            contact_trace,
+            "contact_ball_velocity_z",
+            default=float(self.sim.ball_velocity[2]),
+        )
+        contact_ball_velocity_x = self._contact_float(
+            contact_trace,
+            "contact_ball_velocity_x",
+            default=float(self.sim.ball_velocity[0]),
+        )
+        contact_ball_velocity_y = self._contact_float(
+            contact_trace,
+            "contact_ball_velocity_y",
+            default=float(self.sim.ball_velocity[1]),
+        )
+        gravity_magnitude = max(abs(self._gravity_z()), 1.0e-6)
+        projected_apex_time = max(contact_ball_velocity_z, 0.0) / gravity_magnitude
+        return np.array(
+            [
+                float(contact_ball_position_x) + contact_ball_velocity_x * projected_apex_time,
+                float(contact_ball_position_y) + contact_ball_velocity_y * projected_apex_time,
+            ],
+            dtype=float,
+        )
+
+    def _return_target_xy(self) -> np.ndarray:
+        if self.return_target_xy_source in ("controller_anchor", "racket_home"):
+            return np.asarray(self._controller_anchor_position()[:2], dtype=float)
+        if self.return_target_xy_source == "racket_position":
+            return np.asarray(self.sim.racket_position[:2], dtype=float)
+        return np.asarray(self.controller.target_position[:2], dtype=float)
+
+    def _return_target_xy_term(self, contact_trace: dict[str, object] | None) -> float:
+        if self.useful_contact_return_target_xy_reward_weight <= 0.0:
+            return 0.0
+        projected_apex_xy = self._projected_contact_apex_xy(contact_trace)
+        if projected_apex_xy is None:
+            return 0.0
+        target_xy = self._return_target_xy()
+        xy_error = float(np.linalg.norm(projected_apex_xy - target_xy))
+        xy_match = max(1.0 - xy_error / self.return_target_xy_tolerance, 0.0)
+        return float(self.useful_contact_return_target_xy_reward_weight * xy_match)
 
     def _apex_match_term(self, contact_trace: dict[str, object] | None) -> float:
         projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
@@ -720,6 +810,7 @@ class PingPongKeepUpEnv:
             "tracking_term": tracking_scale * self._tracking_term(),
             "contact_bonus": 0.0,
             "apex_match_term": 0.0,
+            "return_target_xy_term": 0.0,
             "outgoing_x_term": 0.0,
             "failure_penalty": 0.0,
             "tilt_angle_penalty": 0.0,
@@ -733,6 +824,7 @@ class PingPongKeepUpEnv:
         if contact_event and success_reason is not None:
             reward_terms["contact_bonus"] = self.contact_bonus
             reward_terms["apex_match_term"] = self._apex_match_term(contact_trace)
+            reward_terms["return_target_xy_term"] = self._return_target_xy_term(contact_trace)
         if contact_event and self.useful_contact_outgoing_x_penalty_weight > 0.0:
             contact_ball_velocity_z = self._contact_float(
                 contact_trace,
@@ -882,6 +974,22 @@ class PingPongKeepUpEnv:
         ramp = float(np.clip(max(height_readiness, urgency), 0.0, 1.0))
         return np.array([self.strike_tilt_ramp_pitch * ramp, 0.0], dtype=float)
 
+    def _post_contact_return_target_xy(self) -> np.ndarray:
+        anchor_xy = np.asarray(self._controller_anchor_position()[:2], dtype=float)
+        if self.action_mode != "position_strike":
+            return anchor_xy
+        if self.post_contact_return_assist_weight <= 0.0:
+            return anchor_xy
+        if self.successful_bounce_count <= 0:
+            return anchor_xy
+        if float(self.sim.ball_velocity[2]) <= 0.0:
+            return anchor_xy
+        predicted_return_xy = self._predicted_intercept_xy(
+            max_intercept_time=self.post_contact_return_max_intercept_time
+        )
+        assist_weight = float(np.clip(self.post_contact_return_assist_weight, 0.0, 1.0))
+        return (1.0 - assist_weight) * anchor_xy + assist_weight * predicted_return_xy
+
     def _strike_action_target_position(self, action: Sequence[float]) -> np.ndarray:
         action_array = np.asarray(action, dtype=float)
         if action_array.shape != (3,):
@@ -889,6 +997,7 @@ class PingPongKeepUpEnv:
         anchor_position = self._controller_anchor_position()
         target_position = anchor_position.copy()
         if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            target_position[:2] = self._post_contact_return_target_xy()
             return target_position + action_array
         target_position[:2] = self._predicted_intercept_xy() + action_array[:2]
         target_position[2] = anchor_position[2] + self._strike_lift_feedforward() + action_array[2]

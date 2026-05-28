@@ -333,6 +333,38 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         _, _, _, _, info = env.step(np.zeros(3, dtype=float))
         self.assertTrue(np.allclose(info["target_position"][:2], expected_xy, atol=1.0e-6))
 
+    def test_position_strike_post_contact_return_assist_biases_xy_toward_future_intercept(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            post_contact_return_assist_weight=0.5,
+            post_contact_return_max_intercept_time=0.6,
+        )
+        env.reset(ball_height=env.ball_height)
+        env.successful_bounce_count = 1
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, 0.10])
+        env.sim.spawn_ball(ball_position, velocity=(0.3, -0.1, 1.0))
+        anchor_xy = env._controller_anchor_position()[:2]
+        predicted_return_xy = env._predicted_intercept_xy(max_intercept_time=0.6)
+        target_position = env._strike_action_target_position(np.zeros(3, dtype=float))
+        expected_xy = 0.5 * anchor_xy + 0.5 * predicted_return_xy
+        self.assertTrue(np.allclose(target_position[:2], expected_xy, atol=1.0e-6))
+
+    def test_position_strike_post_contact_return_assist_stays_neutral_without_successful_bounce(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            post_contact_return_assist_weight=0.5,
+            post_contact_return_max_intercept_time=0.6,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, 0.10])
+        env.sim.spawn_ball(ball_position, velocity=(0.3, -0.1, 1.0))
+        target_position = env._strike_action_target_position(np.zeros(3, dtype=float))
+        self.assertTrue(np.allclose(target_position[:2], env._controller_anchor_position()[:2], atol=1.0e-6))
+
     def test_strike_lift_feedforward_raises_pre_contact_z_cap(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
         env.reset(ball_height=env.ball_height)
@@ -437,6 +469,53 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
             contact_trace={"contact_ball_velocity_x": 0.2, "contact_ball_velocity_z": 0.8},
         )
         self.assertEqual(reward_terms["outgoing_x_term"], 0.0)
+
+    def test_return_target_xy_term_applies_only_on_useful_contact(self) -> None:
+        env = PingPongKeepUpEnv(
+            reset_xy_range=0.0,
+            useful_contact_return_target_xy_reward_weight=1.25,
+            return_target_xy_source="controller_anchor",
+            return_target_xy_tolerance=0.1,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_xy = env._controller_anchor_position()[:2]
+        contact_trace = {
+            "contact_ball_position_x": float(anchor_xy[0]),
+            "contact_ball_position_y": float(anchor_xy[1]),
+            "contact_ball_velocity_x": 0.0,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": 0.8,
+        }
+
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason="useful_keepup_bounce",
+            contact_event=True,
+            contact_active=True,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace=contact_trace,
+        )
+        self.assertAlmostEqual(reward_terms["return_target_xy_term"], 1.25)
+
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=True,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace=contact_trace,
+        )
+        self.assertEqual(reward_terms["return_target_xy_term"], 0.0)
+
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason="useful_keepup_bounce",
+            contact_event=True,
+            contact_active=True,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={"contact_ball_velocity_x": 0.0, "contact_ball_velocity_y": 0.0, "contact_ball_velocity_z": 0.8},
+        )
+        self.assertEqual(reward_terms["return_target_xy_term"], 0.0)
 
     def test_success_reason_requires_centered_contact(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)

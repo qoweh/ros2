@@ -152,6 +152,85 @@ def summarize_contacts(
     return summary
 
 
+def summarize_episode_apex_targets(
+    episode_rows: list[dict[str, object]],
+    contact_rows: list[dict[str, object]],
+    *,
+    compare_apex_targets: bool,
+) -> dict[str, object]:
+    episode_useful_bounces: dict[int, int] = {
+        int(row["episode"]): int(row.get("useful_bounces", 0))
+        for row in episode_rows
+    }
+    first_contact_by_episode: dict[int, dict[str, object]] = {}
+    for row in contact_rows:
+        episode = int(row["episode"])
+        if episode not in first_contact_by_episode:
+            first_contact_by_episode[episode] = row
+
+    summary: dict[str, object] = {
+        "episodes_with_one_or_more_useful_bounces": sum(value >= 1 for value in episode_useful_bounces.values()),
+        "episodes_with_two_or_more_useful_bounces": sum(value >= 2 for value in episode_useful_bounces.values()),
+    }
+    if not compare_apex_targets:
+        return summary
+
+    target_metrics: dict[str, dict[str, object]] = {}
+    for target_name in _APEX_TARGET_CHOICES:
+        error_key = f"projected_apex_xy_error_{target_name}"
+        first_contact_two_or_more: list[float] = []
+        first_contact_fewer_than_two: list[float] = []
+        first_contact_one_or_more: list[float] = []
+        first_contact_zero: list[float] = []
+        for episode, useful_bounce_count in episode_useful_bounces.items():
+            first_contact = first_contact_by_episode.get(episode)
+            if first_contact is None or first_contact.get(error_key) is None:
+                continue
+            error_value = float(first_contact[error_key])
+            if useful_bounce_count >= 2:
+                first_contact_two_or_more.append(error_value)
+            else:
+                first_contact_fewer_than_two.append(error_value)
+            if useful_bounce_count >= 1:
+                first_contact_one_or_more.append(error_value)
+            else:
+                first_contact_zero.append(error_value)
+
+        mean_two_or_more = (
+            float(np.mean(first_contact_two_or_more)) if first_contact_two_or_more else None
+        )
+        mean_fewer_than_two = (
+            float(np.mean(first_contact_fewer_than_two)) if first_contact_fewer_than_two else None
+        )
+        mean_one_or_more = (
+            float(np.mean(first_contact_one_or_more)) if first_contact_one_or_more else None
+        )
+        mean_zero = float(np.mean(first_contact_zero)) if first_contact_zero else None
+        target_metrics[target_name] = {
+            "episodes_with_two_or_more_useful_bounces_count": len(first_contact_two_or_more),
+            "first_contact_mean_error_two_or_more_useful_bounces": mean_two_or_more,
+            "episodes_with_fewer_than_two_useful_bounces_count": len(first_contact_fewer_than_two),
+            "first_contact_mean_error_fewer_than_two_useful_bounces": mean_fewer_than_two,
+            "two_or_more_useful_bounces_gap": (
+                None
+                if mean_two_or_more is None or mean_fewer_than_two is None
+                else mean_two_or_more - mean_fewer_than_two
+            ),
+            "episodes_with_one_or_more_useful_bounces_count": len(first_contact_one_or_more),
+            "first_contact_mean_error_one_or_more_useful_bounces": mean_one_or_more,
+            "episodes_with_zero_useful_bounces_count": len(first_contact_zero),
+            "first_contact_mean_error_zero_useful_bounces": mean_zero,
+            "one_or_more_useful_bounces_gap": (
+                None
+                if mean_one_or_more is None or mean_zero is None
+                else mean_one_or_more - mean_zero
+            ),
+        }
+
+    summary["apex_target_episode_metrics"] = target_metrics
+    return summary
+
+
 def apex_target_xy_candidates(
     *,
     info: dict[str, object],
@@ -364,10 +443,23 @@ def main() -> None:
         "mean_return": float(returns_array.mean()) if returns_array.size else 0.0,
         "mean_useful_bounces": float(bounce_array.mean()) if bounce_array.size else 0.0,
         "max_useful_bounces": int(bounce_array.max()) if bounce_array.size else 0,
+        "episodes_with_one_or_more_useful_bounces": int(np.count_nonzero(bounce_array >= 1.0)) if bounce_array.size else 0,
+        "one_or_more_useful_bounce_rate": (
+            float(np.count_nonzero(bounce_array >= 1.0) / bounce_array.size) if bounce_array.size else 0.0
+        ),
+        "episodes_with_two_or_more_useful_bounces": int(np.count_nonzero(bounce_array >= 2.0)) if bounce_array.size else 0,
+        "two_or_more_useful_bounce_rate": (
+            float(np.count_nonzero(bounce_array >= 2.0) / bounce_array.size) if bounce_array.size else 0.0
+        ),
         "failure_counts": dict(failure_counts),
         "contact_summary": summarize_contacts(
             contact_rows,
             selected_apex_target=args.apex_target,
+            compare_apex_targets=args.compare_apex_targets,
+        ),
+        "episode_apex_summary": summarize_episode_apex_targets(
+            episode_rows,
+            contact_rows,
             compare_apex_targets=args.compare_apex_targets,
         ),
         "output_files": {
