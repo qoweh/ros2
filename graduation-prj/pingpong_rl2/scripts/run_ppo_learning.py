@@ -132,6 +132,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vertical-action-limit", type=float, default=None)
     parser.add_argument("--tilt-action-limit", type=float, default=None)
     parser.add_argument("--tracking-during-contact-scale", type=float, default=None)
+    parser.add_argument("--useful-contact-outgoing-x-penalty-weight", type=float, default=None)
+    parser.add_argument("--desired-outgoing-ball-velocity-x", type=float, default=None)
     parser.add_argument("--tilt-angle-penalty-weight", type=float, default=None)
     parser.add_argument("--tilt-action-delta-penalty-weight", type=float, default=None)
     parser.add_argument(
@@ -170,6 +172,23 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Deadband in meters below which position_strike tilt assist stays neutral.",
+    )
+    parser.add_argument(
+        "--strike-tilt-ramp-pitch",
+        type=float,
+        default=None,
+        help="Optional fixed pitch target for position_strike that ramps in only during pre-contact strike preparation and returns to neutral after contact.",
+    )
+    parser.add_argument(
+        "--strike-tilt-ramp-xy-tolerance",
+        type=float,
+        default=None,
+        help="Maximum XY alignment error allowed before the position_strike pitch ramp stays neutral.",
+    )
+    parser.add_argument(
+        "--include-velocity-domain-observation",
+        action="store_true",
+        help="Add relative velocity and racket face normal to the observation for velocity-domain rebound experiments.",
     )
     parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument("--smoke", action="store_true")
@@ -268,6 +287,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["tilt_action_limit"] = args.tilt_action_limit
     if args.tracking_during_contact_scale is not None:
         env_kwargs["tracking_during_contact_scale"] = args.tracking_during_contact_scale
+    if args.useful_contact_outgoing_x_penalty_weight is not None:
+        env_kwargs["useful_contact_outgoing_x_penalty_weight"] = args.useful_contact_outgoing_x_penalty_weight
+    if args.desired_outgoing_ball_velocity_x is not None:
+        env_kwargs["desired_outgoing_ball_velocity_x"] = args.desired_outgoing_ball_velocity_x
     if args.tilt_angle_penalty_weight is not None:
         env_kwargs["tilt_angle_penalty_weight"] = args.tilt_angle_penalty_weight
     if args.tilt_action_delta_penalty_weight is not None:
@@ -282,6 +305,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["strike_tilt_assist_limit"] = tuple(args.strike_tilt_assist_limit)
     if args.strike_tilt_assist_deadband is not None:
         env_kwargs["strike_tilt_assist_deadband"] = args.strike_tilt_assist_deadband
+    if args.strike_tilt_ramp_pitch is not None:
+        env_kwargs["strike_tilt_ramp_pitch"] = args.strike_tilt_ramp_pitch
+    if args.strike_tilt_ramp_xy_tolerance is not None:
+        env_kwargs["strike_tilt_ramp_xy_tolerance"] = args.strike_tilt_ramp_xy_tolerance
+    if args.include_velocity_domain_observation:
+        env_kwargs["include_velocity_domain_observation"] = True
     return env_kwargs
 
 

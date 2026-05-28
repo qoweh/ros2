@@ -43,6 +43,29 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertAlmostEqual(float(observation[predicted_intercept_time_slice][0]), expected_value)
         self.assertGreater(expected_value, 0.0)
 
+    def test_velocity_domain_observation_is_opt_in(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        self.assertNotIn("relative_velocity", env.observation_slices)
+        self.assertNotIn("racket_face_normal", env.observation_slices)
+
+    def test_position_strike_velocity_domain_observation_includes_relative_velocity_and_face_normal(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            include_velocity_domain_observation=True,
+        )
+        observation, _ = env.reset(ball_height=env.ball_height)
+        self.assertIn("relative_velocity", env.observation_slices)
+        self.assertIn("racket_face_normal", env.observation_slices)
+        relative_velocity_slice = env.observation_slices["relative_velocity"]
+        self.assertTrue(
+            np.allclose(observation[relative_velocity_slice], env.sim.ball_velocity - env.sim.racket_velocity)
+        )
+        self.assertTrue(
+            np.allclose(observation[env.observation_slices["racket_face_normal"]], env.sim.racket_face_normal)
+        )
+
     def test_default_action_limits_bias_vertical_motion(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0)
         self.assertLess(env.action_high[0], env.action_high[2])
@@ -129,6 +152,59 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         env.sim.spawn_ball(ball_position, velocity=(0.2, 0.0, -1.0))
         _, _, _, _, info = env.step(np.zeros(3, dtype=float))
         self.assertLess(float(info["target_tilt"][0]), -0.01)
+
+    def test_position_strike_timed_negative_pitch_ramp_targets_inward_pitch(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_tilt_limit=(0.06, 0.06),
+            strike_tilt_ramp_pitch=-0.03,
+            strike_tilt_ramp_xy_tolerance=0.05,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.02, 0.0, env._preparation_target_height_above_racket() + 0.01])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        target_tilt = env._strike_tilt_ramp_target()
+        self.assertLess(float(target_tilt[0]), -0.01)
+        self.assertAlmostEqual(float(target_tilt[1]), 0.0)
+
+    def test_position_strike_timed_negative_pitch_ramp_stays_neutral_when_misaligned(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_tilt_limit=(0.06, 0.06),
+            strike_tilt_ramp_pitch=-0.03,
+            strike_tilt_ramp_xy_tolerance=0.03,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.06, 0.0, env._preparation_target_height_above_racket() + 0.01])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        self.assertTrue(np.allclose(env._strike_tilt_ramp_target(), np.zeros(2, dtype=float)))
+
+    def test_position_strike_step_applies_timed_negative_pitch_ramp(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_strike",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_tilt_limit=(0.06, 0.06),
+            strike_tilt_ramp_pitch=-0.03,
+            strike_tilt_ramp_xy_tolerance=0.05,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.02, 0.0, env._preparation_target_height_above_racket() + 0.01])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        _, _, _, _, info = env.step(np.zeros(3, dtype=float))
+        self.assertLess(float(info["target_tilt"][0]), -0.01)
+
+    def test_position_strike_timed_negative_pitch_ramp_conflicts_with_center_assist(self) -> None:
+        with self.assertRaises(ValueError):
+            PingPongKeepUpEnv(
+                action_mode="position_strike",
+                strike_tilt_assist_limit=(0.03, 0.03),
+                strike_tilt_ramp_pitch=-0.03,
+            )
 
     def test_position_tilt_step_accepts_five_dim_action(self) -> None:
         env = PingPongKeepUpEnv(action_mode="position_tilt", reset_xy_range=0.0)
@@ -288,6 +364,33 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         )
         self.assertLess(reward_terms["tilt_angle_penalty"], 0.0)
         self.assertLess(reward_terms["tilt_action_delta_penalty"], 0.0)
+
+    def test_outgoing_x_term_only_applies_on_useful_contact_event(self) -> None:
+        env = PingPongKeepUpEnv(
+            reset_xy_range=0.0,
+            useful_contact_outgoing_x_penalty_weight=0.5,
+            desired_outgoing_ball_velocity_x=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason="useful_keepup_bounce",
+            contact_event=True,
+            contact_active=True,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={"contact_ball_velocity_x": 0.2},
+        )
+        self.assertAlmostEqual(reward_terms["outgoing_x_term"], -0.1)
+
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=True,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={"contact_ball_velocity_x": 0.2},
+        )
+        self.assertEqual(reward_terms["outgoing_x_term"], 0.0)
 
     def test_success_reason_requires_centered_contact(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)

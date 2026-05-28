@@ -52,7 +52,7 @@
 - run name에 실험 의도를 넣는다.
 - 모든 run summary에 env config, seed, total timesteps, eval 결과를 저장한다.
 - 1M을 바로 돌리지 말고 50k, 100k, 200k, 500k 순서로 간다.
-- viewer 판단은 마지막에 하고, 중간 판단은 수치로 한다.
+- viewer 판단은 마지막에 하고, 중간 판단은 수치로 한다. viewer판단이 필요할 시 멈춰서 사용자(client)에게 확인 요청한다.
 
 필요한 코드 변경 후보:
 
