@@ -15,6 +15,15 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertEqual(info["contact_count"], 0)
         self.assertEqual(info["successful_bounce_count"], 0)
 
+    def test_step_info_exposes_controller_anchor_position(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        _, _, _, _, info = env.step(np.zeros(env.action_size, dtype=float))
+        self.assertIn("controller_anchor_position", info)
+        self.assertIn("contact_ball_position_x", info)
+        self.assertIn("contact_ball_position_y", info)
+        self.assertTrue(np.allclose(info["controller_anchor_position"], env._controller_anchor_position()))
+
     def test_observation_includes_racket_velocity_slice(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
         observation, _ = env.reset()

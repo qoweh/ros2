@@ -260,6 +260,8 @@ class PingPongSim:
         contact_trace: dict[str, object] = {
             "contact_observed": False,
             "contact_substep": None,
+            "contact_ball_position_x": None,
+            "contact_ball_position_y": None,
             "contact_ball_velocity_x": None,
             "contact_ball_velocity_y": None,
             "contact_ball_velocity_z": None,
@@ -292,6 +294,8 @@ class PingPongSim:
             contact_trace = {
                 "contact_observed": True,
                 "contact_substep": substep_index,
+                "contact_ball_position_x": float(ball_position[0]),
+                "contact_ball_position_y": float(ball_position[1]),
                 "contact_ball_velocity_x": float(ball_velocity[0]),
                 "contact_ball_velocity_y": float(ball_velocity[1]),
                 "contact_ball_velocity_z": float(ball_velocity[2]),

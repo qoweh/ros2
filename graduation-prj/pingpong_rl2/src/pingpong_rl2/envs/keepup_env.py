@@ -465,6 +465,7 @@ class PingPongKeepUpEnv:
             "contact_count": self.contact_count,
             "successful_bounce_count": self.successful_bounce_count,
             "step_count": self.step_count,
+            "controller_anchor_position": self._controller_anchor_position(),
             "target_position": self.controller.target_position,
             "ball_height_above_racket": self._ball_height_above_racket(),
             "target_ball_height_above_racket": self._target_ball_height_above_racket(),
@@ -477,6 +478,8 @@ class PingPongKeepUpEnv:
             "projected_contact_apex_height_above_racket": (
                 self._projected_contact_apex_height_above_racket(contact_trace) if contact_event else None
             ),
+            "contact_ball_position_x": contact_trace.get("contact_ball_position_x"),
+            "contact_ball_position_y": contact_trace.get("contact_ball_position_y"),
             "contact_ball_velocity_x": contact_trace.get("contact_ball_velocity_x"),
             "contact_ball_velocity_y": contact_trace.get("contact_ball_velocity_y"),
             "contact_ball_height_above_racket": contact_trace.get("contact_ball_height_above_racket"),
