@@ -69,9 +69,47 @@ _TILT_PROFILES: dict[str, dict[str, object]] = {
     },
 }
 
+_ENV_PRESETS: dict[str, dict[str, object]] = {
+    "baseline_position": {
+        "action_mode": "position",
+    },
+    "strike_position": {
+        "action_mode": "position_strike",
+    },
+    "strike_velocity_obs": {
+        "action_mode": "position_strike",
+        "include_velocity_domain_observation": True,
+    },
+    "tilt_experiment": {
+        "action_mode": "position_tilt",
+        "tilt_profile": "auto",
+    },
+    "final_candidate": {
+        "action_mode": "position_strike",
+        "strike_tilt_ramp_pitch": -0.03,
+        "strike_tilt_ramp_xy_tolerance": 0.04,
+        "include_velocity_domain_observation": True,
+    },
+}
+
+_PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
+    "action_mode": "position",
+    "tilt_profile": "auto",
+    "strike_tilt_ramp_pitch": None,
+    "strike_tilt_ramp_xy_tolerance": None,
+    "include_velocity_domain_observation": False,
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the minimal pingpong_rl2 PPO baseline.")
+    parser.add_argument(
+        "--preset",
+        type=str,
+        default=None,
+        choices=tuple(_ENV_PRESETS.keys()),
+        help="Optional experiment preset that applies a fixed env configuration before any manual overrides.",
+    )
     parser.add_argument("--run-name", type=str, default=None)
     parser.add_argument(
         "--run-version",
@@ -193,6 +231,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument("--smoke", action="store_true")
     return parser.parse_args()
+
+
+def apply_env_preset(args: argparse.Namespace) -> str:
+    if args.preset is None:
+        return "manual"
+
+    preset_values = _ENV_PRESETS[args.preset]
+    for arg_name, preset_value in preset_values.items():
+        current_value = getattr(args, arg_name)
+        default_value = _PRESET_MANAGED_ARG_DEFAULTS[arg_name]
+        if current_value == default_value:
+            setattr(args, arg_name, preset_value)
+            continue
+        if current_value != preset_value:
+            raise ValueError(
+                f"--preset {args.preset!r} conflicts with explicit --{arg_name.replace('_', '-')}={current_value!r}."
+            )
+    return str(args.preset)
 
 
 def build_run_dir(run_name: str, output_dir: Path | None) -> Path:
@@ -354,6 +410,7 @@ def main() -> None:
         args.n_steps = SMOKE_PPO_N_STEPS
         args.batch_size = SMOKE_PPO_BATCH_SIZE
         args.n_envs = min(args.n_envs, 2)
+    resolved_preset = apply_env_preset(args)
     resolved_run_name = resolve_requested_run_name(
         args.run_name,
         args.run_version,
@@ -415,6 +472,7 @@ def main() -> None:
         "model_path": str((run_dir / f"{resolved_run_name}_model.zip").resolve()),
         "monitor_path": str(monitor_path.resolve()),
         "config": {
+            "preset": resolved_preset,
             "run_version": args.run_version,
             "resolved_tilt_profile": resolved_tilt_profile,
             "total_timesteps": args.total_timesteps,
@@ -433,6 +491,7 @@ def main() -> None:
     summary_path = run_dir / f"{resolved_run_name}_training_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"resolved_run_name={resolved_run_name}")
+    print(f"resolved_preset={resolved_preset}")
     print(f"resolved_tilt_profile={resolved_tilt_profile}")
     print(f"training_mode={training_mode}")
     if starting_checkpoint is not None:
