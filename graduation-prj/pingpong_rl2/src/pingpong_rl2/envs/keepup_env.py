@@ -730,14 +730,24 @@ class PingPongKeepUpEnv:
         if contact_event and success_reason is not None:
             reward_terms["contact_bonus"] = self.contact_bonus
             reward_terms["apex_match_term"] = self._apex_match_term(contact_trace)
-            if self.useful_contact_outgoing_x_penalty_weight > 0.0:
+        if contact_event and self.useful_contact_outgoing_x_penalty_weight > 0.0:
+            contact_ball_velocity_z = self._contact_float(
+                contact_trace,
+                "contact_ball_velocity_z",
+                float(self.sim.ball_velocity[2]),
+            )
+            if contact_ball_velocity_z > 0.0:
                 contact_ball_velocity_x = self._contact_float(
                     contact_trace,
                     "contact_ball_velocity_x",
                     float(self.sim.ball_velocity[0]),
                 )
-                reward_terms["outgoing_x_term"] = -self.useful_contact_outgoing_x_penalty_weight * abs(
-                    contact_ball_velocity_x - self.desired_outgoing_ball_velocity_x
+                outward_x_error = max(
+                    contact_ball_velocity_x - self.desired_outgoing_ball_velocity_x,
+                    0.0,
+                )
+                reward_terms["outgoing_x_term"] = (
+                    -self.useful_contact_outgoing_x_penalty_weight * outward_x_error
                 )
         if failure_reason == "floor_contact":
             reward_terms["failure_penalty"] = self.floor_penalty

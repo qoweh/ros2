@@ -365,11 +365,11 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertLess(reward_terms["tilt_angle_penalty"], 0.0)
         self.assertLess(reward_terms["tilt_action_delta_penalty"], 0.0)
 
-    def test_outgoing_x_term_only_applies_on_useful_contact_event(self) -> None:
+    def test_outgoing_x_term_applies_on_upward_contact_event(self) -> None:
         env = PingPongKeepUpEnv(
             reset_xy_range=0.0,
             useful_contact_outgoing_x_penalty_weight=0.5,
-            desired_outgoing_ball_velocity_x=0.0,
+            desired_outgoing_ball_velocity_x=-0.15,
         )
         env.reset(ball_height=env.ball_height)
         reward_terms = env._reward_terms(
@@ -378,9 +378,9 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
             contact_event=True,
             contact_active=True,
             applied_action=np.zeros(env.action_size, dtype=float),
-            contact_trace={"contact_ball_velocity_x": 0.2},
+            contact_trace={"contact_ball_velocity_x": 0.2, "contact_ball_velocity_z": 0.8},
         )
-        self.assertAlmostEqual(reward_terms["outgoing_x_term"], -0.1)
+        self.assertAlmostEqual(reward_terms["outgoing_x_term"], -0.175)
 
         reward_terms = env._reward_terms(
             failure_reason=None,
@@ -388,7 +388,44 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
             contact_event=True,
             contact_active=True,
             applied_action=np.zeros(env.action_size, dtype=float),
-            contact_trace={"contact_ball_velocity_x": 0.2},
+            contact_trace={"contact_ball_velocity_x": 0.2, "contact_ball_velocity_z": 0.8},
+        )
+        self.assertAlmostEqual(reward_terms["outgoing_x_term"], -0.175)
+
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason="useful_keepup_bounce",
+            contact_event=True,
+            contact_active=True,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={"contact_ball_velocity_x": -0.2, "contact_ball_velocity_z": 0.8},
+        )
+        self.assertEqual(reward_terms["outgoing_x_term"], 0.0)
+
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason="useful_keepup_bounce",
+            contact_event=True,
+            contact_active=True,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={"contact_ball_velocity_x": 0.2, "contact_ball_velocity_z": -0.1},
+        )
+        self.assertEqual(reward_terms["outgoing_x_term"], 0.0)
+
+    def test_outgoing_x_term_stays_zero_when_weight_disabled(self) -> None:
+        env = PingPongKeepUpEnv(
+            reset_xy_range=0.0,
+            useful_contact_outgoing_x_penalty_weight=0.0,
+            desired_outgoing_ball_velocity_x=-0.15,
+        )
+        env.reset(ball_height=env.ball_height)
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason="useful_keepup_bounce",
+            contact_event=True,
+            contact_active=True,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={"contact_ball_velocity_x": 0.2, "contact_ball_velocity_z": 0.8},
         )
         self.assertEqual(reward_terms["outgoing_x_term"], 0.0)
 
