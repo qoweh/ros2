@@ -262,6 +262,7 @@ class PingPongSim:
             "contact_substep": None,
             "contact_ball_position_x": None,
             "contact_ball_position_y": None,
+            "contact_ball_position_z": None,
             "contact_ball_velocity_x": None,
             "contact_ball_velocity_y": None,
             "contact_ball_velocity_z": None,
@@ -272,6 +273,9 @@ class PingPongSim:
             "contact_racket_velocity_y": None,
             "contact_racket_velocity_z": None,
             "contact_racket_speed_norm": None,
+            "contact_racket_face_normal_x": None,
+            "contact_racket_face_normal_y": None,
+            "contact_racket_face_normal_z": None,
             "contact_racket_acceleration_x": None,
             "contact_racket_acceleration_y": None,
             "contact_racket_acceleration_z": None,
@@ -291,11 +295,13 @@ class PingPongSim:
             ball_velocity = self.ball_velocity
             ball_position = self.ball_position
             racket_position = self.racket_position
+            racket_face_normal = self.racket_face_normal
             contact_trace = {
                 "contact_observed": True,
                 "contact_substep": substep_index,
                 "contact_ball_position_x": float(ball_position[0]),
                 "contact_ball_position_y": float(ball_position[1]),
+                "contact_ball_position_z": float(ball_position[2]),
                 "contact_ball_velocity_x": float(ball_velocity[0]),
                 "contact_ball_velocity_y": float(ball_velocity[1]),
                 "contact_ball_velocity_z": float(ball_velocity[2]),
@@ -306,6 +312,9 @@ class PingPongSim:
                 "contact_racket_velocity_y": float(racket_velocity[1]),
                 "contact_racket_velocity_z": float(racket_velocity[2]),
                 "contact_racket_speed_norm": float(np.linalg.norm(racket_velocity)),
+                "contact_racket_face_normal_x": float(racket_face_normal[0]),
+                "contact_racket_face_normal_y": float(racket_face_normal[1]),
+                "contact_racket_face_normal_z": float(racket_face_normal[2]),
                 "contact_racket_acceleration_x": float(racket_acceleration[0]),
                 "contact_racket_acceleration_y": float(racket_acceleration[1]),
                 "contact_racket_acceleration_z": float(racket_acceleration[2]),
