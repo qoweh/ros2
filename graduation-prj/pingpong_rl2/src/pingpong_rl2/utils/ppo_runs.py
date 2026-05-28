@@ -64,6 +64,10 @@ def model_path_for_run_name(run_name: str, ppo_runs_root: Path = PPO_RUNS_ROOT) 
     return ppo_runs_root / run_name / f"{run_name}_model.zip"
 
 
+def best_model_path_for_run_name(run_name: str, ppo_runs_root: Path = PPO_RUNS_ROOT) -> Path:
+    return ppo_runs_root / run_name / f"{run_name}_best_model.zip"
+
+
 def training_summary_path_for_run_name(run_name: str, ppo_runs_root: Path = PPO_RUNS_ROOT) -> Path:
     return ppo_runs_root / run_name / f"{run_name}_training_summary.json"
 
@@ -91,10 +95,29 @@ def training_summary_candidates_for_model(model_path: Path) -> list[Path]:
     return candidates
 
 
-def resolve_saved_model_path(model_path: Path | None = None, run_name: str | None = None) -> Path:
+def resolve_saved_model_path(
+    model_path: Path | None = None,
+    run_name: str | None = None,
+    *,
+    prefer_best_model: bool = False,
+) -> Path:
     if model_path is not None:
         return resolve_input_path(model_path)
     if run_name is not None:
+        if prefer_best_model:
+            summary_path = training_summary_path_for_run_name(run_name)
+            summary = load_training_summary(summary_path)
+            if isinstance(summary, dict):
+                checkpointing = summary.get("checkpointing")
+                if isinstance(checkpointing, dict):
+                    best_model_path = checkpointing.get("best_model_path")
+                    if isinstance(best_model_path, str):
+                        resolved_best_model_path = resolve_input_path(Path(best_model_path))
+                        if resolved_best_model_path.is_file():
+                            return resolved_best_model_path
+            fallback_best_model_path = best_model_path_for_run_name(run_name)
+            if fallback_best_model_path.is_file():
+                return fallback_best_model_path
         return model_path_for_run_name(run_name)
     candidates = default_ppo_model_candidates(PPO_RUNS_ROOT)
     for candidate in candidates:

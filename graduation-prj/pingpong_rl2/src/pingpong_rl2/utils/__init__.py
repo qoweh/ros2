@@ -12,6 +12,7 @@ from pingpong_rl2.utils.paths import (
     resolve_output_path,
 )
 from pingpong_rl2.utils.ppo_runs import (
+    best_model_path_for_run_name,
     compose_run_name,
     infer_run_name_from_model_path,
     load_env_config_for_model,
@@ -26,6 +27,7 @@ __all__ = [
     "ARTIFACT_ROOT",
     "ASSET_ROOT",
     "BENCHMARK_ROOT",
+    "best_model_path_for_run_name",
     "DOCS_ROOT",
     "PACKAGE_ROOT",
     "PPO_RUNS_ROOT",

@@ -24,7 +24,7 @@
 - `python pingpong_rl2/scripts/run_ppo_learning.py --preset final_candidate --run-name <name> --run-version <version> --reset-model`
 - `python pingpong_rl2/scripts/run_ppo_evaluation.py --model-path <zip>`
 - `python pingpong_rl2/scripts/run_ppo_rebound_analysis.py --model-path <zip> --episodes 50 --analysis-name <name>`
-- `python pingpong_rl2/scripts/run_viewer.py --mode zero_action`
+- `python pingpong_rl2/scripts/run_viewer.py --run-name clean_tnp_return_assist --run-version v1 --best-model --episodes 5`
 - `python pingpong_rl2/scripts/benchmark_vector_env.py --n-envs 4`
 
 학습 재개 규칙:

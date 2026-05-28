@@ -179,6 +179,29 @@ contact quality metric은 해석 가치가 있다.
 
 현재 최우선은 reward가 아니라 control-side assist 미세조정이다.
 
+즉시 수행한 첫 follow-up도 이미 하나 있다.
+
+- `clean_tnp_return_assist_w06_v1`
+  - 변경점: `post_contact_return_assist_weight 0.5 -> 0.6`
+  - 나머지 설정: 동일
+  - 결과: keep-up aggregate 숫자는 일부 비슷하거나 소폭 좋아 보였지만, easy-next-ball metric은 명확히 악화됐다.
+
+`0.5` 대 `0.6` 50-episode 비교:
+
+| model | mean useful bounces | one+ rate | two+ rate | ball out of bounds | useful next-intercept error | useful reachable rate | useful easy score |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| assist `0.5` | `0.40` | `0.38` | `0.02` | `38` | `0.151` | `25.0%` | `-0.267` |
+| assist `0.6` | `0.40` | `0.40` | `0.00` | `36` | `0.359` | `0.0%` | `-0.711` |
+
+해석:
+
+- `0.6`은 `one_plus_rate`와 `ball_out_of_bounds`만 보면 조금 좋아 보일 수 있다.
+- 하지만 useful contact가 만든 다음 공의 질은 오히려 크게 나빠졌다.
+- 특히 `useful_contact_mean_next_intercept_xy_error`가 `0.151 -> 0.359`로 악화됐고, useful-contact reachable rate가 `25% -> 0%`로 떨어졌다.
+- `two_or_more_useful_bounce_rate`도 `0.02 -> 0.00`으로 내려갔다.
+
+따라서 현재 active candidate는 그대로 assist `0.5`를 유지하고, 다음 탐색은 `0.4` 또는 `max_intercept_time` 쪽이 우선이다.
+
 우선순위:
 
 1. `post_contact_return_assist_weight`를 `0.4`, `0.6`, `0.7` 중 하나씩만 바꿔 본다.

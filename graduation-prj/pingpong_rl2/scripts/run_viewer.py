@@ -26,11 +26,16 @@ from pingpong_rl2.utils import resolve_env_kwargs_for_model, resolve_requested_r
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Render a pingpong_rl2 policy or zero-action rollout in the MuJoCo viewer.")
+    parser = argparse.ArgumentParser(description="Render fresh pingpong_rl2 evaluation episodes in the MuJoCo viewer.")
     parser.add_argument("--mode", type=str, default="policy", choices=("policy", "zero_action"))
     parser.add_argument("--model-path", type=Path, default=None)
     parser.add_argument("--run-name", type=str, default=None)
     parser.add_argument("--run-version", type=str, default=None)
+    parser.add_argument(
+        "--best-model",
+        action="store_true",
+        help="When used with --run-name/--run-version, load <run>_best_model.zip from the training summary instead of the final model.",
+    )
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--ball-height", type=float, default=None)
@@ -54,7 +59,11 @@ def main() -> None:
     resolved_run_name = None if args.run_name is None else resolve_requested_run_name(args.run_name, args.run_version)
     configured_model_path: Path | None = None
     if args.mode == "policy" or args.model_path is not None or resolved_run_name is not None:
-        configured_model_path = resolve_saved_model_path(args.model_path, resolved_run_name)
+        configured_model_path = resolve_saved_model_path(
+            args.model_path,
+            resolved_run_name,
+            prefer_best_model=args.best_model,
+        )
 
     env_kwargs = resolve_env_kwargs_for_model(
         configured_model_path,
@@ -67,7 +76,11 @@ def main() -> None:
     env = PingPongKeepUpGymEnv(**env_kwargs)
     model = None
     if args.mode == "policy":
-        model_path = resolve_saved_model_path(args.model_path, resolved_run_name)
+        model_path = resolve_saved_model_path(
+            args.model_path,
+            resolved_run_name,
+            prefer_best_model=args.best_model,
+        )
         if not model_path.is_file():
             raise FileNotFoundError(f"Saved PPO model not found: {model_path}")
         model = PPO.load(str(model_path))
