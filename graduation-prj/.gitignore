@@ -2,5 +2,5 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .DS_Store
-agent-log.md
 artifacts/
+agent*
