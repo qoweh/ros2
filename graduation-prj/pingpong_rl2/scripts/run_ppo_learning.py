@@ -4,17 +4,20 @@ import argparse
 import json
 import sys
 from collections import Counter
+from math import ceil
 from pathlib import Path
 
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecMonitor
+import torch as th
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from pingpong_rl2.controllers import HeuristicKeepUpPolicy
 from pingpong_rl2.defaults import (
     DEFAULT_BALL_HEIGHT,
     DEFAULT_MAX_EPISODE_STEPS,
@@ -102,6 +105,18 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "include_next_intercept_observation": True,
         "next_intercept_reachable_bonus_weight": 0.2,
     },
+    "followup_strike_candidate": {
+        "action_mode": "position_strike",
+        "strike_tilt_ramp_pitch": -0.03,
+        "strike_tilt_ramp_xy_tolerance": 0.04,
+        "followup_strike_target_tilt": (-0.03, 0.0),
+        "post_contact_return_assist_weight": 0.5,
+        "post_contact_return_max_intercept_time": 0.6,
+        "include_task_phase_observation": True,
+        "include_contact_context_observation": True,
+        "include_next_intercept_observation": True,
+        "next_intercept_reachable_bonus_weight": 0.2,
+    },
 }
 
 _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
@@ -116,6 +131,10 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "include_contact_context_observation": False,
     "include_next_intercept_observation": False,
     "next_intercept_reachable_bonus_weight": None,
+    "followup_strike_target_tilt": None,
+    "followup_strike_contact_offset_ratio": None,
+    "followup_strike_contact_offset_max": None,
+    "followup_strike_lift_boost": None,
 }
 
 
@@ -155,6 +174,42 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gamma", type=float, default=DEFAULT_PPO_GAMMA)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument(
+        "--bootstrap-heuristic-episodes",
+        type=int,
+        default=0,
+        help="Optional number of heuristic rollout episodes to collect before PPO learning for actor warm-start.",
+    )
+    parser.add_argument(
+        "--bootstrap-min-useful-bounces",
+        type=int,
+        default=1,
+        help="Minimum useful bounce count required for a heuristic episode to be kept in the bootstrap dataset.",
+    )
+    parser.add_argument(
+        "--bootstrap-max-samples",
+        type=int,
+        default=0,
+        help="Optional hard cap on accepted bootstrap samples. Set 0 for no cap.",
+    )
+    parser.add_argument(
+        "--bootstrap-epochs",
+        type=int,
+        default=0,
+        help="Number of supervised actor pretraining epochs on the accepted heuristic dataset.",
+    )
+    parser.add_argument(
+        "--bootstrap-batch-size",
+        type=int,
+        default=256,
+        help="Batch size used for heuristic actor pretraining.",
+    )
+    parser.add_argument(
+        "--bootstrap-learning-rate",
+        type=float,
+        default=1.0e-3,
+        help="Learning rate used for heuristic actor pretraining.",
+    )
     parser.add_argument(
         "--action-mode",
         type=str,
@@ -248,6 +303,32 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Maximum XY alignment error allowed before the position_strike pitch ramp stays neutral.",
+    )
+    parser.add_argument(
+        "--followup-strike-target-tilt",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+        help="Optional persistent target tilt used after the first useful bounce so follow-up strikes keep a nonzero inward face.",
+    )
+    parser.add_argument(
+        "--followup-strike-contact-offset-ratio",
+        type=float,
+        default=None,
+        help="Optional fraction of anchor correction used to bias follow-up descending strike contact points toward the strike zone center.",
+    )
+    parser.add_argument(
+        "--followup-strike-contact-offset-max",
+        type=float,
+        default=None,
+        help="Maximum meters of follow-up descending strike contact bias toward the strike zone center.",
+    )
+    parser.add_argument(
+        "--followup-strike-lift-boost",
+        type=float,
+        default=None,
+        help="Optional extra follow-up lift boost applied only after the first useful bounce.",
     )
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
@@ -443,6 +524,14 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["strike_tilt_ramp_pitch"] = args.strike_tilt_ramp_pitch
     if args.strike_tilt_ramp_xy_tolerance is not None:
         env_kwargs["strike_tilt_ramp_xy_tolerance"] = args.strike_tilt_ramp_xy_tolerance
+    if args.followup_strike_target_tilt is not None:
+        env_kwargs["followup_strike_target_tilt"] = tuple(args.followup_strike_target_tilt)
+    if args.followup_strike_contact_offset_ratio is not None:
+        env_kwargs["followup_strike_contact_offset_ratio"] = args.followup_strike_contact_offset_ratio
+    if args.followup_strike_contact_offset_max is not None:
+        env_kwargs["followup_strike_contact_offset_max"] = args.followup_strike_contact_offset_max
+    if args.followup_strike_lift_boost is not None:
+        env_kwargs["followup_strike_lift_boost"] = args.followup_strike_lift_boost
     if args.post_contact_return_assist_weight is not None:
         env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
     if args.post_contact_return_max_intercept_time is not None:
@@ -516,6 +605,134 @@ def evaluation_sort_key(evaluation: dict[str, object]) -> tuple[float, float, in
         -float(failure_counts.get("ball_out_of_bounds", 0)),
         float(evaluation.get("mean_return", 0.0)),
     )
+
+
+def collect_heuristic_bootstrap_dataset(
+    *,
+    env_kwargs: dict[str, object],
+    episodes: int,
+    seed: int,
+    min_useful_bounces: int,
+    max_samples: int,
+) -> dict[str, object]:
+    if episodes <= 0:
+        return {
+            "requested_episodes": episodes,
+            "accepted_episodes": 0,
+            "accepted_samples": 0,
+            "mean_episode_useful_bounces": 0.0,
+            "observations": np.empty((0, 0), dtype=np.float32),
+            "actions": np.empty((0, 0), dtype=np.float32),
+        }
+    if env_kwargs.get("action_mode") != "position_strike":
+        raise ValueError("Heuristic bootstrap currently requires action_mode='position_strike'.")
+
+    env = PingPongKeepUpGymEnv(**env_kwargs)
+    policy = HeuristicKeepUpPolicy()
+    accepted_observations: list[np.ndarray] = []
+    accepted_actions: list[np.ndarray] = []
+    accepted_episode_useful_bounces: list[int] = []
+    accepted_episode_count = 0
+    try:
+        for episode_index in range(episodes):
+            observation, _ = env.reset(seed=seed + episode_index)
+            policy.reset()
+            episode_observations: list[np.ndarray] = []
+            episode_actions: list[np.ndarray] = []
+            info: dict[str, object] = {}
+            while True:
+                action = policy.predict(env.base_env).astype(np.float32, copy=False)
+                episode_observations.append(np.asarray(observation, dtype=np.float32).copy())
+                episode_actions.append(np.asarray(action, dtype=np.float32).copy())
+                observation, _, terminated, truncated, info = env.step(action)
+                if terminated or truncated:
+                    break
+
+            useful_bounces = int(info.get("successful_bounce_count", 0))
+            if useful_bounces < min_useful_bounces:
+                continue
+
+            accepted_episode_count += 1
+            accepted_episode_useful_bounces.append(useful_bounces)
+            accepted_observations.extend(episode_observations)
+            accepted_actions.extend(episode_actions)
+            if max_samples > 0 and len(accepted_observations) >= max_samples:
+                accepted_observations = accepted_observations[:max_samples]
+                accepted_actions = accepted_actions[:max_samples]
+                break
+    finally:
+        env.close()
+
+    if not accepted_observations:
+        observation_shape = (0, env.base_env.observation_size)
+        action_shape = (0, env.action_space.shape[0])
+        return {
+            "requested_episodes": episodes,
+            "accepted_episodes": accepted_episode_count,
+            "accepted_samples": 0,
+            "mean_episode_useful_bounces": 0.0,
+            "observations": np.empty(observation_shape, dtype=np.float32),
+            "actions": np.empty(action_shape, dtype=np.float32),
+        }
+
+    observations_array = np.asarray(accepted_observations, dtype=np.float32)
+    actions_array = np.asarray(accepted_actions, dtype=np.float32)
+    return {
+        "requested_episodes": episodes,
+        "accepted_episodes": accepted_episode_count,
+        "accepted_samples": int(observations_array.shape[0]),
+        "mean_episode_useful_bounces": float(np.mean(accepted_episode_useful_bounces)),
+        "observations": observations_array,
+        "actions": actions_array,
+    }
+
+
+def bootstrap_actor_from_dataset(
+    *,
+    model: PPO,
+    observations: np.ndarray,
+    actions: np.ndarray,
+    epochs: int,
+    batch_size: int,
+    learning_rate: float,
+    seed: int,
+) -> dict[str, object]:
+    if epochs <= 0 or observations.size == 0 or actions.size == 0:
+        return {
+            "epochs": epochs,
+            "samples": int(observations.shape[0]) if observations.ndim == 2 else 0,
+            "mean_loss": None,
+            "last_loss": None,
+        }
+
+    optimizer = th.optim.Adam(model.policy.parameters(), lr=learning_rate)
+    rng = np.random.default_rng(seed)
+    loss_history: list[float] = []
+    model.policy.train()
+    for _ in range(epochs):
+        permutation = rng.permutation(observations.shape[0])
+        batch_count = max(1, ceil(observations.shape[0] / batch_size))
+        for batch_index in range(batch_count):
+            batch_slice = permutation[batch_index * batch_size:(batch_index + 1) * batch_size]
+            if batch_slice.size == 0:
+                continue
+            observation_tensor = th.as_tensor(observations[batch_slice], device=model.device)
+            action_tensor = th.as_tensor(actions[batch_slice], device=model.device)
+            distribution = model.policy.get_distribution(observation_tensor)
+            predicted_action_tensor = distribution.get_actions(deterministic=True)
+            loss = th.nn.functional.mse_loss(predicted_action_tensor, action_tensor)
+            optimizer.zero_grad()
+            loss.backward()
+            th.nn.utils.clip_grad_norm_(model.policy.parameters(), max_norm=0.5)
+            optimizer.step()
+            loss_history.append(float(loss.detach().cpu().item()))
+
+    return {
+        "epochs": epochs,
+        "samples": int(observations.shape[0]),
+        "mean_loss": float(np.mean(loss_history)) if loss_history else None,
+        "last_loss": loss_history[-1] if loss_history else None,
+    }
 
 
 def save_periodic_checkpoints(
@@ -604,6 +821,8 @@ def main() -> None:
             args.checkpoint_eval_episodes = 2
         if args.eval_episodes > 2:
             args.eval_episodes = 2
+        if args.bootstrap_heuristic_episodes > 12:
+            args.bootstrap_heuristic_episodes = 12
     resolved_preset = apply_env_preset(args)
     resolved_run_name = resolve_requested_run_name(
         args.run_name,
@@ -647,7 +866,33 @@ def main() -> None:
             env=monitored_env,
             device=args.device,
         )
+    bootstrap_summary: dict[str, object] | None = None
     try:
+        if starting_checkpoint is None and args.bootstrap_heuristic_episodes > 0 and args.bootstrap_epochs > 0:
+            bootstrap_dataset = collect_heuristic_bootstrap_dataset(
+                env_kwargs=env_kwargs,
+                episodes=args.bootstrap_heuristic_episodes,
+                seed=args.seed + 40_000,
+                min_useful_bounces=args.bootstrap_min_useful_bounces,
+                max_samples=args.bootstrap_max_samples,
+            )
+            bootstrap_train_summary = bootstrap_actor_from_dataset(
+                model=model,
+                observations=bootstrap_dataset["observations"],
+                actions=bootstrap_dataset["actions"],
+                epochs=args.bootstrap_epochs,
+                batch_size=args.bootstrap_batch_size,
+                learning_rate=args.bootstrap_learning_rate,
+                seed=args.seed + 50_000,
+            )
+            bootstrap_summary = {
+                "requested_episodes": bootstrap_dataset["requested_episodes"],
+                "accepted_episodes": bootstrap_dataset["accepted_episodes"],
+                "accepted_samples": bootstrap_dataset["accepted_samples"],
+                "min_useful_bounces": args.bootstrap_min_useful_bounces,
+                "mean_episode_useful_bounces": bootstrap_dataset["mean_episode_useful_bounces"],
+                **bootstrap_train_summary,
+            }
         checkpoint_dir, checkpoint_history, best_checkpoint_record, completed_timesteps, stopped_early = save_periodic_checkpoints(
             model=model,
             run_dir=run_dir,
@@ -706,6 +951,7 @@ def main() -> None:
                 else str((run_dir / f"{resolved_run_name}_best_model.zip").resolve())
             ),
         },
+        "bootstrap": bootstrap_summary,
         "evaluation": evaluation,
     }
     summary_path = run_dir / f"{resolved_run_name}_training_summary.json"
@@ -732,6 +978,13 @@ def main() -> None:
         print(f"best_checkpoint_timesteps={best_checkpoint_record['timesteps']}")
     print(f"monitor_path={monitor_path}")
     print(f"summary_path={summary_path}")
+    if bootstrap_summary is not None:
+        print(
+            "bootstrap "
+            f"accepted_episodes={bootstrap_summary['accepted_episodes']} "
+            f"accepted_samples={bootstrap_summary['accepted_samples']} "
+            f"mean_loss={bootstrap_summary['mean_loss']}"
+        )
     print(
         "evaluation "
         f"mean_return={evaluation['mean_return']:.3f} "

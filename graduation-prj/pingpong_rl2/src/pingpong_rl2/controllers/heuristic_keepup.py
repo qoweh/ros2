@@ -31,19 +31,17 @@ class HeuristicKeepUpPolicy:
         phase_name = env._phase_name()
 
         if phase_name in {"prepare", "strike"}:
-            desired_target[:2] = env._predicted_intercept_xy()
             intercept_time = env._predicted_intercept_time()
             urgency = 1.0 - np.clip(intercept_time / max(self.strike_time_horizon, 1.0e-6), 0.0, 1.0)
             strike_readiness = max(env._pre_contact_height_readiness(), urgency)
-            desired_target[2] = anchor_position[2] + env._strike_lift_feedforward() + self.strike_z_boost * strike_readiness
+            desired_target[2] = base_target[2] + self.strike_z_boost * strike_readiness
         else:
-            desired_target[:2] = anchor_position[:2]
             next_intercept_metrics = env._next_intercept_metrics()
             if next_intercept_metrics["time"] > 0.0:
                 next_intercept_xy = env.sim.racket_position[:2] + np.asarray(next_intercept_metrics["relative_xy"], dtype=float)
                 blend = self.return_blend if phase_name == "return_shaping" else self.recovery_blend
-                desired_target[:2] = (1.0 - blend) * anchor_position[:2] + blend * next_intercept_xy
-            desired_target[2] = anchor_position[2]
+                desired_target[:2] = (1.0 - blend) * base_target[:2] + blend * next_intercept_xy
+            desired_target[2] = base_target[2]
 
         action = desired_target - base_target
         return np.clip(action, env.action_low, env.action_high)

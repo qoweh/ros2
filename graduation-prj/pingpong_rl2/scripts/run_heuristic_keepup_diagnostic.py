@@ -22,6 +22,7 @@ from pingpong_rl2.envs import PingPongKeepUpGymEnv
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the scripted keep-up diagnostic baseline.")
     parser.add_argument("--analysis-name", type=str, default="heuristic_keepup_diagnostic")
+    parser.add_argument("--variant-name", type=str, default="default")
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=211)
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
@@ -39,6 +40,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recovery-blend", type=float, default=0.52)
     parser.add_argument("--strike-z-boost", type=float, default=0.018)
     parser.add_argument("--strike-time-horizon", type=float, default=0.14)
+    parser.add_argument("--strike-tilt-ramp-pitch", type=float, default=-0.03)
+    parser.add_argument("--strike-tilt-ramp-xy-tolerance", type=float, default=0.04)
+    parser.add_argument(
+        "--followup-strike-target-tilt",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
+    parser.add_argument("--followup-strike-contact-offset-ratio", type=float, default=0.0)
+    parser.add_argument("--followup-strike-contact-offset-max", type=float, default=0.0)
+    parser.add_argument("--followup-strike-lift-boost", type=float, default=0.0)
+    parser.add_argument("--post-contact-return-assist-weight", type=float, default=0.5)
+    parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=0.6)
+    parser.add_argument(
+        "--target-tilt-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=(0.06, 0.06),
+    )
+    parser.add_argument(
+        "--initial-target-tilt",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--print-episodes", action="store_true")
     return parser.parse_args()
@@ -58,7 +87,7 @@ def write_csv(file_path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
-    return {
+    env_kwargs: dict[str, object] = {
         "action_mode": "position_strike",
         "ball_height": args.ball_height,
         "target_ball_height": args.ball_height,
@@ -66,14 +95,24 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "reset_xy_range": args.reset_xy_range,
         "reset_velocity_xy_range": args.reset_velocity_xy_range,
         "reset_velocity_z_range": tuple(args.reset_velocity_z_range),
-        "strike_tilt_ramp_pitch": -0.03,
-        "strike_tilt_ramp_xy_tolerance": 0.04,
-        "post_contact_return_assist_weight": 0.5,
-        "post_contact_return_max_intercept_time": 0.6,
+        "target_tilt_limit": tuple(args.target_tilt_limit),
+        "followup_strike_contact_offset_ratio": args.followup_strike_contact_offset_ratio,
+        "followup_strike_contact_offset_max": args.followup_strike_contact_offset_max,
+        "followup_strike_lift_boost": args.followup_strike_lift_boost,
+        "post_contact_return_assist_weight": args.post_contact_return_assist_weight,
+        "post_contact_return_max_intercept_time": args.post_contact_return_max_intercept_time,
         "include_task_phase_observation": True,
         "include_contact_context_observation": True,
         "include_next_intercept_observation": True,
     }
+    if args.followup_strike_target_tilt is not None:
+        env_kwargs["followup_strike_target_tilt"] = tuple(args.followup_strike_target_tilt)
+    if args.initial_target_tilt is not None:
+        env_kwargs["initial_target_tilt"] = tuple(args.initial_target_tilt)
+    else:
+        env_kwargs["strike_tilt_ramp_pitch"] = args.strike_tilt_ramp_pitch
+        env_kwargs["strike_tilt_ramp_xy_tolerance"] = args.strike_tilt_ramp_xy_tolerance
+    return env_kwargs
 
 
 def main() -> None:
@@ -157,6 +196,7 @@ def main() -> None:
     bounce_array = np.asarray(useful_bounces, dtype=float)
     summary = {
         "analysis_name": args.analysis_name,
+        "variant_name": args.variant_name,
         "episodes": args.episodes,
         "seed": args.seed,
         "env_kwargs": build_env_kwargs(args),
@@ -190,6 +230,7 @@ def main() -> None:
     print(f"episodes_path={episodes_path}")
     print(
         "heuristic_summary "
+        f"variant={args.variant_name} "
         f"mean_useful_bounces={summary['mean_useful_bounces']:.3f} "
         f"two_or_more_rate={summary['two_or_more_useful_bounce_rate']:.3f} "
         f"reachable_rate={summary['next_intercept_reachable_rate']:.3f}"

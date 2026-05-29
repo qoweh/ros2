@@ -5,7 +5,7 @@
 ## 설계 원칙
 
 - env-side assist는 실험으로만 넣고, 현재 winner만 preset으로 고정한다.
-- heuristic keep-up policy를 학습 경로에 섞지 않는다.
+- heuristic keep-up policy는 기본 학습 경로에 직접 섞지 않되, 구조 gate가 통과한 뒤에는 actor bootstrap warm-start 용도로만 제한적으로 사용한다.
 - curriculum을 기본 꺼 둔다.
 - 현재 주력 action은 `position_strike`다.
 - reward는 strike-window alignment, useful contact, apex quality, failure penalty만 남긴다.
@@ -24,6 +24,8 @@
 - `python pingpong_rl2/scripts/run_heuristic_keepup_diagnostic.py --episodes 20 --analysis-name <name>`
 - `python pingpong_rl2/scripts/run_ppo_learning.py --preset final_candidate --run-name <name> --run-version <version> --reset-model`
 - `python pingpong_rl2/scripts/run_ppo_learning.py --preset phase_contract_candidate --run-name <name> --run-version <version> --reset-model`
+- `python pingpong_rl2/scripts/run_ppo_learning.py --preset followup_strike_candidate --run-name <name> --run-version <version> --reset-model`
+- `python pingpong_rl2/scripts/run_ppo_learning.py --preset followup_strike_candidate --run-name <name> --run-version <version> --reset-model --bootstrap-heuristic-episodes 40 --bootstrap-epochs 5 --bootstrap-max-samples 4000`
 - `python pingpong_rl2/scripts/run_ppo_evaluation.py --model-path <zip>`
 - `python pingpong_rl2/scripts/run_ppo_rebound_analysis.py --model-path <zip> --episodes 50 --analysis-name <name>`
 - `python pingpong_rl2/scripts/run_viewer.py --run-name clean_tnp_return_assist --run-version v1 --best-model --episodes 5`
@@ -51,5 +53,12 @@
 ## keep-up rethink follow-up
 
 - `phase_contract_candidate` preset은 기존 `final_candidate` control stack 위에 `phase/contact/next-intercept` observation과 `next_intercept_reachable_bonus_weight=0.2`를 얹는 새 실험 preset이다.
+- `followup_strike_candidate` preset은 위 contract에 더해 첫 useful bounce 이후 inward follow-up tilt contract를 유지해서 second-strike geometry를 직접 바꾸는 preset이다.
 - `run_heuristic_keepup_diagnostic.py`는 PPO 없이 scripted diagnostic baseline을 돌려서 현재 환경/제어가 반복 keep-up을 허용하는지 먼저 확인한다.
 - `run_viewer.py --mode heuristic`는 같은 baseline을 MuJoCo viewer에서 바로 재생한다.
+- `run_ppo_learning.py`의 `--bootstrap-*` 옵션은 heuristic rollout 중 useful bounce가 나온 episode만 모아 actor를 supervised warm-start한 뒤 PPO를 시작한다. 현재 결과상 이 경로는 first useful bounce 안정화에는 유효하지만, second-strike quality는 follow-up checkpoint selection과 함께 봐야 한다.
+
+## 현재 판단
+
+- centered upward useful second strike를 여는 핵심 구조 변경은 `followup_strike_target_tilt=(-0.03, 0.0)` 기반 follow-up strike contract다.
+- heuristic bootstrap은 PPO가 이 구조를 더 빨리 배우게 해 주지만, 50-episode rebound 기준 second-strike quality 자체를 가장 잘 만든 run은 아직 `followup_strike_contract_v1` best checkpoint다.

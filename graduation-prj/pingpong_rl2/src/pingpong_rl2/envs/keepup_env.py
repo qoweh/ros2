@@ -147,6 +147,10 @@ class PingPongKeepUpEnv:
         strike_tilt_assist_deadband: float = 0.015,
         strike_tilt_ramp_pitch: float | None = None,
         strike_tilt_ramp_xy_tolerance: float | None = None,
+        followup_strike_target_tilt: Sequence[float] | None = None,
+        followup_strike_contact_offset_ratio: float = 0.0,
+        followup_strike_contact_offset_max: float = 0.0,
+        followup_strike_lift_boost: float = 0.0,
         post_contact_return_assist_weight: float = 0.0,
         post_contact_return_max_intercept_time: float = 0.6,
         next_intercept_reachable_bonus_weight: float = 0.0,
@@ -226,6 +230,12 @@ class PingPongKeepUpEnv:
             if strike_tilt_ramp_xy_tolerance is None
             else float(strike_tilt_ramp_xy_tolerance)
         )
+        self.followup_strike_target_tilt = (
+            None if followup_strike_target_tilt is None else np.asarray(followup_strike_target_tilt, dtype=float)
+        )
+        self.followup_strike_contact_offset_ratio = float(followup_strike_contact_offset_ratio)
+        self.followup_strike_contact_offset_max = float(followup_strike_contact_offset_max)
+        self.followup_strike_lift_boost = float(followup_strike_lift_boost)
         self.post_contact_return_assist_weight = float(post_contact_return_assist_weight)
         self.post_contact_return_max_intercept_time = float(post_contact_return_max_intercept_time)
         self.next_intercept_reachable_bonus_weight = float(next_intercept_reachable_bonus_weight)
@@ -316,6 +326,31 @@ class PingPongKeepUpEnv:
         if self.strike_tilt_assist_deadband < 0.0:
             raise ValueError(
                 f"strike_tilt_assist_deadband must be non-negative, got {self.strike_tilt_assist_deadband}."
+            )
+        if self.followup_strike_target_tilt is not None:
+            if self.followup_strike_target_tilt.shape != (2,):
+                raise ValueError(
+                    "followup_strike_target_tilt must have shape (2,), got "
+                    f"{self.followup_strike_target_tilt.shape}."
+                )
+            if np.any(np.abs(self.followup_strike_target_tilt) > self.target_tilt_limit + 1.0e-9):
+                raise ValueError(
+                    "followup_strike_target_tilt must stay within target_tilt_limit, got "
+                    f"{self.followup_strike_target_tilt} with target_tilt_limit={self.target_tilt_limit}."
+                )
+        if self.followup_strike_contact_offset_ratio < 0.0:
+            raise ValueError(
+                "followup_strike_contact_offset_ratio must be non-negative, got "
+                f"{self.followup_strike_contact_offset_ratio}."
+            )
+        if self.followup_strike_contact_offset_max < 0.0:
+            raise ValueError(
+                "followup_strike_contact_offset_max must be non-negative, got "
+                f"{self.followup_strike_contact_offset_max}."
+            )
+        if self.followup_strike_lift_boost < 0.0:
+            raise ValueError(
+                f"followup_strike_lift_boost must be non-negative, got {self.followup_strike_lift_boost}."
             )
         if self.strike_tilt_ramp_pitch is not None:
             if abs(self.strike_tilt_ramp_pitch) > self.target_tilt_limit[0] + 1.0e-9:
@@ -542,10 +577,8 @@ class PingPongKeepUpEnv:
         if self.action_mode == "position_tilt":
             next_target_tilt = self._constrained_target_tilt(self.controller.target_tilt + applied_action[3:])
             self.controller.set_target_tilt(next_target_tilt)
-        elif self.action_mode == "position_strike" and self.strike_tilt_ramp_pitch is not None:
-            self.controller.set_target_tilt(self._constrained_target_tilt(self._strike_tilt_ramp_target()))
-        elif self.action_mode == "position_strike" and self.strike_tilt_assist_limit is not None:
-            self.controller.set_target_tilt(self._constrained_target_tilt(self._strike_tilt_assist_target()))
+        elif self.action_mode == "position_strike":
+            self.controller.set_target_tilt(self._position_strike_target_tilt())
         safe_target_position = self._guarded_target_position(requested_target_position)
         self.controller.set_target_position(safe_target_position)
         joint_targets = self.controller.compute_joint_targets()
@@ -599,6 +632,9 @@ class PingPongKeepUpEnv:
             "xy_alignment_error": self._xy_alignment_error(),
             "predicted_intercept_xy_error": self._tracking_alignment_error(),
             "predicted_intercept_time": self._predicted_intercept_time(),
+            "strike_contact_target_x": float(self._strike_contact_target_xy()[0]),
+            "strike_contact_target_y": float(self._strike_contact_target_xy()[1]),
+            "followup_strike_contract_active": self._followup_strike_contract_active(),
             "next_intercept_time": next_intercept_metrics["info_time"],
             "next_intercept_x": next_intercept_metrics["info_x"],
             "next_intercept_y": next_intercept_metrics["info_y"],
@@ -684,6 +720,12 @@ class PingPongKeepUpEnv:
             "strike_tilt_assist_deadband": self.strike_tilt_assist_deadband,
             "strike_tilt_ramp_pitch": self.strike_tilt_ramp_pitch,
             "strike_tilt_ramp_xy_tolerance": self.strike_tilt_ramp_xy_tolerance,
+            "followup_strike_target_tilt": (
+                None if self.followup_strike_target_tilt is None else self.followup_strike_target_tilt.tolist()
+            ),
+            "followup_strike_contact_offset_ratio": self.followup_strike_contact_offset_ratio,
+            "followup_strike_contact_offset_max": self.followup_strike_contact_offset_max,
+            "followup_strike_lift_boost": self.followup_strike_lift_boost,
             "post_contact_return_assist_weight": self.post_contact_return_assist_weight,
             "post_contact_return_max_intercept_time": self.post_contact_return_max_intercept_time,
             "next_intercept_reachable_bonus_weight": self.next_intercept_reachable_bonus_weight,
@@ -1229,6 +1271,45 @@ class PingPongKeepUpEnv:
         ramp = float(np.clip(max(height_readiness, urgency), 0.0, 1.0))
         return np.array([self.strike_tilt_ramp_pitch * ramp, 0.0], dtype=float)
 
+    def _followup_strike_contract_active(self) -> bool:
+        return self.action_mode == "position_strike" and self.successful_bounce_count > 0
+
+    def _followup_strike_target_xy(self, predicted_intercept_xy: np.ndarray) -> np.ndarray:
+        if not self._followup_strike_contract_active():
+            return np.asarray(predicted_intercept_xy, dtype=float)
+        if self.followup_strike_contact_offset_ratio <= 0.0 or self.followup_strike_contact_offset_max <= 0.0:
+            return np.asarray(predicted_intercept_xy, dtype=float)
+        anchor_xy = np.asarray(self._controller_anchor_position()[:2], dtype=float)
+        correction_xy = anchor_xy - np.asarray(predicted_intercept_xy, dtype=float)
+        correction_norm = float(np.linalg.norm(correction_xy))
+        if correction_norm <= 1.0e-9:
+            return np.asarray(predicted_intercept_xy, dtype=float)
+        offset_distance = min(
+            self.followup_strike_contact_offset_max,
+            self.followup_strike_contact_offset_ratio * correction_norm,
+            0.75 * self.contact_centering_radius,
+        )
+        return np.asarray(predicted_intercept_xy, dtype=float) + offset_distance * correction_xy / correction_norm
+
+    def _strike_contact_target_xy(self) -> np.ndarray:
+        predicted_intercept_xy = self._predicted_intercept_xy()
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return predicted_intercept_xy
+        return self._followup_strike_target_xy(predicted_intercept_xy)
+
+    def _followup_strike_base_tilt(self) -> np.ndarray:
+        if not self._followup_strike_contract_active() or self.followup_strike_target_tilt is None:
+            return np.zeros(2, dtype=float)
+        return np.asarray(self.followup_strike_target_tilt, dtype=float)
+
+    def _position_strike_target_tilt(self) -> np.ndarray:
+        target_tilt = self._followup_strike_base_tilt()
+        if self.strike_tilt_ramp_pitch is not None:
+            target_tilt = target_tilt + self._strike_tilt_ramp_target()
+        elif self.strike_tilt_assist_limit is not None:
+            target_tilt = target_tilt + self._strike_tilt_assist_target()
+        return self._constrained_target_tilt(target_tilt)
+
     def _post_contact_return_target_xy(self) -> np.ndarray:
         anchor_xy = np.asarray(self._controller_anchor_position()[:2], dtype=float)
         if self.action_mode != "position_strike":
@@ -1254,8 +1335,11 @@ class PingPongKeepUpEnv:
         if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
             target_position[:2] = self._post_contact_return_target_xy()
             return target_position + action_array
-        target_position[:2] = self._predicted_intercept_xy() + action_array[:2]
-        target_position[2] = anchor_position[2] + self._strike_lift_feedforward() + action_array[2]
+        target_position[:2] = self._strike_contact_target_xy() + action_array[:2]
+        lift_target = self._strike_lift_feedforward()
+        if self._followup_strike_contract_active():
+            lift_target += self.followup_strike_lift_boost * max(self._pre_contact_height_readiness(), 0.0)
+        target_position[2] = anchor_position[2] + lift_target + action_array[2]
         return target_position
 
     def _body_safe_target_position(self, target_position: Sequence[float]) -> np.ndarray:
