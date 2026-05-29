@@ -21,10 +21,13 @@
 ## 주요 스크립트
 
 - `python pingpong_rl2/scripts/run_bounce_sanity.py`
+- `python pingpong_rl2/scripts/run_heuristic_keepup_diagnostic.py --episodes 20 --analysis-name <name>`
 - `python pingpong_rl2/scripts/run_ppo_learning.py --preset final_candidate --run-name <name> --run-version <version> --reset-model`
+- `python pingpong_rl2/scripts/run_ppo_learning.py --preset phase_contract_candidate --run-name <name> --run-version <version> --reset-model`
 - `python pingpong_rl2/scripts/run_ppo_evaluation.py --model-path <zip>`
 - `python pingpong_rl2/scripts/run_ppo_rebound_analysis.py --model-path <zip> --episodes 50 --analysis-name <name>`
 - `python pingpong_rl2/scripts/run_viewer.py --run-name clean_tnp_return_assist --run-version v1 --best-model --episodes 5`
+- `python pingpong_rl2/scripts/run_viewer.py --mode heuristic --episodes 3`
 - `python pingpong_rl2/scripts/benchmark_vector_env.py --n-envs 4`
 
 학습 재개 규칙:
@@ -44,3 +47,9 @@
 - `post_contact_return_max_intercept_time=0.6`
 - velocity-domain observation은 기본으로 넣지 않는다.
 - reward-side inward-return shaping은 기본 세트에 넣지 않는다.
+
+## keep-up rethink follow-up
+
+- `phase_contract_candidate` preset은 기존 `final_candidate` control stack 위에 `phase/contact/next-intercept` observation과 `next_intercept_reachable_bonus_weight=0.2`를 얹는 새 실험 preset이다.
+- `run_heuristic_keepup_diagnostic.py`는 PPO 없이 scripted diagnostic baseline을 돌려서 현재 환경/제어가 반복 keep-up을 허용하는지 먼저 확인한다.
+- `run_viewer.py --mode heuristic`는 같은 baseline을 MuJoCo viewer에서 바로 재생한다.

@@ -91,6 +91,17 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "post_contact_return_assist_weight": 0.5,
         "post_contact_return_max_intercept_time": 0.6,
     },
+    "phase_contract_candidate": {
+        "action_mode": "position_strike",
+        "strike_tilt_ramp_pitch": -0.03,
+        "strike_tilt_ramp_xy_tolerance": 0.04,
+        "post_contact_return_assist_weight": 0.5,
+        "post_contact_return_max_intercept_time": 0.6,
+        "include_task_phase_observation": True,
+        "include_contact_context_observation": True,
+        "include_next_intercept_observation": True,
+        "next_intercept_reachable_bonus_weight": 0.2,
+    },
 }
 
 _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
@@ -101,6 +112,10 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "post_contact_return_assist_weight": None,
     "post_contact_return_max_intercept_time": None,
     "include_velocity_domain_observation": False,
+    "include_task_phase_observation": False,
+    "include_contact_context_observation": False,
+    "include_next_intercept_observation": False,
+    "next_intercept_reachable_bonus_weight": None,
 }
 
 
@@ -236,10 +251,28 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
+    parser.add_argument("--next-intercept-reachable-bonus-weight", type=float, default=None)
+    parser.add_argument("--easy-next-ball-reward-weight", type=float, default=None)
+    parser.add_argument("--next-intercept-max-time", type=float, default=None)
     parser.add_argument(
         "--include-velocity-domain-observation",
         action="store_true",
         help="Add relative velocity and racket face normal to the observation for velocity-domain rebound experiments.",
+    )
+    parser.add_argument(
+        "--include-task-phase-observation",
+        action="store_true",
+        help="Add prepare/strike/return/recovery phase one-hot observation for repeated keep-up experiments.",
+    )
+    parser.add_argument(
+        "--include-contact-context-observation",
+        action="store_true",
+        help="Add time-since-contact and clipped bounce-count observation signals.",
+    )
+    parser.add_argument(
+        "--include-next-intercept-observation",
+        action="store_true",
+        help="Add next descending intercept and recovery-readiness observation signals.",
     )
     parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument(
@@ -414,8 +447,20 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
     if args.post_contact_return_max_intercept_time is not None:
         env_kwargs["post_contact_return_max_intercept_time"] = args.post_contact_return_max_intercept_time
+    if args.next_intercept_reachable_bonus_weight is not None:
+        env_kwargs["next_intercept_reachable_bonus_weight"] = args.next_intercept_reachable_bonus_weight
+    if args.easy_next_ball_reward_weight is not None:
+        env_kwargs["easy_next_ball_reward_weight"] = args.easy_next_ball_reward_weight
+    if args.next_intercept_max_time is not None:
+        env_kwargs["next_intercept_max_time"] = args.next_intercept_max_time
     if args.include_velocity_domain_observation:
         env_kwargs["include_velocity_domain_observation"] = True
+    if args.include_task_phase_observation:
+        env_kwargs["include_task_phase_observation"] = True
+    if args.include_contact_context_observation:
+        env_kwargs["include_contact_context_observation"] = True
+    if args.include_next_intercept_observation:
+        env_kwargs["include_next_intercept_observation"] = True
     return env_kwargs
 
 

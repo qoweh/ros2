@@ -14,6 +14,7 @@ SRC_ROOT = ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from pingpong_rl2.controllers import HeuristicKeepUpPolicy
 from pingpong_rl2.defaults import (
     DEFAULT_BALL_HEIGHT,
     DEFAULT_MAX_EPISODE_STEPS,
@@ -27,7 +28,7 @@ from pingpong_rl2.utils import resolve_env_kwargs_for_model, resolve_requested_r
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Render fresh pingpong_rl2 evaluation episodes in the MuJoCo viewer.")
-    parser.add_argument("--mode", type=str, default="policy", choices=("policy", "zero_action"))
+    parser.add_argument("--mode", type=str, default="policy", choices=("policy", "zero_action", "heuristic"))
     parser.add_argument("--model-path", type=Path, default=None)
     parser.add_argument("--run-name", type=str, default=None)
     parser.add_argument("--run-version", type=str, default=None)
@@ -73,8 +74,22 @@ def main() -> None:
         reset_velocity_xy_range=args.reset_velocity_xy_range,
         reset_velocity_z_range=args.reset_velocity_z_range,
     )
+    if args.mode == "heuristic" and configured_model_path is None:
+        env_kwargs.update(
+            {
+                "action_mode": "position_strike",
+                "strike_tilt_ramp_pitch": -0.03,
+                "strike_tilt_ramp_xy_tolerance": 0.04,
+                "post_contact_return_assist_weight": 0.5,
+                "post_contact_return_max_intercept_time": 0.6,
+                "include_task_phase_observation": True,
+                "include_contact_context_observation": True,
+                "include_next_intercept_observation": True,
+            }
+        )
     env = PingPongKeepUpGymEnv(**env_kwargs)
     model = None
+    heuristic_policy = None
     if args.mode == "policy":
         model_path = resolve_saved_model_path(
             args.model_path,
@@ -85,6 +100,9 @@ def main() -> None:
             raise FileNotFoundError(f"Saved PPO model not found: {model_path}")
         model = PPO.load(str(model_path))
         print(f"render_model={model_path}")
+    elif args.mode == "heuristic":
+        heuristic_policy = HeuristicKeepUpPolicy()
+        print("render_mode=heuristic")
     else:
         print("render_mode=zero_action")
 
@@ -100,7 +118,10 @@ def main() -> None:
             viewer.sync()
             while viewer.is_running():
                 if model is None:
-                    action = np.zeros(env.action_space.shape, dtype=np.float32)
+                    if heuristic_policy is None:
+                        action = np.zeros(env.action_space.shape, dtype=np.float32)
+                    else:
+                        action = heuristic_policy.predict(env.base_env).astype(np.float32, copy=False)
                 else:
                     action, _ = model.predict(observation, deterministic=not args.stochastic)
                 observation, reward, terminated, truncated, info = env.step(action)
@@ -125,6 +146,8 @@ def main() -> None:
                 episode_index += 1
                 episode_return = 0.0
                 episode_steps = 0
+                if heuristic_policy is not None:
+                    heuristic_policy.reset()
                 observation, _ = env.reset(seed=args.seed + episode_index - 1)
                 viewer.sync()
     finally:

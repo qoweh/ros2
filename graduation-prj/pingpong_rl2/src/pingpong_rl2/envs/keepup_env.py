@@ -26,6 +26,12 @@ from pingpong_rl2.envs.pingpong_sim import PingPongSim
 _ACTION_MODES = ("position", "position_strike", "position_tilt")
 _RETURN_TARGET_XY_SOURCES = ("controller_anchor", "racket_home", "racket_position", "target_position")
 
+_EASY_NEXT_BALL_TARGET_TIME = 0.45
+_EASY_NEXT_BALL_TIME_TOLERANCE = 0.30
+_EASY_NEXT_BALL_TARGET_DESCENDING_SPEED = 1.25
+_EASY_NEXT_BALL_MAX_LATERAL_SPEED = 1.0
+_EASY_NEXT_BALL_SOFT_SPEED_LIMIT = 3.0
+
 _POSITION_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
     ("joint_positions", 7),
     ("joint_velocities", 7),
@@ -37,6 +43,23 @@ _POSITION_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
     ("ball_relative_position", 3),
     ("predicted_intercept_relative_xy", 2),
     ("predicted_intercept_time", 1),
+)
+
+_TASK_PHASE_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
+    ("phase_one_hot", 4),
+)
+
+_CONTACT_CONTEXT_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
+    ("time_since_contact", 1),
+    ("successful_bounce_count_clipped", 1),
+)
+
+_NEXT_INTERCEPT_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
+    ("next_intercept_relative_xy", 2),
+    ("next_intercept_time", 1),
+    ("next_intercept_reachable", 1),
+    ("next_intercept_recovery_distance", 1),
+    ("next_intercept_recovery_readiness", 1),
 )
 
 _VELOCITY_DOMAIN_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
@@ -52,8 +75,17 @@ _POSITION_TILT_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
 def _build_observation_layout(
     action_mode: str,
     include_velocity_domain_observation: bool,
+    include_task_phase_observation: bool,
+    include_contact_context_observation: bool,
+    include_next_intercept_observation: bool,
 ) -> tuple[tuple[tuple[str, int], ...], dict[str, slice], int]:
     components = _POSITION_OBSERVATION_COMPONENTS
+    if include_task_phase_observation:
+        components = components + _TASK_PHASE_OBSERVATION_COMPONENTS
+    if include_contact_context_observation:
+        components = components + _CONTACT_CONTEXT_OBSERVATION_COMPONENTS
+    if include_next_intercept_observation:
+        components = components + _NEXT_INTERCEPT_OBSERVATION_COMPONENTS
     if include_velocity_domain_observation:
         components = components + _VELOCITY_DOMAIN_OBSERVATION_COMPONENTS
     if action_mode == "position_tilt":
@@ -117,7 +149,13 @@ class PingPongKeepUpEnv:
         strike_tilt_ramp_xy_tolerance: float | None = None,
         post_contact_return_assist_weight: float = 0.0,
         post_contact_return_max_intercept_time: float = 0.6,
+        next_intercept_reachable_bonus_weight: float = 0.0,
+        easy_next_ball_reward_weight: float = 0.0,
         include_velocity_domain_observation: bool = False,
+        include_task_phase_observation: bool = False,
+        include_contact_context_observation: bool = False,
+        include_next_intercept_observation: bool = False,
+        next_intercept_max_time: float = 1.25,
         controller_position_gain: float = 1.6,
         controller_orientation_gain: float = 0.45,
         controller_max_position_step: float = 0.06,
@@ -190,7 +228,13 @@ class PingPongKeepUpEnv:
         )
         self.post_contact_return_assist_weight = float(post_contact_return_assist_weight)
         self.post_contact_return_max_intercept_time = float(post_contact_return_max_intercept_time)
+        self.next_intercept_reachable_bonus_weight = float(next_intercept_reachable_bonus_weight)
+        self.easy_next_ball_reward_weight = float(easy_next_ball_reward_weight)
         self.include_velocity_domain_observation = bool(include_velocity_domain_observation)
+        self.include_task_phase_observation = bool(include_task_phase_observation)
+        self.include_contact_context_observation = bool(include_contact_context_observation)
+        self.include_next_intercept_observation = bool(include_next_intercept_observation)
+        self.next_intercept_max_time = float(next_intercept_max_time)
         self.controller_position_gain = float(controller_position_gain)
         self.controller_orientation_gain = float(controller_orientation_gain)
         self.controller_max_position_step = float(controller_max_position_step)
@@ -294,6 +338,19 @@ class PingPongKeepUpEnv:
                 "post_contact_return_max_intercept_time must be positive, got "
                 f"{self.post_contact_return_max_intercept_time}."
             )
+        if self.next_intercept_reachable_bonus_weight < 0.0:
+            raise ValueError(
+                "next_intercept_reachable_bonus_weight must be non-negative, got "
+                f"{self.next_intercept_reachable_bonus_weight}."
+            )
+        if self.easy_next_ball_reward_weight < 0.0:
+            raise ValueError(
+                f"easy_next_ball_reward_weight must be non-negative, got {self.easy_next_ball_reward_weight}."
+            )
+        if self.next_intercept_max_time <= 0.0:
+            raise ValueError(
+                f"next_intercept_max_time must be positive, got {self.next_intercept_max_time}."
+            )
         if self.strike_tilt_ramp_xy_tolerance < 0.0:
             raise ValueError(
                 "strike_tilt_ramp_xy_tolerance must be non-negative, got "
@@ -366,12 +423,16 @@ class PingPongKeepUpEnv:
         self._observation_components, self._observation_slices, self.observation_size = _build_observation_layout(
             self.action_mode,
             self.include_velocity_domain_observation,
+            self.include_task_phase_observation,
+            self.include_contact_context_observation,
+            self.include_next_intercept_observation,
         )
         self._rng = np.random.default_rng()
         self._spawn_ball_height_above_racket = self.ball_height
         self.step_count = 0
         self.contact_count = 0
         self.successful_bounce_count = 0
+        self._last_contact_step: int | None = None
         self._contact_active_previous_step = False
         self._previous_action = np.zeros(self.action_size, dtype=float)
 
@@ -389,6 +450,7 @@ class PingPongKeepUpEnv:
         predicted_intercept_relative_xy = (
             self.sim.ball_position[:2] + predicted_intercept_time * self.sim.ball_velocity[:2] - self.sim.racket_position[:2]
         )
+        next_intercept_metrics = self._next_intercept_metrics()
         observation_parts: list[np.ndarray] = [
             self.sim.joint_positions,
             self.sim.joint_velocities,
@@ -401,6 +463,27 @@ class PingPongKeepUpEnv:
             predicted_intercept_relative_xy,
             np.array([predicted_intercept_time], dtype=float),
         ]
+        if self.include_task_phase_observation:
+            observation_parts.append(self._phase_one_hot())
+        if self.include_contact_context_observation:
+            time_since_contact = self._time_since_contact()
+            observation_parts.extend(
+                [
+                    np.array([0.0 if time_since_contact is None else time_since_contact], dtype=float),
+                    np.array([min(self.successful_bounce_count, 3)], dtype=float),
+                ]
+            )
+        if self.include_next_intercept_observation:
+            relative_xy = next_intercept_metrics["relative_xy"]
+            observation_parts.extend(
+                [
+                    relative_xy,
+                    np.array([next_intercept_metrics["time"]], dtype=float),
+                    np.array([float(next_intercept_metrics["reachable"])] , dtype=float),
+                    np.array([next_intercept_metrics["recovery_distance"]], dtype=float),
+                    np.array([next_intercept_metrics["recovery_readiness"]], dtype=float),
+                ]
+            )
         if self.include_velocity_domain_observation:
             observation_parts.extend(
                 [
@@ -431,6 +514,7 @@ class PingPongKeepUpEnv:
         self.step_count = 0
         self.contact_count = 0
         self.successful_bounce_count = 0
+        self._last_contact_step = None
         self._contact_active_previous_step = False
         self._previous_action[:] = 0.0
         self._spawn_ball_height_above_racket = float(spawn_height)
@@ -473,9 +557,13 @@ class PingPongKeepUpEnv:
         contact_event = contact_active and not self._contact_active_previous_step
         if contact_event:
             self.contact_count += 1
+            self._last_contact_step = self.step_count
         success_reason = self._success_reason(failure_reason, contact_trace, contact_event)
         if success_reason is not None:
             self.successful_bounce_count += 1
+
+        next_intercept_metrics = self._next_intercept_metrics()
+        phase_name = self._phase_name()
 
         reward_terms = self._reward_terms(
             failure_reason,
@@ -501,6 +589,9 @@ class PingPongKeepUpEnv:
             "contact_count": self.contact_count,
             "successful_bounce_count": self.successful_bounce_count,
             "step_count": self.step_count,
+            "phase_name": phase_name,
+            "phase_one_hot": self._phase_one_hot(),
+            "time_since_contact": self._time_since_contact(),
             "controller_anchor_position": self._controller_anchor_position(),
             "target_position": self.controller.target_position,
             "ball_height_above_racket": self._ball_height_above_racket(),
@@ -508,6 +599,16 @@ class PingPongKeepUpEnv:
             "xy_alignment_error": self._xy_alignment_error(),
             "predicted_intercept_xy_error": self._tracking_alignment_error(),
             "predicted_intercept_time": self._predicted_intercept_time(),
+            "next_intercept_time": next_intercept_metrics["info_time"],
+            "next_intercept_x": next_intercept_metrics["info_x"],
+            "next_intercept_y": next_intercept_metrics["info_y"],
+            "next_intercept_xy_error": next_intercept_metrics["info_xy_error"],
+            "next_intercept_reachable": next_intercept_metrics["info_reachable"],
+            "next_intercept_vertical_speed": next_intercept_metrics["info_vertical_speed"],
+            "next_intercept_speed_norm": next_intercept_metrics["info_speed_norm"],
+            "next_intercept_recovery_distance": next_intercept_metrics["info_recovery_distance"],
+            "next_intercept_recovery_readiness": next_intercept_metrics["info_recovery_readiness"],
+            "easy_next_ball_score": next_intercept_metrics["info_easy_next_ball_score"],
             "strike_lift_feedforward": self._strike_lift_feedforward(),
             "racket_face_normal": self.sim.racket_face_normal,
             "target_tilt": self.controller.target_tilt,
@@ -585,7 +686,13 @@ class PingPongKeepUpEnv:
             "strike_tilt_ramp_xy_tolerance": self.strike_tilt_ramp_xy_tolerance,
             "post_contact_return_assist_weight": self.post_contact_return_assist_weight,
             "post_contact_return_max_intercept_time": self.post_contact_return_max_intercept_time,
+            "next_intercept_reachable_bonus_weight": self.next_intercept_reachable_bonus_weight,
+            "easy_next_ball_reward_weight": self.easy_next_ball_reward_weight,
             "include_velocity_domain_observation": self.include_velocity_domain_observation,
+            "include_task_phase_observation": self.include_task_phase_observation,
+            "include_contact_context_observation": self.include_contact_context_observation,
+            "include_next_intercept_observation": self.include_next_intercept_observation,
+            "next_intercept_max_time": self.next_intercept_max_time,
         }
 
     def close(self) -> None:
@@ -609,8 +716,23 @@ class PingPongKeepUpEnv:
         return float(np.clip(0.02, self.target_offset_low[2], self.target_offset_high[2]))
 
     def _predicted_intercept_time(self, max_intercept_time: float = 0.35) -> float:
-        fallback_time = 0.0
         target_z = float(self.sim.racket_position[2]) + self._tracking_strike_plane_offset()
+        valid_times = self._ballistic_intercept_times(target_z, max_intercept_time=max_intercept_time)
+        if valid_times:
+            return min(valid_times)
+        return 0.0
+
+    def _predicted_intercept_xy(self, max_intercept_time: float = 0.35) -> np.ndarray:
+        intercept_time = self._predicted_intercept_time(max_intercept_time=max_intercept_time)
+        return np.asarray(self.sim.ball_position[:2] + intercept_time * self.sim.ball_velocity[:2], dtype=float)
+
+    def _tracking_alignment_error(self) -> float:
+        return float(np.linalg.norm(self._predicted_intercept_xy() - self.sim.racket_position[:2]))
+
+    def _gravity_z(self) -> float:
+        return float(self.sim.model.opt.gravity[2])
+
+    def _ballistic_intercept_times(self, target_z: float, max_intercept_time: float) -> list[float]:
         quadratic_a = 0.5 * self._gravity_z()
         quadratic_b = float(self.sim.ball_velocity[2])
         quadratic_c = float(self.sim.ball_position[2] - target_z)
@@ -630,21 +752,141 @@ class PingPongKeepUpEnv:
                         (-quadratic_b + sqrt_discriminant) / denominator,
                     ]
                 )
+        return sorted(time_value for time_value in candidate_times if 1.0e-6 <= time_value <= max_intercept_time)
 
-        valid_times = [time_value for time_value in candidate_times if 0.0 <= time_value <= max_intercept_time]
-        if valid_times:
-            return min(valid_times)
-        return float(np.clip(fallback_time, 0.0, max_intercept_time))
+    def _time_since_contact(self) -> float | None:
+        if self._last_contact_step is None:
+            return None
+        return float(max(self.step_count - self._last_contact_step, 0) * self.sim.control_dt)
 
-    def _predicted_intercept_xy(self, max_intercept_time: float = 0.35) -> np.ndarray:
-        intercept_time = self._predicted_intercept_time(max_intercept_time=max_intercept_time)
-        return np.asarray(self.sim.ball_position[:2] + intercept_time * self.sim.ball_velocity[:2], dtype=float)
+    def _phase_name(self) -> str:
+        time_since_contact = self._time_since_contact()
+        recent_contact = time_since_contact is not None and time_since_contact <= self.next_intercept_max_time
+        ball_velocity_z = float(self.sim.ball_velocity[2])
+        if recent_contact:
+            if ball_velocity_z > 0.0:
+                return "return_shaping"
+            return "recovery"
+        if ball_velocity_z < self.descending_ball_velocity_threshold:
+            if self._pre_contact_upward_ready():
+                return "strike"
+            return "prepare"
+        return "prepare"
 
-    def _tracking_alignment_error(self) -> float:
-        return float(np.linalg.norm(self._predicted_intercept_xy() - self.sim.racket_position[:2]))
+    def _phase_one_hot(self) -> np.ndarray:
+        phase_name = self._phase_name()
+        phase_vector = np.zeros(4, dtype=float)
+        phase_index = {
+            "prepare": 0,
+            "strike": 1,
+            "return_shaping": 2,
+            "recovery": 3,
+        }[phase_name]
+        phase_vector[phase_index] = 1.0
+        return phase_vector
 
-    def _gravity_z(self) -> float:
-        return float(self.sim.model.opt.gravity[2])
+    def _next_intercept_metrics(self) -> dict[str, object]:
+        anchor_position = self._controller_anchor_position()
+        target_z = float(anchor_position[2] + self._tracking_strike_plane_offset())
+        candidate_times = self._ballistic_intercept_times(target_z, max_intercept_time=self.next_intercept_max_time)
+        descending_times = [
+            time_value
+            for time_value in candidate_times
+            if float(self.sim.ball_velocity[2] + self._gravity_z() * time_value) < 0.0
+        ]
+        default_metrics: dict[str, object] = {
+            "time": 0.0,
+            "relative_xy": np.zeros(2, dtype=float),
+            "reachable": False,
+            "recovery_distance": 0.0,
+            "recovery_readiness": 0.0,
+            "info_time": None,
+            "info_x": None,
+            "info_y": None,
+            "info_xy_error": None,
+            "info_reachable": None,
+            "info_vertical_speed": None,
+            "info_speed_norm": None,
+            "info_recovery_distance": None,
+            "info_recovery_readiness": None,
+            "easy_next_ball_score": 0.0,
+            "info_easy_next_ball_score": None,
+        }
+        if not descending_times:
+            return default_metrics
+
+        next_intercept_time = min(descending_times)
+        next_intercept_xy = np.asarray(
+            self.sim.ball_position[:2] + next_intercept_time * self.sim.ball_velocity[:2],
+            dtype=float,
+        )
+        anchor_xy_error = float(np.linalg.norm(next_intercept_xy - anchor_position[:2]))
+        recovery_distance = float(np.linalg.norm(next_intercept_xy - self.sim.racket_position[:2]))
+        reachable = anchor_xy_error <= self.strike_zone_xy_radius
+        recovery_speed_limit = max(self.controller_max_position_step / max(self.sim.control_dt, 1.0e-6), 1.0e-6)
+        required_recovery_speed = recovery_distance / max(next_intercept_time, self.sim.control_dt)
+        speed_readiness = 1.0 - np.clip(required_recovery_speed / recovery_speed_limit, 0.0, 1.0)
+        zone_readiness = 1.0 - np.clip(anchor_xy_error / max(self.strike_zone_xy_radius, 1.0e-6), 0.0, 1.0)
+        recovery_readiness = float(np.clip(0.5 * speed_readiness + 0.5 * zone_readiness, 0.0, 1.0))
+        next_intercept_vertical_speed = float(self.sim.ball_velocity[2] + self._gravity_z() * next_intercept_time)
+        next_intercept_speed_norm = float(
+            np.linalg.norm(
+                np.array(
+                    [self.sim.ball_velocity[0], self.sim.ball_velocity[1], next_intercept_vertical_speed],
+                    dtype=float,
+                )
+            )
+        )
+        lateral_speed = float(np.linalg.norm(self.sim.ball_velocity[:2]))
+        xy_score = max(1.0 - anchor_xy_error / max(self.strike_zone_xy_radius, 1.0e-6), 0.0)
+        time_score = max(
+            1.0 - abs(next_intercept_time - _EASY_NEXT_BALL_TARGET_TIME) / _EASY_NEXT_BALL_TIME_TOLERANCE,
+            0.0,
+        )
+        descending_score = max(
+            1.0
+            - abs(abs(next_intercept_vertical_speed) - _EASY_NEXT_BALL_TARGET_DESCENDING_SPEED)
+            / _EASY_NEXT_BALL_TARGET_DESCENDING_SPEED,
+            0.0,
+        )
+        lateral_speed_penalty = float(np.clip(lateral_speed / _EASY_NEXT_BALL_MAX_LATERAL_SPEED, 0.0, 1.0))
+        excessive_speed_penalty = float(
+            np.clip(
+                max(next_intercept_speed_norm - _EASY_NEXT_BALL_SOFT_SPEED_LIMIT, 0.0)
+                / _EASY_NEXT_BALL_SOFT_SPEED_LIMIT,
+                0.0,
+                1.0,
+            )
+        )
+        recovery_distance_penalty = float(
+            np.clip(recovery_distance / max(1.5 * self.strike_zone_xy_radius, 1.0e-6), 0.0, 1.0)
+        )
+        easy_next_ball_score = float(
+            xy_score
+            + 0.75 * time_score
+            + 0.5 * descending_score
+            - 0.5 * lateral_speed_penalty
+            - 0.25 * excessive_speed_penalty
+            - 0.5 * recovery_distance_penalty
+        )
+        return {
+            "time": float(next_intercept_time),
+            "relative_xy": np.asarray(next_intercept_xy - self.sim.racket_position[:2], dtype=float),
+            "reachable": bool(reachable),
+            "recovery_distance": recovery_distance,
+            "recovery_readiness": recovery_readiness,
+            "easy_next_ball_score": easy_next_ball_score,
+            "info_time": float(next_intercept_time),
+            "info_x": float(next_intercept_xy[0]),
+            "info_y": float(next_intercept_xy[1]),
+            "info_xy_error": anchor_xy_error,
+            "info_reachable": bool(reachable),
+            "info_vertical_speed": next_intercept_vertical_speed,
+            "info_speed_norm": next_intercept_speed_norm,
+            "info_recovery_distance": recovery_distance,
+            "info_recovery_readiness": recovery_readiness,
+            "info_easy_next_ball_score": easy_next_ball_score,
+        }
 
     def _target_ball_height_above_racket(self) -> float:
         return max(self.target_ball_height, self._spawn_ball_height_above_racket)
@@ -815,6 +1057,8 @@ class PingPongKeepUpEnv:
             "contact_bonus": 0.0,
             "apex_match_term": 0.0,
             "return_target_xy_term": 0.0,
+            "next_intercept_reachable_bonus": 0.0,
+            "easy_next_ball_term": 0.0,
             "outgoing_x_term": 0.0,
             "failure_penalty": 0.0,
             "tilt_angle_penalty": 0.0,
@@ -826,9 +1070,16 @@ class PingPongKeepUpEnv:
                 -self.tilt_action_delta_penalty_weight * self._normalized_tilt_action_delta(applied_action)
             )
         if contact_event and success_reason is not None:
+            next_intercept_metrics = self._next_intercept_metrics()
             reward_terms["contact_bonus"] = self.contact_bonus
             reward_terms["apex_match_term"] = self._apex_match_term(contact_trace)
             reward_terms["return_target_xy_term"] = self._return_target_xy_term(contact_trace)
+            if bool(next_intercept_metrics["reachable"]):
+                reward_terms["next_intercept_reachable_bonus"] = self.next_intercept_reachable_bonus_weight
+            reward_terms["easy_next_ball_term"] = self.easy_next_ball_reward_weight * max(
+                float(next_intercept_metrics["easy_next_ball_score"]),
+                0.0,
+            )
         if contact_event and self.useful_contact_outgoing_x_penalty_weight > 0.0:
             contact_ball_velocity_z = self._contact_float(
                 contact_trace,
