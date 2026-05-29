@@ -130,6 +130,8 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "include_task_phase_observation": False,
     "include_contact_context_observation": False,
     "include_next_intercept_observation": False,
+    "include_desired_outgoing_velocity_observation": False,
+    "trajectory_match_reward_weight": None,
     "next_intercept_reachable_bonus_weight": None,
     "followup_strike_target_tilt": None,
     "followup_strike_contact_offset_ratio": None,
@@ -209,6 +211,41 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0e-3,
         help="Learning rate used for heuristic actor pretraining.",
+    )
+    parser.add_argument(
+        "--bootstrap-sample-mode",
+        type=str,
+        default="episode",
+        choices=("episode", "post_success", "post_success_reachable"),
+        help=(
+            "Which heuristic samples to keep: full qualifying episodes, only post-success steps, "
+            "or only post-success steps whose next ball is still reachable."
+        ),
+    )
+    parser.add_argument(
+        "--bootstrap-followup-epochs",
+        type=int,
+        default=0,
+        help="Optional extra actor pretraining epochs on a follow-up-focused heuristic dataset after the base bootstrap pass.",
+    )
+    parser.add_argument(
+        "--bootstrap-followup-sample-mode",
+        type=str,
+        default="post_success_reachable",
+        choices=("post_success", "post_success_reachable"),
+        help="Sample filter for the optional follow-up bootstrap pass.",
+    )
+    parser.add_argument(
+        "--bootstrap-followup-min-useful-bounces",
+        type=int,
+        default=None,
+        help="Optional useful-bounce threshold override for the follow-up bootstrap pass. Defaults to --bootstrap-min-useful-bounces.",
+    )
+    parser.add_argument(
+        "--bootstrap-followup-learning-rate",
+        type=float,
+        default=None,
+        help="Optional learning rate override for the follow-up bootstrap pass. Defaults to --bootstrap-learning-rate.",
     )
     parser.add_argument(
         "--action-mode",
@@ -334,6 +371,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
     parser.add_argument("--next-intercept-reachable-bonus-weight", type=float, default=None)
     parser.add_argument("--easy-next-ball-reward-weight", type=float, default=None)
+    parser.add_argument(
+        "--trajectory-match-reward-weight",
+        type=float,
+        default=None,
+        help="Optional contact-event reward bonus for matching the desired outgoing ball velocity.",
+    )
     parser.add_argument("--next-intercept-max-time", type=float, default=None)
     parser.add_argument(
         "--include-velocity-domain-observation",
@@ -354,6 +397,11 @@ def parse_args() -> argparse.Namespace:
         "--include-next-intercept-observation",
         action="store_true",
         help="Add next descending intercept and recovery-readiness observation signals.",
+    )
+    parser.add_argument(
+        "--include-desired-outgoing-velocity-observation",
+        action="store_true",
+        help="Add the desired outgoing ball velocity target to the observation for trajectory-matching experiments.",
     )
     parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument(
@@ -540,6 +588,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["next_intercept_reachable_bonus_weight"] = args.next_intercept_reachable_bonus_weight
     if args.easy_next_ball_reward_weight is not None:
         env_kwargs["easy_next_ball_reward_weight"] = args.easy_next_ball_reward_weight
+    if args.trajectory_match_reward_weight is not None:
+        env_kwargs["trajectory_match_reward_weight"] = args.trajectory_match_reward_weight
     if args.next_intercept_max_time is not None:
         env_kwargs["next_intercept_max_time"] = args.next_intercept_max_time
     if args.include_velocity_domain_observation:
@@ -550,6 +600,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["include_contact_context_observation"] = True
     if args.include_next_intercept_observation:
         env_kwargs["include_next_intercept_observation"] = True
+    if args.include_desired_outgoing_velocity_observation:
+        env_kwargs["include_desired_outgoing_velocity_observation"] = True
     return env_kwargs
 
 
@@ -614,6 +666,7 @@ def collect_heuristic_bootstrap_dataset(
     seed: int,
     min_useful_bounces: int,
     max_samples: int,
+    sample_mode: str,
 ) -> dict[str, object]:
     if episodes <= 0:
         return {
@@ -621,11 +674,14 @@ def collect_heuristic_bootstrap_dataset(
             "accepted_episodes": 0,
             "accepted_samples": 0,
             "mean_episode_useful_bounces": 0.0,
+            "sample_mode": sample_mode,
             "observations": np.empty((0, 0), dtype=np.float32),
             "actions": np.empty((0, 0), dtype=np.float32),
         }
     if env_kwargs.get("action_mode") != "position_strike":
         raise ValueError("Heuristic bootstrap currently requires action_mode='position_strike'.")
+    if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
+        raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")
 
     env = PingPongKeepUpGymEnv(**env_kwargs)
     policy = HeuristicKeepUpPolicy()
@@ -633,29 +689,56 @@ def collect_heuristic_bootstrap_dataset(
     accepted_actions: list[np.ndarray] = []
     accepted_episode_useful_bounces: list[int] = []
     accepted_episode_count = 0
+    qualifying_episode_count = 0
     try:
         for episode_index in range(episodes):
             observation, _ = env.reset(seed=seed + episode_index)
             policy.reset()
-            episode_observations: list[np.ndarray] = []
-            episode_actions: list[np.ndarray] = []
+            episode_samples: list[dict[str, object]] = []
             info: dict[str, object] = {}
             while True:
                 action = policy.predict(env.base_env).astype(np.float32, copy=False)
-                episode_observations.append(np.asarray(observation, dtype=np.float32).copy())
-                episode_actions.append(np.asarray(action, dtype=np.float32).copy())
-                observation, _, terminated, truncated, info = env.step(action)
+                next_observation, _, terminated, truncated, info = env.step(action)
+                episode_samples.append(
+                    {
+                        "observation": np.asarray(observation, dtype=np.float32).copy(),
+                        "action": np.asarray(action, dtype=np.float32).copy(),
+                        "successful_bounce_count": int(info.get("successful_bounce_count", 0)),
+                        "next_intercept_reachable": bool(info.get("next_intercept_reachable", False)),
+                    }
+                )
+                observation = next_observation
                 if terminated or truncated:
                     break
 
             useful_bounces = int(info.get("successful_bounce_count", 0))
             if useful_bounces < min_useful_bounces:
                 continue
+            qualifying_episode_count += 1
+
+            if sample_mode == "episode":
+                selected_samples = episode_samples
+            elif sample_mode == "post_success":
+                selected_samples = [
+                    sample for sample in episode_samples if int(sample["successful_bounce_count"]) > 0
+                ]
+            else:
+                selected_samples = [
+                    sample
+                    for sample in episode_samples
+                    if int(sample["successful_bounce_count"]) > 0 and bool(sample["next_intercept_reachable"])
+                ]
+            if not selected_samples:
+                continue
 
             accepted_episode_count += 1
             accepted_episode_useful_bounces.append(useful_bounces)
-            accepted_observations.extend(episode_observations)
-            accepted_actions.extend(episode_actions)
+            accepted_observations.extend(
+                np.asarray(sample["observation"], dtype=np.float32) for sample in selected_samples
+            )
+            accepted_actions.extend(
+                np.asarray(sample["action"], dtype=np.float32) for sample in selected_samples
+            )
             if max_samples > 0 and len(accepted_observations) >= max_samples:
                 accepted_observations = accepted_observations[:max_samples]
                 accepted_actions = accepted_actions[:max_samples]
@@ -669,8 +752,10 @@ def collect_heuristic_bootstrap_dataset(
         return {
             "requested_episodes": episodes,
             "accepted_episodes": accepted_episode_count,
+            "qualifying_episodes": qualifying_episode_count,
             "accepted_samples": 0,
             "mean_episode_useful_bounces": 0.0,
+            "sample_mode": sample_mode,
             "observations": np.empty(observation_shape, dtype=np.float32),
             "actions": np.empty(action_shape, dtype=np.float32),
         }
@@ -680,8 +765,10 @@ def collect_heuristic_bootstrap_dataset(
     return {
         "requested_episodes": episodes,
         "accepted_episodes": accepted_episode_count,
+        "qualifying_episodes": qualifying_episode_count,
         "accepted_samples": int(observations_array.shape[0]),
         "mean_episode_useful_bounces": float(np.mean(accepted_episode_useful_bounces)),
+        "sample_mode": sample_mode,
         "observations": observations_array,
         "actions": actions_array,
     }
@@ -875,6 +962,7 @@ def main() -> None:
                 seed=args.seed + 40_000,
                 min_useful_bounces=args.bootstrap_min_useful_bounces,
                 max_samples=args.bootstrap_max_samples,
+                sample_mode=args.bootstrap_sample_mode,
             )
             bootstrap_train_summary = bootstrap_actor_from_dataset(
                 model=model,
@@ -886,13 +974,59 @@ def main() -> None:
                 seed=args.seed + 50_000,
             )
             bootstrap_summary = {
-                "requested_episodes": bootstrap_dataset["requested_episodes"],
-                "accepted_episodes": bootstrap_dataset["accepted_episodes"],
-                "accepted_samples": bootstrap_dataset["accepted_samples"],
-                "min_useful_bounces": args.bootstrap_min_useful_bounces,
-                "mean_episode_useful_bounces": bootstrap_dataset["mean_episode_useful_bounces"],
-                **bootstrap_train_summary,
+                "base": {
+                    "requested_episodes": bootstrap_dataset["requested_episodes"],
+                    "accepted_episodes": bootstrap_dataset["accepted_episodes"],
+                    "qualifying_episodes": bootstrap_dataset["qualifying_episodes"],
+                    "accepted_samples": bootstrap_dataset["accepted_samples"],
+                    "min_useful_bounces": args.bootstrap_min_useful_bounces,
+                    "sample_mode": bootstrap_dataset["sample_mode"],
+                    "mean_episode_useful_bounces": bootstrap_dataset["mean_episode_useful_bounces"],
+                    **bootstrap_train_summary,
+                }
             }
+            if args.bootstrap_followup_epochs > 0:
+                followup_dataset = collect_heuristic_bootstrap_dataset(
+                    env_kwargs=env_kwargs,
+                    episodes=args.bootstrap_heuristic_episodes,
+                    seed=args.seed + 45_000,
+                    min_useful_bounces=(
+                        args.bootstrap_min_useful_bounces
+                        if args.bootstrap_followup_min_useful_bounces is None
+                        else args.bootstrap_followup_min_useful_bounces
+                    ),
+                    max_samples=args.bootstrap_max_samples,
+                    sample_mode=args.bootstrap_followup_sample_mode,
+                )
+                followup_train_summary = bootstrap_actor_from_dataset(
+                    model=model,
+                    observations=followup_dataset["observations"],
+                    actions=followup_dataset["actions"],
+                    epochs=args.bootstrap_followup_epochs,
+                    batch_size=args.bootstrap_batch_size,
+                    learning_rate=(
+                        args.bootstrap_learning_rate
+                        if args.bootstrap_followup_learning_rate is None
+                        else args.bootstrap_followup_learning_rate
+                    ),
+                    seed=args.seed + 55_000,
+                )
+                bootstrap_summary["followup"] = {
+                    "requested_episodes": followup_dataset["requested_episodes"],
+                    "accepted_episodes": followup_dataset["accepted_episodes"],
+                    "qualifying_episodes": followup_dataset["qualifying_episodes"],
+                    "accepted_samples": followup_dataset["accepted_samples"],
+                    "min_useful_bounces": (
+                        args.bootstrap_min_useful_bounces
+                        if args.bootstrap_followup_min_useful_bounces is None
+                        else args.bootstrap_followup_min_useful_bounces
+                    ),
+                    "sample_mode": followup_dataset["sample_mode"],
+                    "mean_episode_useful_bounces": followup_dataset["mean_episode_useful_bounces"],
+                    **followup_train_summary,
+                }
+            else:
+                bootstrap_summary["followup"] = None
         checkpoint_dir, checkpoint_history, best_checkpoint_record, completed_timesteps, stopped_early = save_periodic_checkpoints(
             model=model,
             run_dir=run_dir,
@@ -981,10 +1115,17 @@ def main() -> None:
     if bootstrap_summary is not None:
         print(
             "bootstrap "
-            f"accepted_episodes={bootstrap_summary['accepted_episodes']} "
-            f"accepted_samples={bootstrap_summary['accepted_samples']} "
-            f"mean_loss={bootstrap_summary['mean_loss']}"
+            f"base_accepted_episodes={bootstrap_summary['base']['accepted_episodes']} "
+            f"base_accepted_samples={bootstrap_summary['base']['accepted_samples']} "
+            f"base_mean_loss={bootstrap_summary['base']['mean_loss']}"
         )
+        if bootstrap_summary["followup"] is not None:
+            print(
+                "bootstrap_followup "
+                f"accepted_episodes={bootstrap_summary['followup']['accepted_episodes']} "
+                f"accepted_samples={bootstrap_summary['followup']['accepted_samples']} "
+                f"mean_loss={bootstrap_summary['followup']['mean_loss']}"
+            )
     print(
         "evaluation "
         f"mean_return={evaluation['mean_return']:.3f} "

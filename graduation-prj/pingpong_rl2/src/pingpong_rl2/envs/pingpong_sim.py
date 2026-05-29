@@ -153,6 +153,94 @@ class PingPongSim:
             self.data.ctrl[7] = gripper_target
         return self.data.ctrl[:8].copy()
 
+    @staticmethod
+    def _trace_vector_fields(prefix: str, vector: Sequence[float] | np.ndarray | None) -> dict[str, float | None]:
+        if vector is None:
+            return {
+                f"{prefix}_x": None,
+                f"{prefix}_y": None,
+                f"{prefix}_z": None,
+            }
+
+        vector_array = np.asarray(vector, dtype=float)
+        if vector_array.shape != (3,):
+            raise ValueError(f"Expected a 3D vector for {prefix}, got {vector_array.shape}.")
+        return {
+            f"{prefix}_x": float(vector_array[0]),
+            f"{prefix}_y": float(vector_array[1]),
+            f"{prefix}_z": float(vector_array[2]),
+        }
+
+    @classmethod
+    def _empty_contact_trace(cls) -> dict[str, object]:
+        contact_trace: dict[str, object] = {
+            "contact_observed": False,
+            "contact_active_at_step_start": False,
+            "contact_active_at_trace_end": False,
+            "contact_started_during_trace": False,
+            "contact_substep": None,
+            "contact_end_substep": None,
+            "contact_geom1_name": None,
+            "contact_geom2_name": None,
+            "contact_ball_height_above_racket": None,
+            "contact_xy_alignment_error": None,
+            "contact_ball_speed_norm": None,
+            "contact_racket_speed_norm": None,
+        }
+        for prefix in (
+            "pre_contact_ball_position",
+            "pre_contact_ball_velocity",
+            "pre_contact_racket_velocity",
+            "pre_contact_relative_velocity",
+            "contact_ball_position",
+            "contact_ball_velocity",
+            "contact_racket_velocity",
+            "contact_racket_center_velocity",
+            "contact_relative_velocity",
+            "contact_racket_face_normal",
+            "contact_racket_acceleration",
+            "contact_mujoco_position",
+            "contact_mujoco_normal",
+            "contact_mujoco_normal_racket_to_ball",
+            "contact_end_ball_velocity",
+        ):
+            contact_trace.update(cls._trace_vector_fields(prefix, None))
+        for offset in range(1, 6):
+            contact_trace.update(cls._trace_vector_fields(f"post_contact_{offset}_ball_velocity", None))
+            contact_trace[f"post_contact_{offset}_contact_active"] = None
+        return contact_trace
+
+    def _matching_contact(self, contact_geoms: tuple[str, str]) -> dict[str, object] | None:
+        target_pair = tuple(sorted(contact_geoms))
+        for index in range(self.data.ncon):
+            contact = self.data.contact[index]
+            geom1_name = self.model.geom(int(contact.geom1)).name or ""
+            geom2_name = self.model.geom(int(contact.geom2)).name or ""
+            if tuple(sorted((geom1_name, geom2_name))) != target_pair:
+                continue
+
+            contact_position = np.asarray(contact.pos[:3], dtype=float).copy()
+            contact_normal = np.asarray(contact.frame[:3], dtype=float).copy()
+            normal_norm = np.linalg.norm(contact_normal)
+            if normal_norm > 1.0e-9:
+                contact_normal = contact_normal / normal_norm
+
+            racket_to_ball_normal = contact_normal.copy()
+            if geom1_name == "ball_geom" and geom2_name == "racket_head":
+                racket_to_ball_normal = -contact_normal
+            elif geom1_name == "racket_head" and geom2_name == "ball_geom":
+                racket_to_ball_normal = contact_normal
+
+            return {
+                "contact_index": index,
+                "geom1_name": geom1_name,
+                "geom2_name": geom2_name,
+                "contact_position": contact_position,
+                "contact_normal": contact_normal,
+                "contact_normal_racket_to_ball": racket_to_ball_normal,
+            }
+        return None
+
     def contact_pairs(self) -> list[tuple[str, str]]:
         pairs: list[tuple[str, str]] = []
         for index in range(self.data.ncon):
@@ -256,68 +344,76 @@ class PingPongSim:
             self.set_arm_joint_targets(joint_targets, gripper_target)
 
         step_count = self.n_substeps if n_substeps is None else max(1, int(n_substeps))
-        target_pair = tuple(sorted(contact_geoms))
-        contact_trace: dict[str, object] = {
-            "contact_observed": False,
-            "contact_substep": None,
-            "contact_ball_position_x": None,
-            "contact_ball_position_y": None,
-            "contact_ball_position_z": None,
-            "contact_ball_velocity_x": None,
-            "contact_ball_velocity_y": None,
-            "contact_ball_velocity_z": None,
-            "contact_ball_height_above_racket": None,
-            "contact_xy_alignment_error": None,
-            "contact_ball_speed_norm": None,
-            "contact_racket_velocity_x": None,
-            "contact_racket_velocity_y": None,
-            "contact_racket_velocity_z": None,
-            "contact_racket_speed_norm": None,
-            "contact_racket_face_normal_x": None,
-            "contact_racket_face_normal_y": None,
-            "contact_racket_face_normal_z": None,
-            "contact_racket_acceleration_x": None,
-            "contact_racket_acceleration_y": None,
-            "contact_racket_acceleration_z": None,
-            "contact_racket_acceleration_norm": None,
-        }
+        contact_trace = self._empty_contact_trace()
+        contact_active_previous_substep = self._matching_contact(contact_geoms) is not None
+        contact_trace["contact_active_at_step_start"] = contact_active_previous_substep
+        previous_ball_position = self.ball_position
+        previous_ball_velocity = self.ball_velocity
         previous_racket_velocity = self.racket_velocity
         for substep_index in range(1, step_count + 1):
             mujoco.mj_step(self.model, self.data)
+            ball_position = self.ball_position
+            ball_velocity = self.ball_velocity
             racket_velocity = self.racket_velocity
             racket_acceleration = (racket_velocity - previous_racket_velocity) / self.model.opt.timestep
-            previous_racket_velocity = racket_velocity
-            if contact_trace["contact_observed"]:
-                continue
-            if target_pair not in self.contact_pairs():
-                continue
-
-            ball_velocity = self.ball_velocity
-            ball_position = self.ball_position
-            racket_position = self.racket_position
             racket_face_normal = self.racket_face_normal
-            contact_trace = {
-                "contact_observed": True,
-                "contact_substep": substep_index,
-                "contact_ball_position_x": float(ball_position[0]),
-                "contact_ball_position_y": float(ball_position[1]),
-                "contact_ball_position_z": float(ball_position[2]),
-                "contact_ball_velocity_x": float(ball_velocity[0]),
-                "contact_ball_velocity_y": float(ball_velocity[1]),
-                "contact_ball_velocity_z": float(ball_velocity[2]),
-                "contact_ball_height_above_racket": float(ball_position[2] - racket_position[2]),
-                "contact_xy_alignment_error": float(np.linalg.norm(ball_position[:2] - racket_position[:2])),
-                "contact_ball_speed_norm": float(np.linalg.norm(ball_velocity)),
-                "contact_racket_velocity_x": float(racket_velocity[0]),
-                "contact_racket_velocity_y": float(racket_velocity[1]),
-                "contact_racket_velocity_z": float(racket_velocity[2]),
-                "contact_racket_speed_norm": float(np.linalg.norm(racket_velocity)),
-                "contact_racket_face_normal_x": float(racket_face_normal[0]),
-                "contact_racket_face_normal_y": float(racket_face_normal[1]),
-                "contact_racket_face_normal_z": float(racket_face_normal[2]),
-                "contact_racket_acceleration_x": float(racket_acceleration[0]),
-                "contact_racket_acceleration_y": float(racket_acceleration[1]),
-                "contact_racket_acceleration_z": float(racket_acceleration[2]),
-                "contact_racket_acceleration_norm": float(np.linalg.norm(racket_acceleration)),
-            }
+            previous_racket_velocity = racket_velocity
+            matching_contact = self._matching_contact(contact_geoms)
+            contact_active = matching_contact is not None
+
+            if not contact_trace["contact_observed"] and matching_contact is not None:
+                racket_position = self.racket_position
+                pre_contact_relative_velocity = previous_ball_velocity - previous_racket_velocity
+                contact_relative_velocity = ball_velocity - racket_velocity
+                contact_trace["contact_observed"] = True
+                contact_trace["contact_started_during_trace"] = not bool(contact_trace["contact_active_at_step_start"])
+                contact_trace["contact_substep"] = substep_index
+                contact_trace["contact_geom1_name"] = matching_contact["geom1_name"]
+                contact_trace["contact_geom2_name"] = matching_contact["geom2_name"]
+                contact_trace["contact_ball_height_above_racket"] = float(ball_position[2] - racket_position[2])
+                contact_trace["contact_xy_alignment_error"] = float(np.linalg.norm(ball_position[:2] - racket_position[:2]))
+                contact_trace["contact_ball_speed_norm"] = float(np.linalg.norm(ball_velocity))
+                contact_trace["contact_racket_speed_norm"] = float(np.linalg.norm(racket_velocity))
+                contact_trace["contact_racket_acceleration_norm"] = float(np.linalg.norm(racket_acceleration))
+                contact_trace.update(self._trace_vector_fields("pre_contact_ball_position", previous_ball_position))
+                contact_trace.update(self._trace_vector_fields("pre_contact_ball_velocity", previous_ball_velocity))
+                contact_trace.update(self._trace_vector_fields("pre_contact_racket_velocity", previous_racket_velocity))
+                contact_trace.update(self._trace_vector_fields("pre_contact_relative_velocity", pre_contact_relative_velocity))
+                contact_trace.update(self._trace_vector_fields("contact_ball_position", ball_position))
+                contact_trace.update(self._trace_vector_fields("contact_ball_velocity", ball_velocity))
+                contact_trace.update(self._trace_vector_fields("contact_racket_velocity", racket_velocity))
+                contact_trace.update(self._trace_vector_fields("contact_racket_center_velocity", racket_velocity))
+                contact_trace.update(self._trace_vector_fields("contact_relative_velocity", contact_relative_velocity))
+                contact_trace.update(self._trace_vector_fields("contact_racket_face_normal", racket_face_normal))
+                contact_trace.update(self._trace_vector_fields("contact_racket_acceleration", racket_acceleration))
+                contact_trace.update(self._trace_vector_fields("contact_mujoco_position", matching_contact["contact_position"]))
+                contact_trace.update(self._trace_vector_fields("contact_mujoco_normal", matching_contact["contact_normal"]))
+                contact_trace.update(
+                    self._trace_vector_fields(
+                        "contact_mujoco_normal_racket_to_ball",
+                        matching_contact["contact_normal_racket_to_ball"],
+                    )
+                )
+
+            if contact_trace["contact_observed"]:
+                contact_substep = int(contact_trace["contact_substep"])
+                post_contact_offset = substep_index - contact_substep
+                if 1 <= post_contact_offset <= 5:
+                    contact_trace.update(
+                        self._trace_vector_fields(f"post_contact_{post_contact_offset}_ball_velocity", ball_velocity)
+                    )
+                    contact_trace[f"post_contact_{post_contact_offset}_contact_active"] = contact_active
+                if (
+                    contact_trace["contact_end_substep"] is None
+                    and contact_active_previous_substep
+                    and not contact_active
+                ):
+                    contact_trace["contact_end_substep"] = substep_index
+                    contact_trace.update(self._trace_vector_fields("contact_end_ball_velocity", ball_velocity))
+
+            previous_ball_position = ball_position
+            previous_ball_velocity = ball_velocity
+            contact_active_previous_substep = contact_active
+
+        contact_trace["contact_active_at_trace_end"] = contact_active_previous_substep
         return contact_trace

@@ -267,6 +267,14 @@ def summarize_contacts(
             "mean_ball_lateral_to_vertical_ratio": 0.0,
             "mean_projected_apex_xy_error": 0.0,
             "useful_contact_mean_projected_apex_xy_error": 0.0,
+            "mean_outgoing_velocity_error_norm": 0.0,
+            "useful_contact_mean_outgoing_velocity_error_norm": 0.0,
+            "mean_outgoing_velocity_xy_error": 0.0,
+            "useful_contact_mean_outgoing_velocity_xy_error": 0.0,
+            "mean_outgoing_velocity_z_error": 0.0,
+            "useful_contact_mean_outgoing_velocity_z_error": 0.0,
+            "mean_predicted_apex_xy_error": 0.0,
+            "useful_contact_mean_predicted_apex_xy_error": 0.0,
             "mean_next_intercept_time": 0.0,
             "useful_contact_mean_next_intercept_time": 0.0,
             "mean_next_intercept_xy_error": 0.0,
@@ -311,6 +319,14 @@ def summarize_contacts(
     useful_lateral_ratio = float_series("ball_lateral_to_vertical_ratio", useful_rows)
     projected_apex_xy_error = float_series(selected_error_key, contact_rows)
     useful_projected_apex_xy_error = float_series(selected_error_key, useful_rows)
+    outgoing_velocity_error_norm = float_series("outgoing_velocity_error_norm", contact_rows)
+    useful_outgoing_velocity_error_norm = float_series("outgoing_velocity_error_norm", useful_rows)
+    outgoing_velocity_xy_error = float_series("outgoing_velocity_xy_error", contact_rows)
+    useful_outgoing_velocity_xy_error = float_series("outgoing_velocity_xy_error", useful_rows)
+    outgoing_velocity_z_error = float_series("outgoing_velocity_z_error", contact_rows)
+    useful_outgoing_velocity_z_error = float_series("outgoing_velocity_z_error", useful_rows)
+    predicted_apex_xy_error = float_series("predicted_apex_xy_error", contact_rows)
+    useful_predicted_apex_xy_error = float_series("predicted_apex_xy_error", useful_rows)
     next_intercept_time = float_series("next_intercept_time", contact_rows)
     useful_next_intercept_time = float_series("next_intercept_time", useful_rows)
     next_intercept_xy_error = float_series("next_intercept_xy_error", contact_rows)
@@ -343,6 +359,30 @@ def summarize_contacts(
         ),
         "useful_contact_mean_projected_apex_xy_error": (
             float(useful_projected_apex_xy_error.mean()) if useful_projected_apex_xy_error.size else 0.0
+        ),
+        "mean_outgoing_velocity_error_norm": (
+            float(outgoing_velocity_error_norm.mean()) if outgoing_velocity_error_norm.size else 0.0
+        ),
+        "useful_contact_mean_outgoing_velocity_error_norm": (
+            float(useful_outgoing_velocity_error_norm.mean()) if useful_outgoing_velocity_error_norm.size else 0.0
+        ),
+        "mean_outgoing_velocity_xy_error": (
+            float(outgoing_velocity_xy_error.mean()) if outgoing_velocity_xy_error.size else 0.0
+        ),
+        "useful_contact_mean_outgoing_velocity_xy_error": (
+            float(useful_outgoing_velocity_xy_error.mean()) if useful_outgoing_velocity_xy_error.size else 0.0
+        ),
+        "mean_outgoing_velocity_z_error": (
+            float(outgoing_velocity_z_error.mean()) if outgoing_velocity_z_error.size else 0.0
+        ),
+        "useful_contact_mean_outgoing_velocity_z_error": (
+            float(useful_outgoing_velocity_z_error.mean()) if useful_outgoing_velocity_z_error.size else 0.0
+        ),
+        "mean_predicted_apex_xy_error": (
+            float(predicted_apex_xy_error.mean()) if predicted_apex_xy_error.size else 0.0
+        ),
+        "useful_contact_mean_predicted_apex_xy_error": (
+            float(useful_predicted_apex_xy_error.mean()) if useful_predicted_apex_xy_error.size else 0.0
         ),
         "mean_next_intercept_time": float(next_intercept_time.mean()) if next_intercept_time.size else 0.0,
         "useful_contact_mean_next_intercept_time": (
@@ -585,6 +625,71 @@ def summarize_episode_next_intercepts(
     }
 
 
+def summarize_episode_outgoing_velocities(
+    episode_rows: list[dict[str, object]],
+    contact_rows: list[dict[str, object]],
+) -> dict[str, object]:
+    episode_useful_bounces: dict[int, int] = {
+        int(row["episode"]): int(row.get("useful_bounces", 0))
+        for row in episode_rows
+    }
+
+    def collect_contact_values(
+        metric_key: str,
+        *,
+        min_useful_bounces: int | None = None,
+        max_useful_bounces: int | None = None,
+        useful_only: bool = False,
+    ) -> list[float]:
+        values: list[float] = []
+        for row in contact_rows:
+            episode = int(row["episode"])
+            useful_bounce_count = episode_useful_bounces.get(episode, 0)
+            if min_useful_bounces is not None and useful_bounce_count < min_useful_bounces:
+                continue
+            if max_useful_bounces is not None and useful_bounce_count > max_useful_bounces:
+                continue
+            if useful_only and not bool(row.get("is_useful_contact", False)):
+                continue
+            if row.get(metric_key) is None:
+                continue
+            values.append(float(row[metric_key]))
+        return values
+
+    all_error = collect_contact_values("outgoing_velocity_error_norm")
+    useful_error = collect_contact_values("outgoing_velocity_error_norm", useful_only=True)
+    two_or_more_episode_error = collect_contact_values("outgoing_velocity_error_norm", min_useful_bounces=2)
+    zero_episode_error = collect_contact_values("outgoing_velocity_error_norm", max_useful_bounces=0)
+    two_or_more_episode_apex_error = collect_contact_values("predicted_apex_xy_error", min_useful_bounces=2)
+    zero_episode_apex_error = collect_contact_values("predicted_apex_xy_error", max_useful_bounces=0)
+
+    mean_two_or_more_episode_error = (
+        float(np.mean(two_or_more_episode_error)) if two_or_more_episode_error else None
+    )
+    mean_zero_episode_error = float(np.mean(zero_episode_error)) if zero_episode_error else None
+    return {
+        "episodes_with_one_or_more_useful_bounces": sum(value >= 1 for value in episode_useful_bounces.values()),
+        "episodes_with_two_or_more_useful_bounces": sum(value >= 2 for value in episode_useful_bounces.values()),
+        "all_contact_mean_outgoing_velocity_error_norm": float(np.mean(all_error)) if all_error else None,
+        "useful_contact_mean_outgoing_velocity_error_norm": float(np.mean(useful_error)) if useful_error else None,
+        "two_or_more_useful_bounce_episode_contact_mean_outgoing_velocity_error_norm": (
+            mean_two_or_more_episode_error
+        ),
+        "zero_useful_bounce_episode_contact_mean_outgoing_velocity_error_norm": mean_zero_episode_error,
+        "two_or_more_useful_bounces_outgoing_velocity_error_norm_gap": (
+            None
+            if mean_two_or_more_episode_error is None or mean_zero_episode_error is None
+            else mean_two_or_more_episode_error - mean_zero_episode_error
+        ),
+        "two_or_more_useful_bounce_episode_contact_mean_predicted_apex_xy_error": (
+            float(np.mean(two_or_more_episode_apex_error)) if two_or_more_episode_apex_error else None
+        ),
+        "zero_useful_bounce_episode_contact_mean_predicted_apex_xy_error": (
+            float(np.mean(zero_episode_apex_error)) if zero_episode_apex_error else None
+        ),
+    }
+
+
 def apex_target_xy_candidates(
     *,
     info: dict[str, object],
@@ -769,6 +874,25 @@ def main() -> None:
                         "contact_ball_position_x": contact_ball_position_x,
                         "contact_ball_position_y": contact_ball_position_y,
                         "contact_ball_position_z": contact_ball_position_z,
+                        "desired_outgoing_velocity_x": info.get("desired_outgoing_velocity_x"),
+                        "desired_outgoing_velocity_y": info.get("desired_outgoing_velocity_y"),
+                        "desired_outgoing_velocity_z": info.get("desired_outgoing_velocity_z"),
+                        "actual_outgoing_velocity_x": info.get("actual_outgoing_velocity_x"),
+                        "actual_outgoing_velocity_y": info.get("actual_outgoing_velocity_y"),
+                        "actual_outgoing_velocity_z": info.get("actual_outgoing_velocity_z"),
+                        "outgoing_velocity_error_norm": info.get("outgoing_velocity_error_norm"),
+                        "outgoing_velocity_xy_error": info.get("outgoing_velocity_xy_error"),
+                        "outgoing_velocity_z_error": info.get("outgoing_velocity_z_error"),
+                        "desired_time_to_apex": info.get("desired_time_to_apex"),
+                        "desired_target_x": info.get("desired_outgoing_target_x"),
+                        "desired_target_y": info.get("desired_outgoing_target_y"),
+                        "predicted_apex_x_from_actual_velocity": info.get(
+                            "predicted_apex_x_from_actual_velocity"
+                        ),
+                        "predicted_apex_y_from_actual_velocity": info.get(
+                            "predicted_apex_y_from_actual_velocity"
+                        ),
+                        "predicted_apex_xy_error": info.get("predicted_apex_xy_error"),
                         "ball_velocity_x": ball_velocity_x,
                         "ball_velocity_y": ball_velocity_y,
                         "ball_velocity_z": ball_velocity_z,
@@ -901,6 +1025,10 @@ def main() -> None:
             compare_apex_targets=args.compare_apex_targets,
         ),
         "episode_next_intercept_summary": summarize_episode_next_intercepts(
+            episode_rows,
+            contact_rows,
+        ),
+        "episode_outgoing_velocity_summary": summarize_episode_outgoing_velocities(
             episode_rows,
             contact_rows,
         ),

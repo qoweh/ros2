@@ -31,6 +31,8 @@ _EASY_NEXT_BALL_TIME_TOLERANCE = 0.30
 _EASY_NEXT_BALL_TARGET_DESCENDING_SPEED = 1.25
 _EASY_NEXT_BALL_MAX_LATERAL_SPEED = 1.0
 _EASY_NEXT_BALL_SOFT_SPEED_LIMIT = 3.0
+_MIN_DESIRED_APEX_HEIGHT_DELTA = 0.01
+_TRAJECTORY_MATCH_ERROR_SCALE = 1.0
 
 _POSITION_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
     ("joint_positions", 7),
@@ -62,6 +64,10 @@ _NEXT_INTERCEPT_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
     ("next_intercept_recovery_readiness", 1),
 )
 
+_DESIRED_OUTGOING_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
+    ("desired_outgoing_velocity", 3),
+)
+
 _VELOCITY_DOMAIN_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
     ("relative_velocity", 3),
     ("racket_face_normal", 3),
@@ -78,6 +84,7 @@ def _build_observation_layout(
     include_task_phase_observation: bool,
     include_contact_context_observation: bool,
     include_next_intercept_observation: bool,
+    include_desired_outgoing_velocity_observation: bool,
 ) -> tuple[tuple[tuple[str, int], ...], dict[str, slice], int]:
     components = _POSITION_OBSERVATION_COMPONENTS
     if include_task_phase_observation:
@@ -86,6 +93,8 @@ def _build_observation_layout(
         components = components + _CONTACT_CONTEXT_OBSERVATION_COMPONENTS
     if include_next_intercept_observation:
         components = components + _NEXT_INTERCEPT_OBSERVATION_COMPONENTS
+    if include_desired_outgoing_velocity_observation:
+        components = components + _DESIRED_OUTGOING_OBSERVATION_COMPONENTS
     if include_velocity_domain_observation:
         components = components + _VELOCITY_DOMAIN_OBSERVATION_COMPONENTS
     if action_mode == "position_tilt":
@@ -159,6 +168,8 @@ class PingPongKeepUpEnv:
         include_task_phase_observation: bool = False,
         include_contact_context_observation: bool = False,
         include_next_intercept_observation: bool = False,
+        include_desired_outgoing_velocity_observation: bool = False,
+        trajectory_match_reward_weight: float = 0.0,
         next_intercept_max_time: float = 1.25,
         controller_position_gain: float = 1.6,
         controller_orientation_gain: float = 0.45,
@@ -244,6 +255,8 @@ class PingPongKeepUpEnv:
         self.include_task_phase_observation = bool(include_task_phase_observation)
         self.include_contact_context_observation = bool(include_contact_context_observation)
         self.include_next_intercept_observation = bool(include_next_intercept_observation)
+        self.include_desired_outgoing_velocity_observation = bool(include_desired_outgoing_velocity_observation)
+        self.trajectory_match_reward_weight = float(trajectory_match_reward_weight)
         self.next_intercept_max_time = float(next_intercept_max_time)
         self.controller_position_gain = float(controller_position_gain)
         self.controller_orientation_gain = float(controller_orientation_gain)
@@ -461,6 +474,7 @@ class PingPongKeepUpEnv:
             self.include_task_phase_observation,
             self.include_contact_context_observation,
             self.include_next_intercept_observation,
+            self.include_desired_outgoing_velocity_observation,
         )
         self._rng = np.random.default_rng()
         self._spawn_ball_height_above_racket = self.ball_height
@@ -486,6 +500,7 @@ class PingPongKeepUpEnv:
             self.sim.ball_position[:2] + predicted_intercept_time * self.sim.ball_velocity[:2] - self.sim.racket_position[:2]
         )
         next_intercept_metrics = self._next_intercept_metrics()
+        desired_outgoing_velocity, _, _ = self._desired_outgoing_velocity()
         observation_parts: list[np.ndarray] = [
             self.sim.joint_positions,
             self.sim.joint_velocities,
@@ -519,6 +534,8 @@ class PingPongKeepUpEnv:
                     np.array([next_intercept_metrics["recovery_readiness"]], dtype=float),
                 ]
             )
+        if self.include_desired_outgoing_velocity_observation:
+            observation_parts.append(desired_outgoing_velocity)
         if self.include_velocity_domain_observation:
             observation_parts.extend(
                 [
@@ -595,6 +612,7 @@ class PingPongKeepUpEnv:
         if success_reason is not None:
             self.successful_bounce_count += 1
 
+        outgoing_trajectory_metrics = self._contact_outgoing_trajectory_metrics(contact_trace)
         next_intercept_metrics = self._next_intercept_metrics()
         phase_name = self._phase_name()
 
@@ -605,6 +623,7 @@ class PingPongKeepUpEnv:
             contact_active,
             applied_action,
             contact_trace,
+            outgoing_trajectory_metrics,
         )
         reward = float(sum(reward_terms.values()))
         terminated = failure_reason is not None
@@ -651,6 +670,38 @@ class PingPongKeepUpEnv:
             "projected_contact_apex_height_above_racket": (
                 self._projected_contact_apex_height_above_racket(contact_trace) if contact_event else None
             ),
+            "desired_outgoing_velocity_x": outgoing_trajectory_metrics["desired_outgoing_velocity_x"],
+            "desired_outgoing_velocity_y": outgoing_trajectory_metrics["desired_outgoing_velocity_y"],
+            "desired_outgoing_velocity_z": outgoing_trajectory_metrics["desired_outgoing_velocity_z"],
+            "actual_outgoing_velocity_x": outgoing_trajectory_metrics["actual_outgoing_velocity_x"],
+            "actual_outgoing_velocity_y": outgoing_trajectory_metrics["actual_outgoing_velocity_y"],
+            "actual_outgoing_velocity_z": outgoing_trajectory_metrics["actual_outgoing_velocity_z"],
+            "actual_outgoing_velocity_source": outgoing_trajectory_metrics["actual_outgoing_velocity_source"],
+            "outgoing_velocity_error_norm": outgoing_trajectory_metrics["outgoing_velocity_error_norm"],
+            "outgoing_velocity_xy_error": outgoing_trajectory_metrics["outgoing_velocity_xy_error"],
+            "outgoing_velocity_z_error": outgoing_trajectory_metrics["outgoing_velocity_z_error"],
+            "contact_substep_outgoing_velocity_error_norm": outgoing_trajectory_metrics[
+                "contact_substep_outgoing_velocity_error_norm"
+            ],
+            "contact_substep_outgoing_velocity_xy_error": outgoing_trajectory_metrics[
+                "contact_substep_outgoing_velocity_xy_error"
+            ],
+            "contact_substep_outgoing_velocity_z_error": outgoing_trajectory_metrics[
+                "contact_substep_outgoing_velocity_z_error"
+            ],
+            "contact_substep_predicted_apex_xy_error": outgoing_trajectory_metrics[
+                "contact_substep_predicted_apex_xy_error"
+            ],
+            "desired_time_to_apex": outgoing_trajectory_metrics["desired_time_to_apex"],
+            "desired_outgoing_target_x": outgoing_trajectory_metrics["desired_outgoing_target_x"],
+            "desired_outgoing_target_y": outgoing_trajectory_metrics["desired_outgoing_target_y"],
+            "predicted_apex_x_from_actual_velocity": outgoing_trajectory_metrics[
+                "predicted_apex_x_from_actual_velocity"
+            ],
+            "predicted_apex_y_from_actual_velocity": outgoing_trajectory_metrics[
+                "predicted_apex_y_from_actual_velocity"
+            ],
+            "predicted_apex_xy_error": outgoing_trajectory_metrics["predicted_apex_xy_error"],
             "contact_ball_position_x": contact_trace.get("contact_ball_position_x"),
             "contact_ball_position_y": contact_trace.get("contact_ball_position_y"),
             "contact_ball_position_z": contact_trace.get("contact_ball_position_z"),
@@ -673,6 +724,8 @@ class PingPongKeepUpEnv:
             "terminated": terminated,
             "truncated": truncated,
         }
+        for key, value in contact_trace.items():
+            info.setdefault(key, value)
         self._contact_active_previous_step = contact_active
         self._previous_action = applied_action.copy()
         return self.observation(), reward, terminated, truncated, info
@@ -734,6 +787,8 @@ class PingPongKeepUpEnv:
             "include_task_phase_observation": self.include_task_phase_observation,
             "include_contact_context_observation": self.include_contact_context_observation,
             "include_next_intercept_observation": self.include_next_intercept_observation,
+            "include_desired_outgoing_velocity_observation": self.include_desired_outgoing_velocity_observation,
+            "trajectory_match_reward_weight": self.trajectory_match_reward_weight,
             "next_intercept_max_time": self.next_intercept_max_time,
         }
 
@@ -747,6 +802,61 @@ class PingPongKeepUpEnv:
         if value is None:
             return float(default)
         return float(value)
+
+    def _contact_vector(self, contact_trace: dict[str, object] | None, prefix: str) -> np.ndarray | None:
+        if contact_trace is None:
+            return None
+        x_value = contact_trace.get(f"{prefix}_x")
+        y_value = contact_trace.get(f"{prefix}_y")
+        z_value = contact_trace.get(f"{prefix}_z")
+        if x_value is None or y_value is None or z_value is None:
+            return None
+        return np.array([float(x_value), float(y_value), float(z_value)], dtype=float)
+
+    def _resolved_outgoing_ball_velocity(self, contact_trace: dict[str, object] | None) -> tuple[np.ndarray | None, str | None]:
+        if contact_trace is None:
+            return None, None
+
+        contact_end_velocity = self._contact_vector(contact_trace, "contact_end_ball_velocity")
+        if contact_end_velocity is not None:
+            return contact_end_velocity, "contact_end_ball_velocity"
+
+        for offset in range(5, 0, -1):
+            post_contact_velocity = self._contact_vector(contact_trace, f"post_contact_{offset}_ball_velocity")
+            if post_contact_velocity is None:
+                continue
+            if contact_trace.get(f"post_contact_{offset}_contact_active") is False:
+                return post_contact_velocity, f"post_contact_{offset}_ball_velocity"
+
+        for offset in range(5, 0, -1):
+            post_contact_velocity = self._contact_vector(contact_trace, f"post_contact_{offset}_ball_velocity")
+            if post_contact_velocity is not None:
+                return post_contact_velocity, f"post_contact_{offset}_ball_velocity"
+
+        contact_velocity = self._contact_vector(contact_trace, "contact_ball_velocity")
+        if contact_velocity is not None:
+            return contact_velocity, "contact_ball_velocity"
+        return None, None
+
+    def _trajectory_metrics_from_velocity(
+        self,
+        contact_ball_position: np.ndarray,
+        actual_velocity: np.ndarray,
+        desired_velocity: np.ndarray,
+        desired_target_xy: np.ndarray,
+    ) -> dict[str, float]:
+        gravity_magnitude = max(abs(self._gravity_z()), 1.0e-6)
+        velocity_error = actual_velocity - desired_velocity
+        actual_time_to_apex = max(float(actual_velocity[2]), 0.0) / gravity_magnitude
+        predicted_apex_xy = contact_ball_position[:2] + actual_velocity[:2] * actual_time_to_apex
+        return {
+            "outgoing_velocity_error_norm": float(np.linalg.norm(velocity_error)),
+            "outgoing_velocity_xy_error": float(np.linalg.norm(velocity_error[:2])),
+            "outgoing_velocity_z_error": float(abs(velocity_error[2])),
+            "predicted_apex_x": float(predicted_apex_xy[0]),
+            "predicted_apex_y": float(predicted_apex_xy[1]),
+            "predicted_apex_xy_error": float(np.linalg.norm(predicted_apex_xy - desired_target_xy)),
+        }
 
     def _ball_height_above_racket(self) -> float:
         return float(self.sim.ball_position[2] - self.sim.racket_position[2])
@@ -953,11 +1063,8 @@ class PingPongKeepUpEnv:
         return current_height + float(ball_velocity_z * ball_velocity_z / (2.0 * gravity_magnitude))
 
     def _projected_contact_apex_height_above_racket(self, contact_trace: dict[str, object] | None) -> float:
-        contact_ball_velocity_z = self._contact_float(
-            contact_trace,
-            "contact_ball_velocity_z",
-            default=float(self.sim.ball_velocity[2]),
-        )
+        outgoing_velocity, _ = self._resolved_outgoing_ball_velocity(contact_trace)
+        contact_ball_velocity_z = float(self.sim.ball_velocity[2]) if outgoing_velocity is None else float(outgoing_velocity[2])
         contact_ball_height = self._contact_float(
             contact_trace,
             "contact_ball_height_above_racket",
@@ -972,30 +1079,145 @@ class PingPongKeepUpEnv:
         contact_ball_position_y = contact_trace.get("contact_ball_position_y")
         if contact_ball_position_x is None or contact_ball_position_y is None:
             return None
-        contact_ball_velocity_z = self._contact_float(
-            contact_trace,
-            "contact_ball_velocity_z",
-            default=float(self.sim.ball_velocity[2]),
-        )
-        contact_ball_velocity_x = self._contact_float(
-            contact_trace,
-            "contact_ball_velocity_x",
-            default=float(self.sim.ball_velocity[0]),
-        )
-        contact_ball_velocity_y = self._contact_float(
-            contact_trace,
-            "contact_ball_velocity_y",
-            default=float(self.sim.ball_velocity[1]),
-        )
+        outgoing_velocity, _ = self._resolved_outgoing_ball_velocity(contact_trace)
+        if outgoing_velocity is None:
+            outgoing_velocity = np.asarray(self.sim.ball_velocity, dtype=float)
         gravity_magnitude = max(abs(self._gravity_z()), 1.0e-6)
-        projected_apex_time = max(contact_ball_velocity_z, 0.0) / gravity_magnitude
+        projected_apex_time = max(float(outgoing_velocity[2]), 0.0) / gravity_magnitude
         return np.array(
             [
-                float(contact_ball_position_x) + contact_ball_velocity_x * projected_apex_time,
-                float(contact_ball_position_y) + contact_ball_velocity_y * projected_apex_time,
+                float(contact_ball_position_x) + float(outgoing_velocity[0]) * projected_apex_time,
+                float(contact_ball_position_y) + float(outgoing_velocity[1]) * projected_apex_time,
             ],
             dtype=float,
         )
+
+    def _desired_outgoing_velocity(
+        self,
+        ball_position: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, float, np.ndarray]:
+        contact_ball_position = (
+            np.asarray(self.sim.ball_position, dtype=float)
+            if ball_position is None
+            else np.asarray(ball_position, dtype=float)
+        )
+        anchor_position = self._controller_anchor_position()
+        desired_target_xy = np.asarray(anchor_position[:2], dtype=float)
+        target_apex_z = float(anchor_position[2] + self._target_ball_height_above_racket())
+        gravity_magnitude = max(abs(self._gravity_z()), 1.0e-6)
+        height_delta = max(target_apex_z - float(contact_ball_position[2]), _MIN_DESIRED_APEX_HEIGHT_DELTA)
+        desired_velocity_z = float(np.sqrt(2.0 * gravity_magnitude * height_delta))
+        desired_time_to_apex = desired_velocity_z / gravity_magnitude
+        desired_velocity_xy = (desired_target_xy - contact_ball_position[:2]) / max(desired_time_to_apex, 1.0e-6)
+        desired_velocity = np.array(
+            [float(desired_velocity_xy[0]), float(desired_velocity_xy[1]), desired_velocity_z],
+            dtype=float,
+        )
+        return desired_velocity, float(desired_time_to_apex), desired_target_xy
+
+    def _contact_outgoing_trajectory_metrics(self, contact_trace: dict[str, object] | None) -> dict[str, object]:
+        default_metrics: dict[str, object] = {
+            "desired_outgoing_velocity_x": None,
+            "desired_outgoing_velocity_y": None,
+            "desired_outgoing_velocity_z": None,
+            "actual_outgoing_velocity_x": None,
+            "actual_outgoing_velocity_y": None,
+            "actual_outgoing_velocity_z": None,
+            "actual_outgoing_velocity_source": None,
+            "outgoing_velocity_error_norm": None,
+            "outgoing_velocity_xy_error": None,
+            "outgoing_velocity_z_error": None,
+            "contact_substep_outgoing_velocity_error_norm": None,
+            "contact_substep_outgoing_velocity_xy_error": None,
+            "contact_substep_outgoing_velocity_z_error": None,
+            "contact_substep_predicted_apex_xy_error": None,
+            "desired_time_to_apex": None,
+            "desired_outgoing_target_x": None,
+            "desired_outgoing_target_y": None,
+            "predicted_apex_x_from_actual_velocity": None,
+            "predicted_apex_y_from_actual_velocity": None,
+            "predicted_apex_xy_error": None,
+        }
+        if contact_trace is None:
+            return default_metrics
+
+        contact_ball_position_x = contact_trace.get("contact_ball_position_x")
+        contact_ball_position_y = contact_trace.get("contact_ball_position_y")
+        contact_ball_position_z = contact_trace.get("contact_ball_position_z")
+        contact_ball_velocity_x = contact_trace.get("contact_ball_velocity_x")
+        contact_ball_velocity_y = contact_trace.get("contact_ball_velocity_y")
+        contact_ball_velocity_z = contact_trace.get("contact_ball_velocity_z")
+        if (
+            contact_ball_position_x is None
+            or contact_ball_position_y is None
+            or contact_ball_position_z is None
+            or contact_ball_velocity_x is None
+            or contact_ball_velocity_y is None
+            or contact_ball_velocity_z is None
+        ):
+            return default_metrics
+
+        contact_ball_position = np.array(
+            [
+                float(contact_ball_position_x),
+                float(contact_ball_position_y),
+                float(contact_ball_position_z),
+            ],
+            dtype=float,
+        )
+        contact_substep_velocity = np.array(
+            [
+                float(contact_ball_velocity_x),
+                float(contact_ball_velocity_y),
+                float(contact_ball_velocity_z),
+            ],
+            dtype=float,
+        )
+        actual_velocity, actual_velocity_source = self._resolved_outgoing_ball_velocity(contact_trace)
+        if actual_velocity is None:
+            actual_velocity = contact_substep_velocity
+            actual_velocity_source = "contact_ball_velocity"
+        desired_velocity, desired_time_to_apex, desired_target_xy = self._desired_outgoing_velocity(contact_ball_position)
+        resolved_metrics = self._trajectory_metrics_from_velocity(
+            contact_ball_position,
+            actual_velocity,
+            desired_velocity,
+            desired_target_xy,
+        )
+        contact_substep_metrics = self._trajectory_metrics_from_velocity(
+            contact_ball_position,
+            contact_substep_velocity,
+            desired_velocity,
+            desired_target_xy,
+        )
+        return {
+            "desired_outgoing_velocity_x": float(desired_velocity[0]),
+            "desired_outgoing_velocity_y": float(desired_velocity[1]),
+            "desired_outgoing_velocity_z": float(desired_velocity[2]),
+            "actual_outgoing_velocity_x": float(actual_velocity[0]),
+            "actual_outgoing_velocity_y": float(actual_velocity[1]),
+            "actual_outgoing_velocity_z": float(actual_velocity[2]),
+            "actual_outgoing_velocity_source": actual_velocity_source,
+            "outgoing_velocity_error_norm": resolved_metrics["outgoing_velocity_error_norm"],
+            "outgoing_velocity_xy_error": resolved_metrics["outgoing_velocity_xy_error"],
+            "outgoing_velocity_z_error": resolved_metrics["outgoing_velocity_z_error"],
+            "contact_substep_outgoing_velocity_error_norm": contact_substep_metrics[
+                "outgoing_velocity_error_norm"
+            ],
+            "contact_substep_outgoing_velocity_xy_error": contact_substep_metrics[
+                "outgoing_velocity_xy_error"
+            ],
+            "contact_substep_outgoing_velocity_z_error": contact_substep_metrics[
+                "outgoing_velocity_z_error"
+            ],
+            "contact_substep_predicted_apex_xy_error": contact_substep_metrics["predicted_apex_xy_error"],
+            "desired_time_to_apex": float(desired_time_to_apex),
+            "desired_outgoing_target_x": float(desired_target_xy[0]),
+            "desired_outgoing_target_y": float(desired_target_xy[1]),
+            "predicted_apex_x_from_actual_velocity": resolved_metrics["predicted_apex_x"],
+            "predicted_apex_y_from_actual_velocity": resolved_metrics["predicted_apex_y"],
+            "predicted_apex_xy_error": resolved_metrics["predicted_apex_xy_error"],
+        }
 
     def _return_target_xy(self) -> np.ndarray:
         if self.return_target_xy_source in ("controller_anchor", "racket_home"):
@@ -1063,7 +1285,8 @@ class PingPongKeepUpEnv:
     ) -> str | None:
         if failure_reason is not None or not contact_event:
             return None
-        contact_ball_velocity_z = self._contact_float(contact_trace, "contact_ball_velocity_z", float(self.sim.ball_velocity[2]))
+        outgoing_velocity, _ = self._resolved_outgoing_ball_velocity(contact_trace)
+        contact_ball_velocity_z = float(self.sim.ball_velocity[2]) if outgoing_velocity is None else float(outgoing_velocity[2])
         contact_racket_velocity_z = self._contact_float(
             contact_trace,
             "contact_racket_velocity_z",
@@ -1092,6 +1315,7 @@ class PingPongKeepUpEnv:
         contact_active: bool,
         applied_action: np.ndarray,
         contact_trace: dict[str, object],
+        outgoing_trajectory_metrics: dict[str, object],
     ) -> dict[str, float]:
         tracking_scale = self.tracking_during_contact_scale if contact_active else 1.0
         reward_terms = {
@@ -1101,6 +1325,7 @@ class PingPongKeepUpEnv:
             "return_target_xy_term": 0.0,
             "next_intercept_reachable_bonus": 0.0,
             "easy_next_ball_term": 0.0,
+            "trajectory_match_term": 0.0,
             "outgoing_x_term": 0.0,
             "failure_penalty": 0.0,
             "tilt_angle_penalty": 0.0,
@@ -1123,23 +1348,26 @@ class PingPongKeepUpEnv:
                 0.0,
             )
         if contact_event and self.useful_contact_outgoing_x_penalty_weight > 0.0:
-            contact_ball_velocity_z = self._contact_float(
-                contact_trace,
-                "contact_ball_velocity_z",
-                float(self.sim.ball_velocity[2]),
-            )
-            if contact_ball_velocity_z > 0.0:
-                contact_ball_velocity_x = self._contact_float(
-                    contact_trace,
-                    "contact_ball_velocity_x",
-                    float(self.sim.ball_velocity[0]),
-                )
+            actual_outgoing_velocity_z = outgoing_trajectory_metrics.get("actual_outgoing_velocity_z")
+            if actual_outgoing_velocity_z is not None and float(actual_outgoing_velocity_z) > 0.0:
+                contact_ball_velocity_x = float(outgoing_trajectory_metrics.get("actual_outgoing_velocity_x", 0.0))
                 outward_x_error = max(
                     contact_ball_velocity_x - self.desired_outgoing_ball_velocity_x,
                     0.0,
                 )
                 reward_terms["outgoing_x_term"] = (
                     -self.useful_contact_outgoing_x_penalty_weight * outward_x_error
+                )
+        if contact_event and self.trajectory_match_reward_weight > 0.0:
+            actual_outgoing_velocity_z = outgoing_trajectory_metrics.get("actual_outgoing_velocity_z")
+            outgoing_velocity_error_norm = outgoing_trajectory_metrics.get("outgoing_velocity_error_norm")
+            if (
+                actual_outgoing_velocity_z is not None
+                and float(actual_outgoing_velocity_z) > 0.0
+                and outgoing_velocity_error_norm is not None
+            ):
+                reward_terms["trajectory_match_term"] = self.trajectory_match_reward_weight * float(
+                    np.exp(-float(outgoing_velocity_error_norm) / _TRAJECTORY_MATCH_ERROR_SCALE)
                 )
         if failure_reason == "floor_contact":
             reward_terms["failure_penalty"] = self.floor_penalty

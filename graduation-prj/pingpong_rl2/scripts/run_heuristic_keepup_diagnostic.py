@@ -129,6 +129,7 @@ def main() -> None:
     )
 
     episode_rows: list[dict[str, object]] = []
+    contact_rows: list[dict[str, object]] = []
     failure_counts: Counter[str] = Counter()
     returns: list[float] = []
     useful_bounces: list[int] = []
@@ -138,6 +139,19 @@ def main() -> None:
     useful_contact_events = 0
     easy_scores: list[float] = []
     useful_easy_scores: list[float] = []
+    all_outgoing_velocity_errors: list[float] = []
+    useful_outgoing_velocity_errors: list[float] = []
+    all_predicted_apex_errors: list[float] = []
+    useful_predicted_apex_errors: list[float] = []
+    two_or_more_episode_outgoing_velocity_errors: list[float] = []
+    zero_episode_outgoing_velocity_errors: list[float] = []
+    two_or_more_episode_predicted_apex_errors: list[float] = []
+    zero_episode_predicted_apex_errors: list[float] = []
+    outgoing_velocity_source_counts: Counter[str] = Counter()
+    resolved_minus_contact_velocity_z: list[float] = []
+    resolved_minus_contact_error_norm: list[float] = []
+    contact_normal_alignment_scores: list[float] = []
+    contact_started_during_trace_count = 0
 
     try:
         for episode_index in range(args.episodes):
@@ -146,6 +160,8 @@ def main() -> None:
             policy.reset()
             episode_return = 0.0
             info: dict[str, object] = {}
+            episode_outgoing_velocity_errors: list[float] = []
+            episode_predicted_apex_errors: list[float] = []
             while True:
                 action = policy.predict(env.base_env).astype(np.float32, copy=False)
                 _, reward, terminated, truncated, info = env.step(action)
@@ -157,12 +173,139 @@ def main() -> None:
                     easy_score = info.get("easy_next_ball_score")
                     if easy_score is not None:
                         easy_scores.append(float(easy_score))
+                    outgoing_velocity_error = info.get("outgoing_velocity_error_norm")
+                    contact_substep_outgoing_velocity_error = info.get("contact_substep_outgoing_velocity_error_norm")
+                    actual_outgoing_velocity_source = info.get("actual_outgoing_velocity_source")
+                    source_key = "none" if actual_outgoing_velocity_source is None else str(actual_outgoing_velocity_source)
+                    outgoing_velocity_source_counts[source_key] += 1
+                    if outgoing_velocity_error is not None:
+                        outgoing_velocity_error_value = float(outgoing_velocity_error)
+                        all_outgoing_velocity_errors.append(outgoing_velocity_error_value)
+                        episode_outgoing_velocity_errors.append(outgoing_velocity_error_value)
+                        if contact_substep_outgoing_velocity_error is not None:
+                            resolved_minus_contact_error_norm.append(
+                                outgoing_velocity_error_value - float(contact_substep_outgoing_velocity_error)
+                            )
+                    predicted_apex_error = info.get("predicted_apex_xy_error")
+                    if predicted_apex_error is not None:
+                        predicted_apex_error_value = float(predicted_apex_error)
+                        all_predicted_apex_errors.append(predicted_apex_error_value)
+                        episode_predicted_apex_errors.append(predicted_apex_error_value)
+                    actual_outgoing_velocity_z = info.get("actual_outgoing_velocity_z")
+                    contact_ball_velocity_z = info.get("contact_ball_velocity_z")
+                    if actual_outgoing_velocity_z is not None and contact_ball_velocity_z is not None:
+                        resolved_minus_contact_velocity_z.append(
+                            float(actual_outgoing_velocity_z) - float(contact_ball_velocity_z)
+                        )
+                    racket_face_normal = np.array(
+                        [
+                            info.get("contact_racket_face_normal_x"),
+                            info.get("contact_racket_face_normal_y"),
+                            info.get("contact_racket_face_normal_z"),
+                        ],
+                        dtype=object,
+                    )
+                    contact_normal_racket_to_ball = np.array(
+                        [
+                            info.get("contact_mujoco_normal_racket_to_ball_x"),
+                            info.get("contact_mujoco_normal_racket_to_ball_y"),
+                            info.get("contact_mujoco_normal_racket_to_ball_z"),
+                        ],
+                        dtype=object,
+                    )
+                    contact_normal_alignment = None
+                    if not any(value is None for value in racket_face_normal) and not any(
+                        value is None for value in contact_normal_racket_to_ball
+                    ):
+                        racket_face_normal_vector = np.asarray(racket_face_normal, dtype=float)
+                        contact_normal_vector = np.asarray(contact_normal_racket_to_ball, dtype=float)
+                        contact_normal_alignment = float(np.dot(racket_face_normal_vector, contact_normal_vector))
+                        contact_normal_alignment_scores.append(contact_normal_alignment)
+                    if bool(info.get("contact_started_during_trace", False)):
+                        contact_started_during_trace_count += 1
+                    contact_rows.append(
+                        {
+                            "episode": episode_index + 1,
+                            "step": int(info.get("step_count", 0)),
+                            "contact_index": contact_events,
+                            "success_reason": info.get("success_reason"),
+                            "is_useful_contact": info.get("success_reason") == "useful_keepup_bounce",
+                            "actual_outgoing_velocity_source": actual_outgoing_velocity_source,
+                            "contact_started_during_trace": info.get("contact_started_during_trace"),
+                            "contact_active_at_step_start": info.get("contact_active_at_step_start"),
+                            "contact_substep": info.get("contact_substep"),
+                            "contact_end_substep": info.get("contact_end_substep"),
+                            "pre_contact_ball_velocity_x": info.get("pre_contact_ball_velocity_x"),
+                            "pre_contact_ball_velocity_y": info.get("pre_contact_ball_velocity_y"),
+                            "pre_contact_ball_velocity_z": info.get("pre_contact_ball_velocity_z"),
+                            "contact_ball_velocity_x": info.get("contact_ball_velocity_x"),
+                            "contact_ball_velocity_y": info.get("contact_ball_velocity_y"),
+                            "contact_ball_velocity_z": info.get("contact_ball_velocity_z"),
+                            "post_contact_1_ball_velocity_x": info.get("post_contact_1_ball_velocity_x"),
+                            "post_contact_1_ball_velocity_y": info.get("post_contact_1_ball_velocity_y"),
+                            "post_contact_1_ball_velocity_z": info.get("post_contact_1_ball_velocity_z"),
+                            "contact_end_ball_velocity_x": info.get("contact_end_ball_velocity_x"),
+                            "contact_end_ball_velocity_y": info.get("contact_end_ball_velocity_y"),
+                            "contact_end_ball_velocity_z": info.get("contact_end_ball_velocity_z"),
+                            "desired_outgoing_velocity_x": info.get("desired_outgoing_velocity_x"),
+                            "desired_outgoing_velocity_y": info.get("desired_outgoing_velocity_y"),
+                            "desired_outgoing_velocity_z": info.get("desired_outgoing_velocity_z"),
+                            "actual_outgoing_velocity_x": info.get("actual_outgoing_velocity_x"),
+                            "actual_outgoing_velocity_y": info.get("actual_outgoing_velocity_y"),
+                            "actual_outgoing_velocity_z": info.get("actual_outgoing_velocity_z"),
+                            "outgoing_velocity_error_norm": info.get("outgoing_velocity_error_norm"),
+                            "contact_substep_outgoing_velocity_error_norm": contact_substep_outgoing_velocity_error,
+                            "resolved_minus_contact_velocity_z": (
+                                None
+                                if actual_outgoing_velocity_z is None or contact_ball_velocity_z is None
+                                else float(actual_outgoing_velocity_z) - float(contact_ball_velocity_z)
+                            ),
+                            "resolved_minus_contact_error_norm": (
+                                None
+                                if outgoing_velocity_error is None or contact_substep_outgoing_velocity_error is None
+                                else float(outgoing_velocity_error) - float(contact_substep_outgoing_velocity_error)
+                            ),
+                            "predicted_apex_xy_error": info.get("predicted_apex_xy_error"),
+                            "contact_substep_predicted_apex_xy_error": info.get("contact_substep_predicted_apex_xy_error"),
+                            "contact_racket_velocity_x": info.get("contact_racket_velocity_x"),
+                            "contact_racket_velocity_y": info.get("contact_racket_velocity_y"),
+                            "contact_racket_velocity_z": info.get("contact_racket_velocity_z"),
+                            "contact_racket_face_normal_x": info.get("contact_racket_face_normal_x"),
+                            "contact_racket_face_normal_y": info.get("contact_racket_face_normal_y"),
+                            "contact_racket_face_normal_z": info.get("contact_racket_face_normal_z"),
+                            "contact_mujoco_normal_x": info.get("contact_mujoco_normal_x"),
+                            "contact_mujoco_normal_y": info.get("contact_mujoco_normal_y"),
+                            "contact_mujoco_normal_z": info.get("contact_mujoco_normal_z"),
+                            "contact_mujoco_normal_racket_to_ball_x": info.get(
+                                "contact_mujoco_normal_racket_to_ball_x"
+                            ),
+                            "contact_mujoco_normal_racket_to_ball_y": info.get(
+                                "contact_mujoco_normal_racket_to_ball_y"
+                            ),
+                            "contact_mujoco_normal_racket_to_ball_z": info.get(
+                                "contact_mujoco_normal_racket_to_ball_z"
+                            ),
+                            "contact_normal_alignment_with_racket_face": contact_normal_alignment,
+                            "contact_relative_velocity_x": info.get("contact_relative_velocity_x"),
+                            "contact_relative_velocity_y": info.get("contact_relative_velocity_y"),
+                            "contact_relative_velocity_z": info.get("contact_relative_velocity_z"),
+                            "pre_contact_relative_velocity_x": info.get("pre_contact_relative_velocity_x"),
+                            "pre_contact_relative_velocity_y": info.get("pre_contact_relative_velocity_y"),
+                            "pre_contact_relative_velocity_z": info.get("pre_contact_relative_velocity_z"),
+                            "next_intercept_reachable": info.get("next_intercept_reachable"),
+                            "easy_next_ball_score": info.get("easy_next_ball_score"),
+                        }
+                    )
                     if info.get("success_reason") == "useful_keepup_bounce":
                         useful_contact_events += 1
                         if bool(info.get("next_intercept_reachable", False)):
                             reachable_useful_contacts += 1
                         if easy_score is not None:
                             useful_easy_scores.append(float(easy_score))
+                        if outgoing_velocity_error is not None:
+                            useful_outgoing_velocity_errors.append(float(outgoing_velocity_error))
+                        if predicted_apex_error is not None:
+                            useful_predicted_apex_errors.append(float(predicted_apex_error))
                 if terminated or truncated:
                     break
 
@@ -173,6 +316,12 @@ def main() -> None:
             failure_counts[str(failure_reason)] += 1
             returns.append(episode_return)
             useful_bounces.append(useful_bounce_count)
+            if useful_bounce_count >= 2:
+                two_or_more_episode_outgoing_velocity_errors.extend(episode_outgoing_velocity_errors)
+                two_or_more_episode_predicted_apex_errors.extend(episode_predicted_apex_errors)
+            if useful_bounce_count == 0:
+                zero_episode_outgoing_velocity_errors.extend(episode_outgoing_velocity_errors)
+                zero_episode_predicted_apex_errors.extend(episode_predicted_apex_errors)
             episode_row = {
                 "episode": episode_index + 1,
                 "return": episode_return,
@@ -211,23 +360,93 @@ def main() -> None:
         "max_useful_bounces": int(bounce_array.max()) if bounce_array.size else 0,
         "one_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 1.0)) if bounce_array.size else 0.0,
         "two_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 2.0)) if bounce_array.size else 0.0,
+        "three_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 3.0)) if bounce_array.size else 0.0,
         "contact_event_count": contact_events,
         "useful_contact_event_count": useful_contact_events,
+        "outgoing_velocity_source_counts": dict(outgoing_velocity_source_counts),
+        "contact_started_during_trace_rate": (
+            contact_started_during_trace_count / contact_events if contact_events > 0 else 0.0
+        ),
+        "contact_end_velocity_source_rate": (
+            outgoing_velocity_source_counts.get("contact_end_ball_velocity", 0) / contact_events
+            if contact_events > 0
+            else 0.0
+        ),
+        "resolved_post_contact_source_rate": (
+            1.0 - outgoing_velocity_source_counts.get("contact_ball_velocity", 0) / contact_events
+            if contact_events > 0
+            else 0.0
+        ),
         "next_intercept_reachable_rate": (reachable_contacts / contact_events) if contact_events > 0 else 0.0,
         "useful_contact_next_intercept_reachable_rate": (
             reachable_useful_contacts / useful_contact_events if useful_contact_events > 0 else 0.0
         ),
         "mean_easy_next_ball_score": float(np.mean(easy_scores)) if easy_scores else 0.0,
         "useful_contact_mean_easy_next_ball_score": float(np.mean(useful_easy_scores)) if useful_easy_scores else 0.0,
+        "all_contact_mean_outgoing_velocity_error_norm": (
+            float(np.mean(all_outgoing_velocity_errors)) if all_outgoing_velocity_errors else None
+        ),
+        "useful_contact_mean_outgoing_velocity_error_norm": (
+            float(np.mean(useful_outgoing_velocity_errors)) if useful_outgoing_velocity_errors else None
+        ),
+        "two_or_more_useful_bounce_episode_contact_mean_outgoing_velocity_error_norm": (
+            float(np.mean(two_or_more_episode_outgoing_velocity_errors))
+            if two_or_more_episode_outgoing_velocity_errors
+            else None
+        ),
+        "zero_useful_bounce_episode_contact_mean_outgoing_velocity_error_norm": (
+            float(np.mean(zero_episode_outgoing_velocity_errors)) if zero_episode_outgoing_velocity_errors else None
+        ),
+        "all_contact_mean_predicted_apex_xy_error": (
+            float(np.mean(all_predicted_apex_errors)) if all_predicted_apex_errors else None
+        ),
+        "useful_contact_mean_predicted_apex_xy_error": (
+            float(np.mean(useful_predicted_apex_errors)) if useful_predicted_apex_errors else None
+        ),
+        "two_or_more_useful_bounce_episode_contact_mean_predicted_apex_xy_error": (
+            float(np.mean(two_or_more_episode_predicted_apex_errors))
+            if two_or_more_episode_predicted_apex_errors
+            else None
+        ),
+        "zero_useful_bounce_episode_contact_mean_predicted_apex_xy_error": (
+            float(np.mean(zero_episode_predicted_apex_errors)) if zero_episode_predicted_apex_errors else None
+        ),
+        "mean_resolved_minus_contact_velocity_z": (
+            float(np.mean(resolved_minus_contact_velocity_z)) if resolved_minus_contact_velocity_z else None
+        ),
+        "mean_abs_resolved_minus_contact_velocity_z": (
+            float(np.mean(np.abs(resolved_minus_contact_velocity_z))) if resolved_minus_contact_velocity_z else None
+        ),
+        "max_abs_resolved_minus_contact_velocity_z": (
+            float(np.max(np.abs(resolved_minus_contact_velocity_z))) if resolved_minus_contact_velocity_z else None
+        ),
+        "mean_resolved_minus_contact_error_norm": (
+            float(np.mean(resolved_minus_contact_error_norm)) if resolved_minus_contact_error_norm else None
+        ),
+        "mean_abs_resolved_minus_contact_error_norm": (
+            float(np.mean(np.abs(resolved_minus_contact_error_norm))) if resolved_minus_contact_error_norm else None
+        ),
+        "contact_normal_alignment_mean": (
+            float(np.mean(contact_normal_alignment_scores)) if contact_normal_alignment_scores else None
+        ),
+        "contact_normal_alignment_min": (
+            float(np.min(contact_normal_alignment_scores)) if contact_normal_alignment_scores else None
+        ),
+        "contact_normal_alignment_max": (
+            float(np.max(contact_normal_alignment_scores)) if contact_normal_alignment_scores else None
+        ),
         "failure_counts": dict(failure_counts),
     }
 
     summary_path = output_dir / f"{args.analysis_name}_summary.json"
     episodes_path = output_dir / f"{args.analysis_name}_episodes.csv"
+    contacts_path = output_dir / f"{args.analysis_name}_contacts.csv"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     write_csv(episodes_path, episode_rows)
+    write_csv(contacts_path, contact_rows)
     print(f"summary_path={summary_path}")
     print(f"episodes_path={episodes_path}")
+    print(f"contacts_path={contacts_path}")
     print(
         "heuristic_summary "
         f"variant={args.variant_name} "

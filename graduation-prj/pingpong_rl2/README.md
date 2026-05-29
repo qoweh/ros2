@@ -57,8 +57,11 @@
 - `run_heuristic_keepup_diagnostic.py`는 PPO 없이 scripted diagnostic baseline을 돌려서 현재 환경/제어가 반복 keep-up을 허용하는지 먼저 확인한다.
 - `run_viewer.py --mode heuristic`는 같은 baseline을 MuJoCo viewer에서 바로 재생한다.
 - `run_ppo_learning.py`의 `--bootstrap-*` 옵션은 heuristic rollout 중 useful bounce가 나온 episode만 모아 actor를 supervised warm-start한 뒤 PPO를 시작한다. 현재 결과상 이 경로는 first useful bounce 안정화에는 유효하지만, second-strike quality는 follow-up checkpoint selection과 함께 봐야 한다.
+- `run_ppo_learning.py`는 추가로 `--bootstrap-sample-mode`와 `--bootstrap-followup-*` 실험 옵션을 지원한다. 이들은 post-success / multi-bounce heuristic sample만 따로 bootstrap하는 연구용 경로이며, 현재 50-episode 기준으로는 기본 bootstrap보다 우위가 확인되지 않아 기본값으로 승격하지 않는다.
 
 ## 현재 판단
 
 - centered upward useful second strike를 여는 핵심 구조 변경은 `followup_strike_target_tilt=(-0.03, 0.0)` 기반 follow-up strike contract다.
-- heuristic bootstrap은 PPO가 이 구조를 더 빨리 배우게 해 주지만, 50-episode rebound 기준 second-strike quality 자체를 가장 잘 만든 run은 아직 `followup_strike_contract_v1` best checkpoint다.
+- heuristic bootstrap은 PPO가 이 구조를 더 빨리 배우게 해 준다.
+- 현재 가장 목표지향적인 training schedule은 `followup_strike_bootstrap_v1_best_model.zip` 같은 plain-bootstrap best checkpoint에서 시작해, 같은 `followup_strike_candidate` contract 아래 PPO를 이어학습하는 staged resume 경로다.
+- 이 staged 방향의 현재 기준 run은 `followup_bootstrap_resume_contract_v1_best`이며, 50-episode 기준 `two+ rate`를 유지하면서 contract-only run보다 `mean useful bounces`, `one+ rate`, useful-contact reachable rate, easy-next-ball score가 모두 좋아졌다.

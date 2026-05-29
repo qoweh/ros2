@@ -127,3 +127,172 @@ best checkpoint 50-episode 분석 결과는 아래였다.
 3. checkpoint selection은 계속 `two+ useful bounce` 우선 기준을 유지한다.
 
 요약하면, 이번 단계에서 `2+`를 여는 control contract와 PPO bootstrap 경로는 둘 다 확보했다. 아직 둘이 동시에 strongest가 되지는 않았지만, 이제는 무엇이 control bottleneck이고 무엇이 training bottleneck인지 분리해서 다룰 수 있는 상태가 되었다.
+
+## 7. autopilot 후속 cycle: filtered bootstrap ablation
+
+이후 추가로 한 일은 reward를 더 얹는 것이 아니라 bootstrap 데이터 자체를 더 목표지향적으로 고르는 일이었다.
+
+핵심 가설:
+
+- 기존 bootstrap은 `1+ useful bounce`가 나온 heuristic episode 전체를 actor에 복제한다.
+- 그래서 rare한 follow-up multi-bounce 예시보다 훨씬 많은 `one-bounce + failed follow-up` 데이터가 actor를 끌고 갈 수 있다.
+- 그렇다면 bootstrap을 `post-success` 또는 `true multi-bounce episode` 중심으로 좁히면 second-strike quality가 더 나아질 수 있다.
+
+이를 위해 `run_ppo_learning.py`에 아래 실험용 옵션을 추가했다.
+
+- `--bootstrap-sample-mode`
+- `--bootstrap-followup-epochs`
+- `--bootstrap-followup-sample-mode`
+- `--bootstrap-followup-min-useful-bounces`
+- `--bootstrap-followup-learning-rate`
+
+의도는 아래와 같다.
+
+1. base bootstrap은 first-bounce 학습을 위한 전체 episode warm-start를 유지한다.
+2. 그 위에 follow-up 전용 bootstrap pass를 한 번 더 얹어 second-strike 쪽으로 actor를 bias한다.
+
+### 7.1 pure `post_success` bootstrap은 실패
+
+첫 cycle은 전체 bootstrap 자체를 `post_success` sample만 쓰도록 바꿨다.
+
+- run: `followup_strike_bootstrap_postsuccess_v1`
+- bootstrap dataset: `80` requested, `32` accepted, `2242` samples
+
+checkpoint 결과:
+
+- best checkpoint `5k`
+- `mean_useful_bounces=0.2`
+- `one+ rate=0.2`
+- `two+ rate=0.0`
+
+해석:
+
+- pre-success 전체 trajectory를 버리자 first-bounce 안정성까지 같이 무너졌다.
+- 즉 follow-up-only bootstrap으로 base warm-start를 대체하는 방식은 틀렸다.
+
+### 7.2 base + follow-up `post_success_reachable` two-stage도 불충분
+
+둘째 cycle은 base bootstrap은 유지하고, extra follow-up pass만 `post_success_reachable`로 좁혔다.
+
+- run: `followup_strike_bootstrap_twostage_v1`
+- base bootstrap: `30` episodes, `2500` samples
+- follow-up bootstrap: `8` episodes, `291` samples
+
+checkpoint 결과:
+
+- best checkpoint `10k`
+- `mean_useful_bounces=0.3`
+- `one+ rate=0.3`
+- `two+ rate=0.0`
+
+해석:
+
+- pure `post_success`보다는 낫지만, 기존 bootstrap이나 follow-up contract baseline을 넘지 못했다.
+- reachable filter만으로는 true multi-bounce signal을 충분히 살리지 못했다.
+
+### 7.3 `2+ heuristic episode`만 쓰는 follow-up pass는 10-episode 신호는 있었지만 50-episode에서 무너짐
+
+셋째 cycle은 follow-up pass를 아예 `2+ useful bounce`를 만든 heuristic episode만 쓰도록 제한했다.
+
+- run: `followup_strike_bootstrap_twostage_two_plus_v1`
+- base bootstrap: `30` episodes, `2500` samples
+- follow-up bootstrap: `8` episodes, `656` samples
+- follow-up dataset mean useful bounces: `2.0`
+
+10-episode checkpoint 결과는 가장 좋아 보였다.
+
+- best checkpoint `20k`
+- `mean_useful_bounces=0.3`
+- `max_useful_bounces=2`
+- `two+ rate=0.1`
+
+하지만 50-episode rebound analysis에서는 유지되지 않았다.
+
+| model | mean useful bounces | one+ rate | two+ rate | useful contact rate | useful-contact reachable rate | ball out of bounds |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `followup_strike_contract_v1_best` | `0.28` | `0.24` | `0.04` | `10.4%` | `28.6%` | `34/50` |
+| `followup_strike_bootstrap_v1_best` | `0.50` | `0.48` | `0.02` | `22.9%` | `12.0%` | `31/50` |
+| `followup_strike_bootstrap_twostage_two_plus_v1_best` | `0.20` | `0.20` | `0.00` | `7.1%` | `30.0%` | `41/50` |
+
+해석:
+
+- `two+ heuristic episode`만 쓰는 follow-up pass는 짧은 eval에서는 promising해 보일 수 있다.
+- 하지만 50-episode 기준으로는 first-bounce 안정성도, second-strike 안정성도 유지하지 못했다.
+- 즉 이 branch는 아직 promote하면 안 된다.
+
+## 8. 갱신된 결론
+
+autopilot 후속 cycle까지 포함한 현재 결론은 아래다.
+
+- centered upward useful second strike를 여는 control-side 핵심은 여전히 `followup_strike_candidate`다.
+- training-side bootstrap은 여전히 의미가 있다. 특히 plain bootstrap은 first-bounce acquisition을 빠르게 만든다.
+- 하지만 filtered bootstrap 계열(`post_success`, `post_success_reachable`, `two_plus follow-up pass`)은 아직 50-episode 기준으로 승격할 수준이 아니다.
+- 대신 `plain bootstrap best checkpoint`에서 시작해 active follow-up contract 아래서 PPO를 이어학습하는 staged schedule은 실제로 더 좋은 절충점을 만들었다.
+
+현재 유지할 기준:
+
+- control-side 핵심 contract: `followup_strike_candidate`
+- training-side first-bounce acquisition reference: `followup_strike_bootstrap_v1_best`
+- 새 staged training reference: `followup_bootstrap_resume_contract_v1_best`
+
+즉 이번 후속 작업은 두 갈래로 정리된다.
+
+- filtered bootstrap 계열은 빠르게 제거했다.
+- 반면 `bootstrap best checkpoint -> active follow-up contract resume`라는 staged schedule은 유지할 가치가 있는 새 방향으로 확인됐다.
+
+## 9. staged bootstrap-resume 결과
+
+filtered bootstrap이 기대만큼 먹히지 않았기 때문에, 더 직접적인 training schedule을 확인했다.
+
+실험:
+
+- 시작점: `followup_strike_bootstrap_v1_best_model.zip`
+- 이어학습 run: `followup_bootstrap_resume_contract_v1`
+- env/control: 기존 active `followup_strike_candidate`
+- 추가 학습량: `20k`
+
+핵심 아이디어는 간단하다.
+
+- plain bootstrap이 이미 만든 `first useful bounce를 자주 만드는 policy`를 버리지 않는다.
+- 그 checkpoint를 초기 상태로 삼고, 같은 follow-up contract 아래에서 PPO를 더 진행해 second-strike를 학습시킨다.
+
+### 9.1 checkpoint eval
+
+best checkpoint는 `10k` 추가 학습 지점에서 나왔다.
+
+| model | checkpoint | mean useful bounces | one+ rate | two+ rate | max useful bounces |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `followup_strike_contract_v1` | `20k` | `0.3` | `0.2` | `0.1` | `2` |
+| `followup_strike_bootstrap_v1` | `5k` | `0.7` | `0.6` | `0.1` | `2` |
+| `followup_bootstrap_resume_contract_v1` | `10k` | `0.6` | `0.4` | `0.2` | `2` |
+
+이 checkpoint 숫자는 지금까지 본 것 중 가장 좋다.
+
+### 9.2 50-episode rebound 비교
+
+50-episode 기준으로도 이 run은 유의미한 절충점으로 남았다.
+
+| model | mean useful bounces | one+ rate | two+ rate | useful contact rate | useful-contact reachable rate | mean easy-next-ball score | ball out of bounds |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `followup_strike_contract_v1_best` | `0.28` | `0.24` | `0.04` | `10.4%` | `28.6%` | `0.136` | `34/50` |
+| `followup_strike_bootstrap_v1_best` | `0.50` | `0.48` | `0.02` | `22.9%` | `12.0%` | `0.057` | `31/50` |
+| `followup_bootstrap_resume_contract_v1_best` | `0.30` | `0.26` | `0.04` | `11.0%` | `33.3%` | `0.146` | `40/50` |
+
+해석:
+
+- `two+ rate`는 `followup_strike_contract_v1_best`와 동률이다.
+- `mean useful bounces`, `one+ rate`, `useful contact rate`, `useful-contact reachable rate`, `mean easy-next-ball score`는 모두 contract-only run보다 좋다.
+- plain bootstrap보다는 first-bounce volume이 낮지만, second-strike quality는 훨씬 낫다.
+
+즉 이 run은 두 기존 candidate의 장점을 완전히 합치진 못했지만, 현재까지는 가장 설득력 있는 균형점이다.
+
+### 9.3 현재 해석
+
+지금 기준에서 가장 목표지향적인 training direction은 아래다.
+
+1. control은 `followup_strike_candidate`를 유지한다.
+2. plain bootstrap으로 first-bounce acquisition이 강한 checkpoint를 만든다.
+3. 그 best checkpoint에서 같은 contract 아래 PPO를 더 진행한다.
+4. checkpoint selection은 계속 `two+ useful bounce` 우선으로 한다.
+
+이건 reward 미세조정이 아니라, 이미 확인된 두 장점 `first-bounce acquisition`과 `second-strike contract`를 같은 학습 경로에 이어붙이는 방식이다. 현재로서는 이 staged schedule이 가장 목표에 가깝다.
