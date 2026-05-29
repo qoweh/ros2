@@ -92,6 +92,26 @@ class PingPongSim:
     def ball_velocity(self) -> np.ndarray:
         return self.data.qvel[self._ball_dof_adr:self._ball_dof_adr + 3].copy()
 
+    def set_ball_velocity(
+        self,
+        velocity: Sequence[float],
+        angular_velocity: Sequence[float] | None = None,
+    ) -> np.ndarray:
+        velocity_array = np.asarray(velocity, dtype=float)
+        if velocity_array.shape != (3,):
+            raise ValueError(f"Ball velocity must have shape (3,), got {velocity_array.shape}.")
+
+        self.data.qvel[self._ball_dof_adr:self._ball_dof_adr + 3] = velocity_array
+        if angular_velocity is not None:
+            angular_velocity_array = np.asarray(angular_velocity, dtype=float)
+            if angular_velocity_array.shape != (3,):
+                raise ValueError(
+                    f"Ball angular velocity must have shape (3,), got {angular_velocity_array.shape}."
+                )
+            self.data.qvel[self._ball_dof_adr + 3:self._ball_dof_adr + 6] = angular_velocity_array
+        mujoco.mj_forward(self.model, self.data)
+        return self.ball_velocity
+
     def reset(
         self,
         ball_position: Sequence[float] | None = None,

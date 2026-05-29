@@ -8,6 +8,7 @@ from pingpong_rl2.defaults import (
     DEFAULT_BALL_HEIGHT,
     DEFAULT_MAX_EPISODE_STEPS,
     DEFAULT_PPO_POSITION_STRIKE_RUN_NAME,
+    DEFAULT_PPO_POSITION_STRIKE_TILT_RUN_NAME,
     DEFAULT_PPO_POSITION_TILT_RUN_NAME,
     DEFAULT_PPO_RUN_NAME,
     DEFAULT_RESET_VELOCITY_XY_RANGE,
@@ -15,6 +16,7 @@ from pingpong_rl2.defaults import (
     DEFAULT_RESET_XY_RANGE,
     DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
     SMOKE_PPO_POSITION_STRIKE_RUN_NAME,
+    SMOKE_PPO_POSITION_STRIKE_TILT_RUN_NAME,
     SMOKE_PPO_POSITION_TILT_RUN_NAME,
     SMOKE_PPO_RUN_NAME,
     default_ppo_model_candidates,
@@ -29,11 +31,13 @@ def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> s
         "position": SMOKE_PPO_RUN_NAME,
         "position_strike": SMOKE_PPO_POSITION_STRIKE_RUN_NAME,
         "position_tilt": SMOKE_PPO_POSITION_TILT_RUN_NAME,
+        "position_strike_tilt": SMOKE_PPO_POSITION_STRIKE_TILT_RUN_NAME,
     }
     standard_run_names = {
         "position": DEFAULT_PPO_RUN_NAME,
         "position_strike": DEFAULT_PPO_POSITION_STRIKE_RUN_NAME,
         "position_tilt": DEFAULT_PPO_POSITION_TILT_RUN_NAME,
+        "position_strike_tilt": DEFAULT_PPO_POSITION_STRIKE_TILT_RUN_NAME,
     }
     if smoke:
         if action_mode not in smoke_run_names:

@@ -20,9 +20,9 @@ class HeuristicKeepUpPolicy:
         return None
 
     def predict(self, env: PingPongKeepUpEnv) -> np.ndarray:
-        if env.action_mode != "position_strike":
+        if env.action_mode not in ("position_strike", "position_strike_tilt"):
             raise ValueError(
-                "HeuristicKeepUpPolicy requires action_mode='position_strike' so it can steer the strike controller."
+                "HeuristicKeepUpPolicy requires a strike-contract action mode so it can steer the strike controller."
             )
 
         base_target = env._strike_action_target_position(np.zeros(3, dtype=float))
@@ -44,4 +44,6 @@ class HeuristicKeepUpPolicy:
             desired_target[2] = base_target[2]
 
         action = desired_target - base_target
+        if env.action_mode == "position_strike_tilt":
+            action = np.concatenate([action, np.zeros(2, dtype=float)])
         return np.clip(action, env.action_low, env.action_high)

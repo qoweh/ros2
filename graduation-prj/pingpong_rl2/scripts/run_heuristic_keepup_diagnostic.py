@@ -23,6 +23,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the scripted keep-up diagnostic baseline.")
     parser.add_argument("--analysis-name", type=str, default="heuristic_keepup_diagnostic")
     parser.add_argument("--variant-name", type=str, default="default")
+    parser.add_argument(
+        "--action-mode",
+        type=str,
+        default="position_strike",
+        choices=("position_strike", "position_strike_tilt"),
+    )
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=211)
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
@@ -69,6 +75,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
     )
     parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument(
+        "--contact-oracle-mode",
+        type=str,
+        choices=("none", "desired_outgoing_velocity"),
+        default="none",
+    )
+    parser.add_argument("--contact-oracle-blend", type=float, default=1.0)
     parser.add_argument("--print-episodes", action="store_true")
     return parser.parse_args()
 
@@ -88,7 +101,7 @@ def write_csv(file_path: Path, rows: list[dict[str, object]]) -> None:
 
 def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
     env_kwargs: dict[str, object] = {
-        "action_mode": "position_strike",
+        "action_mode": args.action_mode,
         "ball_height": args.ball_height,
         "target_ball_height": args.ball_height,
         "max_episode_steps": args.max_episode_steps,
@@ -101,6 +114,8 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "followup_strike_lift_boost": args.followup_strike_lift_boost,
         "post_contact_return_assist_weight": args.post_contact_return_assist_weight,
         "post_contact_return_max_intercept_time": args.post_contact_return_max_intercept_time,
+        "contact_oracle_mode": args.contact_oracle_mode,
+        "contact_oracle_blend": args.contact_oracle_blend,
         "include_task_phase_observation": True,
         "include_contact_context_observation": True,
         "include_next_intercept_observation": True,
@@ -152,6 +167,7 @@ def main() -> None:
     resolved_minus_contact_error_norm: list[float] = []
     contact_normal_alignment_scores: list[float] = []
     contact_started_during_trace_count = 0
+    oracle_contact_events = 0
 
     try:
         for episode_index in range(args.episodes):
@@ -223,6 +239,8 @@ def main() -> None:
                         contact_normal_alignment_scores.append(contact_normal_alignment)
                     if bool(info.get("contact_started_during_trace", False)):
                         contact_started_during_trace_count += 1
+                    if bool(info.get("oracle_contact_applied", False)):
+                        oracle_contact_events += 1
                     contact_rows.append(
                         {
                             "episode": episode_index + 1,
@@ -231,6 +249,10 @@ def main() -> None:
                             "success_reason": info.get("success_reason"),
                             "is_useful_contact": info.get("success_reason") == "useful_keepup_bounce",
                             "actual_outgoing_velocity_source": actual_outgoing_velocity_source,
+                            "oracle_contact_applied": info.get("oracle_contact_applied"),
+                            "oracle_contact_mode": info.get("oracle_contact_mode"),
+                            "oracle_contact_blend": info.get("oracle_contact_blend"),
+                            "oracle_contact_base_source": info.get("oracle_contact_base_source"),
                             "contact_started_during_trace": info.get("contact_started_during_trace"),
                             "contact_active_at_step_start": info.get("contact_active_at_step_start"),
                             "contact_substep": info.get("contact_substep"),
@@ -247,6 +269,21 @@ def main() -> None:
                             "contact_end_ball_velocity_x": info.get("contact_end_ball_velocity_x"),
                             "contact_end_ball_velocity_y": info.get("contact_end_ball_velocity_y"),
                             "contact_end_ball_velocity_z": info.get("contact_end_ball_velocity_z"),
+                            "oracle_preoverride_outgoing_ball_velocity_x": info.get(
+                                "oracle_preoverride_outgoing_ball_velocity_x"
+                            ),
+                            "oracle_preoverride_outgoing_ball_velocity_y": info.get(
+                                "oracle_preoverride_outgoing_ball_velocity_y"
+                            ),
+                            "oracle_preoverride_outgoing_ball_velocity_z": info.get(
+                                "oracle_preoverride_outgoing_ball_velocity_z"
+                            ),
+                            "oracle_post_contact_ball_velocity_x": info.get("oracle_post_contact_ball_velocity_x"),
+                            "oracle_post_contact_ball_velocity_y": info.get("oracle_post_contact_ball_velocity_y"),
+                            "oracle_post_contact_ball_velocity_z": info.get("oracle_post_contact_ball_velocity_z"),
+                            "oracle_desired_outgoing_velocity_x": info.get("oracle_desired_outgoing_velocity_x"),
+                            "oracle_desired_outgoing_velocity_y": info.get("oracle_desired_outgoing_velocity_y"),
+                            "oracle_desired_outgoing_velocity_z": info.get("oracle_desired_outgoing_velocity_z"),
                             "desired_outgoing_velocity_x": info.get("desired_outgoing_velocity_x"),
                             "desired_outgoing_velocity_y": info.get("desired_outgoing_velocity_y"),
                             "desired_outgoing_velocity_z": info.get("desired_outgoing_velocity_z"),
@@ -343,6 +380,8 @@ def main() -> None:
         env.close()
 
     bounce_array = np.asarray(useful_bounces, dtype=float)
+    contact_count_array = np.asarray([float(row["contacts"]) for row in episode_rows], dtype=float)
+    time_limit_episodes = sum(1 for row in episode_rows if row["failure_reason"] == "time_limit")
     summary = {
         "analysis_name": args.analysis_name,
         "variant_name": args.variant_name,
@@ -358,11 +397,16 @@ def main() -> None:
         "mean_return": float(np.mean(returns)) if returns else 0.0,
         "mean_useful_bounces": float(bounce_array.mean()) if bounce_array.size else 0.0,
         "max_useful_bounces": int(bounce_array.max()) if bounce_array.size else 0,
+        "mean_contacts": float(contact_count_array.mean()) if contact_count_array.size else 0.0,
+        "max_contacts": int(contact_count_array.max()) if contact_count_array.size else 0,
+        "time_limit_episode_rate": time_limit_episodes / args.episodes if args.episodes > 0 else 0.0,
         "one_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 1.0)) if bounce_array.size else 0.0,
         "two_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 2.0)) if bounce_array.size else 0.0,
         "three_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 3.0)) if bounce_array.size else 0.0,
         "contact_event_count": contact_events,
         "useful_contact_event_count": useful_contact_events,
+        "oracle_contact_event_count": oracle_contact_events,
+        "oracle_contact_rate": (oracle_contact_events / contact_events) if contact_events > 0 else 0.0,
         "outgoing_velocity_source_counts": dict(outgoing_velocity_source_counts),
         "contact_started_during_trace_rate": (
             contact_started_during_trace_count / contact_events if contact_events > 0 else 0.0

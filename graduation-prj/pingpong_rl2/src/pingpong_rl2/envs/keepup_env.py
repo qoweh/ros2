@@ -23,7 +23,8 @@ from pingpong_rl2.defaults import (
 )
 from pingpong_rl2.envs.pingpong_sim import PingPongSim
 
-_ACTION_MODES = ("position", "position_strike", "position_tilt")
+_ACTION_MODES = ("position", "position_strike", "position_tilt", "position_strike_tilt")
+_CONTACT_ORACLE_MODES = ("none", "desired_outgoing_velocity")
 _RETURN_TARGET_XY_SOURCES = ("controller_anchor", "racket_home", "racket_position", "target_position")
 
 _EASY_NEXT_BALL_TARGET_TIME = 0.45
@@ -97,7 +98,7 @@ def _build_observation_layout(
         components = components + _DESIRED_OUTGOING_OBSERVATION_COMPONENTS
     if include_velocity_domain_observation:
         components = components + _VELOCITY_DOMAIN_OBSERVATION_COMPONENTS
-    if action_mode == "position_tilt":
+    if action_mode in ("position_tilt", "position_strike_tilt"):
         if not include_velocity_domain_observation:
             components = components + (("racket_face_normal", 3),)
         components = components + _POSITION_TILT_OBSERVATION_COMPONENTS
@@ -170,6 +171,8 @@ class PingPongKeepUpEnv:
         include_next_intercept_observation: bool = False,
         include_desired_outgoing_velocity_observation: bool = False,
         trajectory_match_reward_weight: float = 0.0,
+        contact_oracle_mode: str = "none",
+        contact_oracle_blend: float = 1.0,
         next_intercept_max_time: float = 1.25,
         controller_position_gain: float = 1.6,
         controller_orientation_gain: float = 0.45,
@@ -197,8 +200,8 @@ class PingPongKeepUpEnv:
         self.desired_outgoing_ball_velocity_x = float(desired_outgoing_ball_velocity_x)
         self.useful_contact_return_target_xy_reward_weight = float(useful_contact_return_target_xy_reward_weight)
         self.return_target_xy_source = str(return_target_xy_source)
-        default_tilt_angle_penalty_weight = 0.04 if self.action_mode == "position_tilt" else 0.0
-        default_tilt_action_delta_penalty_weight = 0.10 if self.action_mode == "position_tilt" else 0.0
+        default_tilt_angle_penalty_weight = 0.04 if self.action_mode in ("position_tilt", "position_strike_tilt") else 0.0
+        default_tilt_action_delta_penalty_weight = 0.10 if self.action_mode in ("position_tilt", "position_strike_tilt") else 0.0
         self.tilt_angle_penalty_weight = float(
             default_tilt_angle_penalty_weight
             if tilt_angle_penalty_weight is None
@@ -257,6 +260,8 @@ class PingPongKeepUpEnv:
         self.include_next_intercept_observation = bool(include_next_intercept_observation)
         self.include_desired_outgoing_velocity_observation = bool(include_desired_outgoing_velocity_observation)
         self.trajectory_match_reward_weight = float(trajectory_match_reward_weight)
+        self.contact_oracle_mode = str(contact_oracle_mode)
+        self.contact_oracle_blend = float(contact_oracle_blend)
         self.next_intercept_max_time = float(next_intercept_max_time)
         self.controller_position_gain = float(controller_position_gain)
         self.controller_orientation_gain = float(controller_orientation_gain)
@@ -264,6 +269,14 @@ class PingPongKeepUpEnv:
         self.controller_max_orientation_step = float(controller_max_orientation_step)
         if self.action_mode not in _ACTION_MODES:
             raise ValueError(f"action_mode must be one of {_ACTION_MODES}, got {self.action_mode!r}.")
+        if self.contact_oracle_mode not in _CONTACT_ORACLE_MODES:
+            raise ValueError(
+                f"contact_oracle_mode must be one of {_CONTACT_ORACLE_MODES}, got {self.contact_oracle_mode!r}."
+            )
+        if not 0.0 <= self.contact_oracle_blend <= 1.0:
+            raise ValueError(
+                f"contact_oracle_blend must be within [0, 1], got {self.contact_oracle_blend}."
+            )
         if self.action_limit <= 0.0:
             raise ValueError(f"action_limit must be positive, got {self.action_limit}.")
         if self.lateral_action_limit <= 0.0:
@@ -461,7 +474,7 @@ class PingPongKeepUpEnv:
             [self.lateral_action_limit, self.lateral_action_limit, self.vertical_action_limit],
             dtype=float,
         )
-        if self.action_mode == "position_tilt":
+        if self.action_mode in ("position_tilt", "position_strike_tilt"):
             tilt_action_limit = np.full(2, self.tilt_action_limit, dtype=float)
             self.action_high = np.concatenate([position_action_limit, tilt_action_limit])
         else:
@@ -543,7 +556,7 @@ class PingPongKeepUpEnv:
                     self.sim.racket_face_normal,
                 ]
             )
-        if self.action_mode == "position_tilt":
+        if self.action_mode in ("position_tilt", "position_strike_tilt"):
             if not self.include_velocity_domain_observation:
                 observation_parts.append(self.sim.racket_face_normal)
             observation_parts.append(self.controller.target_tilt)
@@ -561,7 +574,7 @@ class PingPongKeepUpEnv:
         spawn_xy_offset = self._sample_reset_xy_offset() if ball_xy_offset is None else np.asarray(ball_xy_offset, dtype=float)
         self.sim.reset(ball_height=spawn_height, ball_velocity=spawn_velocity, ball_xy_offset=spawn_xy_offset)
         self.controller.reset()
-        if self.action_mode in ("position_tilt", "position_strike") and self.initial_target_tilt is not None:
+        if self.action_mode in ("position_tilt", "position_strike", "position_strike_tilt") and self.initial_target_tilt is not None:
             self.controller.set_target_tilt(self.initial_target_tilt)
         self.step_count = 0
         self.contact_count = 0
@@ -586,7 +599,7 @@ class PingPongKeepUpEnv:
         if action_array.shape != (self.action_size,):
             raise ValueError(f"EE delta action must have shape ({self.action_size},), got {action_array.shape}.")
         applied_action = np.clip(action_array, self.action_low, self.action_high)
-        if self.action_mode == "position_strike":
+        if self.action_mode in ("position_strike", "position_strike_tilt"):
             requested_target_position = self._strike_action_target_position(applied_action[:3])
         else:
             self.controller.add_target_offset(applied_action[:3])
@@ -596,10 +609,14 @@ class PingPongKeepUpEnv:
             self.controller.set_target_tilt(next_target_tilt)
         elif self.action_mode == "position_strike":
             self.controller.set_target_tilt(self._position_strike_target_tilt())
+        elif self.action_mode == "position_strike_tilt":
+            next_target_tilt = self._constrained_target_tilt(self._position_strike_target_tilt() + applied_action[3:])
+            self.controller.set_target_tilt(next_target_tilt)
         safe_target_position = self._guarded_target_position(requested_target_position)
         self.controller.set_target_position(safe_target_position)
         joint_targets = self.controller.compute_joint_targets()
         contact_trace = self.sim.step_with_contact_trace(joint_targets=joint_targets, n_substeps=self.sim.n_substeps)
+        oracle_info = self._apply_contact_oracle(contact_trace)
         self.step_count += 1
 
         failure_reason = self._failure_reason()
@@ -677,6 +694,10 @@ class PingPongKeepUpEnv:
             "actual_outgoing_velocity_y": outgoing_trajectory_metrics["actual_outgoing_velocity_y"],
             "actual_outgoing_velocity_z": outgoing_trajectory_metrics["actual_outgoing_velocity_z"],
             "actual_outgoing_velocity_source": outgoing_trajectory_metrics["actual_outgoing_velocity_source"],
+            "oracle_contact_applied": oracle_info["oracle_contact_applied"],
+            "oracle_contact_mode": oracle_info["oracle_contact_mode"],
+            "oracle_contact_blend": oracle_info["oracle_contact_blend"],
+            "oracle_contact_base_source": oracle_info["oracle_contact_base_source"],
             "outgoing_velocity_error_norm": outgoing_trajectory_metrics["outgoing_velocity_error_norm"],
             "outgoing_velocity_xy_error": outgoing_trajectory_metrics["outgoing_velocity_xy_error"],
             "outgoing_velocity_z_error": outgoing_trajectory_metrics["outgoing_velocity_z_error"],
@@ -789,6 +810,8 @@ class PingPongKeepUpEnv:
             "include_next_intercept_observation": self.include_next_intercept_observation,
             "include_desired_outgoing_velocity_observation": self.include_desired_outgoing_velocity_observation,
             "trajectory_match_reward_weight": self.trajectory_match_reward_weight,
+            "contact_oracle_mode": self.contact_oracle_mode,
+            "contact_oracle_blend": self.contact_oracle_blend,
             "next_intercept_max_time": self.next_intercept_max_time,
         }
 
@@ -817,6 +840,10 @@ class PingPongKeepUpEnv:
         if contact_trace is None:
             return None, None
 
+        oracle_velocity = self._contact_vector(contact_trace, "oracle_post_contact_ball_velocity")
+        if oracle_velocity is not None:
+            return oracle_velocity, "oracle_post_contact_ball_velocity"
+
         contact_end_velocity = self._contact_vector(contact_trace, "contact_end_ball_velocity")
         if contact_end_velocity is not None:
             return contact_end_velocity, "contact_end_ball_velocity"
@@ -837,6 +864,43 @@ class PingPongKeepUpEnv:
         if contact_velocity is not None:
             return contact_velocity, "contact_ball_velocity"
         return None, None
+
+    def _apply_contact_oracle(self, contact_trace: dict[str, object]) -> dict[str, object]:
+        oracle_info = {
+            "oracle_contact_applied": False,
+            "oracle_contact_mode": self.contact_oracle_mode,
+            "oracle_contact_blend": self.contact_oracle_blend,
+            "oracle_contact_base_source": None,
+        }
+        if self.contact_oracle_mode == "none" or not bool(contact_trace.get("contact_observed", False)):
+            return oracle_info
+
+        contact_ball_position = self._contact_vector(contact_trace, "contact_ball_position")
+        if contact_ball_position is None:
+            return oracle_info
+
+        desired_velocity, _, _ = self._desired_outgoing_velocity(contact_ball_position)
+        base_velocity, base_source = self._resolved_outgoing_ball_velocity(contact_trace)
+        if base_velocity is None:
+            base_velocity = self._contact_vector(contact_trace, "contact_ball_velocity")
+            if base_velocity is not None:
+                base_source = "contact_ball_velocity"
+        if base_velocity is None:
+            base_velocity = np.asarray(self.sim.ball_velocity, dtype=float)
+            base_source = "sim_ball_velocity"
+
+        oracle_velocity = (1.0 - self.contact_oracle_blend) * base_velocity + self.contact_oracle_blend * desired_velocity
+        self.sim.set_ball_velocity(oracle_velocity)
+        contact_trace.update(self.sim._trace_vector_fields("oracle_desired_outgoing_velocity", desired_velocity))
+        contact_trace.update(self.sim._trace_vector_fields("oracle_preoverride_outgoing_ball_velocity", base_velocity))
+        contact_trace.update(self.sim._trace_vector_fields("oracle_post_contact_ball_velocity", oracle_velocity))
+        contact_trace["oracle_contact_applied"] = True
+        contact_trace["oracle_contact_mode"] = self.contact_oracle_mode
+        contact_trace["oracle_contact_blend"] = self.contact_oracle_blend
+        contact_trace["oracle_contact_base_source"] = base_source
+        oracle_info["oracle_contact_applied"] = True
+        oracle_info["oracle_contact_base_source"] = base_source
+        return oracle_info
 
     def _trajectory_metrics_from_velocity(
         self,
@@ -1244,19 +1308,19 @@ class PingPongKeepUpEnv:
         return float(self.apex_match_reward_weight * height_match)
 
     def _normalized_tilt_magnitude(self) -> float:
-        if self.action_mode not in ("position_tilt", "position_strike"):
+        if self.action_mode not in ("position_tilt", "position_strike", "position_strike_tilt"):
             return 0.0
         normalized_tilt = self.controller.target_tilt / np.maximum(self.target_tilt_limit, 1.0e-6)
         return float(np.linalg.norm(normalized_tilt) / np.sqrt(2.0))
 
     def _normalized_tilt_action_delta(self, action: np.ndarray) -> float:
-        if self.action_mode != "position_tilt":
+        if self.action_mode not in ("position_tilt", "position_strike_tilt"):
             return 0.0
         tilt_delta = action[3:] - self._previous_action[3:]
         return float(np.linalg.norm(tilt_delta) / max(np.sqrt(2.0) * self.tilt_action_limit, 1.0e-6))
 
     def _constrained_target_tilt(self, tilt: np.ndarray) -> np.ndarray:
-        if self.action_mode not in ("position_tilt", "position_strike"):
+        if self.action_mode not in ("position_tilt", "position_strike", "position_strike_tilt"):
             return np.asarray(tilt, dtype=float)
         constrained_tilt = np.asarray(tilt, dtype=float).copy()
         if self.target_pitch_range is not None:
@@ -1331,7 +1395,7 @@ class PingPongKeepUpEnv:
             "tilt_angle_penalty": 0.0,
             "tilt_action_delta_penalty": 0.0,
         }
-        if self.action_mode == "position_tilt":
+        if self.action_mode in ("position_tilt", "position_strike_tilt"):
             reward_terms["tilt_angle_penalty"] = -self.tilt_angle_penalty_weight * self._normalized_tilt_magnitude()
             reward_terms["tilt_action_delta_penalty"] = (
                 -self.tilt_action_delta_penalty_weight * self._normalized_tilt_action_delta(applied_action)
@@ -1442,7 +1506,7 @@ class PingPongKeepUpEnv:
             self.strike_zone_xy_radius + self.contact_centering_radius,
         )
         base_xy_limit = min(max(self.contact_centering_radius, 0.4 * full_xy_limit), full_xy_limit)
-        height_catchup_weight = 1.0 if self.action_mode in ("position", "position_strike") else 0.5
+        height_catchup_weight = 1.0 if self.action_mode in ("position", "position_strike", "position_strike_tilt") else 0.5
         readiness = max(self._pre_contact_readiness(), height_catchup_weight * self._pre_contact_height_readiness())
         return float(base_xy_limit + readiness * (full_xy_limit - base_xy_limit))
 
@@ -1457,7 +1521,7 @@ class PingPongKeepUpEnv:
         return float(np.clip(0.04 * height_readiness * urgency, 0.0, 0.04))
 
     def _strike_tilt_assist_target(self) -> np.ndarray:
-        if self.action_mode != "position_strike" or self.strike_tilt_assist_limit is None:
+        if self.action_mode not in ("position_strike", "position_strike_tilt") or self.strike_tilt_assist_limit is None:
             return np.zeros(2, dtype=float)
         if self._contact_active_previous_step:
             return np.zeros(2, dtype=float)
@@ -1482,7 +1546,7 @@ class PingPongKeepUpEnv:
         return np.array([pitch, roll], dtype=float)
 
     def _strike_tilt_ramp_target(self) -> np.ndarray:
-        if self.action_mode != "position_strike" or self.strike_tilt_ramp_pitch is None:
+        if self.action_mode not in ("position_strike", "position_strike_tilt") or self.strike_tilt_ramp_pitch is None:
             return np.zeros(2, dtype=float)
         if self._contact_active_previous_step:
             return np.zeros(2, dtype=float)
@@ -1500,7 +1564,7 @@ class PingPongKeepUpEnv:
         return np.array([self.strike_tilt_ramp_pitch * ramp, 0.0], dtype=float)
 
     def _followup_strike_contract_active(self) -> bool:
-        return self.action_mode == "position_strike" and self.successful_bounce_count > 0
+        return self.action_mode in ("position_strike", "position_strike_tilt") and self.successful_bounce_count > 0
 
     def _followup_strike_target_xy(self, predicted_intercept_xy: np.ndarray) -> np.ndarray:
         if not self._followup_strike_contract_active():
@@ -1540,7 +1604,7 @@ class PingPongKeepUpEnv:
 
     def _post_contact_return_target_xy(self) -> np.ndarray:
         anchor_xy = np.asarray(self._controller_anchor_position()[:2], dtype=float)
-        if self.action_mode != "position_strike":
+        if self.action_mode not in ("position_strike", "position_strike_tilt"):
             return anchor_xy
         if self.post_contact_return_assist_weight <= 0.0:
             return anchor_xy
