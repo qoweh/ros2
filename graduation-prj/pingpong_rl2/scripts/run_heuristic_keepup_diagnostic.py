@@ -46,6 +46,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recovery-blend", type=float, default=0.52)
     parser.add_argument("--strike-z-boost", type=float, default=0.018)
     parser.add_argument("--strike-time-horizon", type=float, default=0.14)
+    parser.add_argument(
+        "--fixed-tilt-residual",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=(0.0, 0.0),
+    )
+    parser.add_argument(
+        "--strike-tilt-residual",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
+    parser.add_argument(
+        "--recovery-tilt-residual",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
     parser.add_argument("--strike-tilt-ramp-pitch", type=float, default=-0.03)
     parser.add_argument("--strike-tilt-ramp-xy-tolerance", type=float, default=0.04)
     parser.add_argument(
@@ -141,6 +162,16 @@ def main() -> None:
         recovery_blend=args.recovery_blend,
         strike_z_boost=args.strike_z_boost,
         strike_time_horizon=args.strike_time_horizon,
+        fixed_tilt_residual_pitch=float(args.fixed_tilt_residual[0]),
+        fixed_tilt_residual_roll=float(args.fixed_tilt_residual[1]),
+        strike_tilt_residual_pitch=(None if args.strike_tilt_residual is None else float(args.strike_tilt_residual[0])),
+        strike_tilt_residual_roll=(None if args.strike_tilt_residual is None else float(args.strike_tilt_residual[1])),
+        recovery_tilt_residual_pitch=(
+            None if args.recovery_tilt_residual is None else float(args.recovery_tilt_residual[0])
+        ),
+        recovery_tilt_residual_roll=(
+            None if args.recovery_tilt_residual is None else float(args.recovery_tilt_residual[1])
+        ),
     )
 
     episode_rows: list[dict[str, object]] = []
@@ -393,6 +424,20 @@ def main() -> None:
             "recovery_blend": args.recovery_blend,
             "strike_z_boost": args.strike_z_boost,
             "strike_time_horizon": args.strike_time_horizon,
+            "fixed_tilt_residual": [
+                float(args.fixed_tilt_residual[0]),
+                float(args.fixed_tilt_residual[1]),
+            ],
+            "strike_tilt_residual": (
+                None
+                if args.strike_tilt_residual is None
+                else [float(args.strike_tilt_residual[0]), float(args.strike_tilt_residual[1])]
+            ),
+            "recovery_tilt_residual": (
+                None
+                if args.recovery_tilt_residual is None
+                else [float(args.recovery_tilt_residual[0]), float(args.recovery_tilt_residual[1])]
+            ),
         },
         "mean_return": float(np.mean(returns)) if returns else 0.0,
         "mean_useful_bounces": float(bounce_array.mean()) if bounce_array.size else 0.0,

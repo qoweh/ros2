@@ -113,19 +113,26 @@ primitive branch는 아래를 만족해야 다음 단계로 넘어간다.
 
 - zero-residual heuristic smoke 통과
 - `contact_primitive_candidate` preset resolve + env construction 통과 (`action_size=5`, `observation_size=52`)
+- `position_strike_tilt` heuristic bootstrap collection도 통과 (`obs_shape=(32, 52)`, `act_shape=(32, 5)`)
+
+추가 scripted finding:
+
+- constant tilt residual sweep 실패: `2+`를 전혀 열지 못함
+- strike-phase-only tilt residual sweep도 실패: best candidate도 `max_useful_bounces = 1`
+- 따라서 현재 tilt-only primitive는 upper-bound gap을 메우기에 불충분함
 
 남은 구현 체크리스트는 아래다.
 
 1. `keepup_env.py`
-   - `position_strike_tilt` base 위에서 residual semantics를 더 정교하게 다듬기
+   - `position_strike_tilt` base 위에서 residual semantics를 tilt-only에서 non-tilt contact residual까지 확장하기
 2. `run_heuristic_keepup_diagnostic.py`
-   - 새 mode scripted tuning sweep 추가
+   - 다음 primitive semantics용 scripted tuning sweep 추가
 3. `scripts/run_ppo_learning.py`
-   - 새 preset으로 실제 PPO smoke/train/eval cycle 실행
+   - 새 primitive가 scripted gate를 통과한 뒤에만 PPO smoke/train/eval cycle 실행
 4. `scripts/run_viewer.py`
    - 새 mode viewer playback 지원
 5. 새 report
-   - primitive scripted feasibility 결과 기록
+   - 다음 primitive scripted feasibility 결과 기록
 
 한 줄 결론:
 

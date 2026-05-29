@@ -691,8 +691,10 @@ def collect_heuristic_bootstrap_dataset(
             "observations": np.empty((0, 0), dtype=np.float32),
             "actions": np.empty((0, 0), dtype=np.float32),
         }
-    if env_kwargs.get("action_mode") != "position_strike":
-        raise ValueError("Heuristic bootstrap currently requires action_mode='position_strike'.")
+    if env_kwargs.get("action_mode") not in {"position_strike", "position_strike_tilt"}:
+        raise ValueError(
+            "Heuristic bootstrap currently requires action_mode='position_strike' or 'position_strike_tilt'."
+        )
     if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
         raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")
 

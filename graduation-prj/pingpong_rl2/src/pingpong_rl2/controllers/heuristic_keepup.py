@@ -15,9 +15,32 @@ class HeuristicKeepUpPolicy:
     recovery_blend: float = 0.52
     strike_z_boost: float = 0.018
     strike_time_horizon: float = 0.14
+    fixed_tilt_residual_pitch: float = 0.0
+    fixed_tilt_residual_roll: float = 0.0
+    strike_tilt_residual_pitch: float | None = None
+    strike_tilt_residual_roll: float | None = None
+    recovery_tilt_residual_pitch: float | None = None
+    recovery_tilt_residual_roll: float | None = None
 
     def reset(self) -> None:
         return None
+
+    def _tilt_residual_for_phase(self, phase_name: str) -> np.ndarray:
+        if phase_name in {"prepare", "strike"}:
+            pitch = self.strike_tilt_residual_pitch
+            roll = self.strike_tilt_residual_roll
+        elif phase_name in {"return_shaping", "recovery"}:
+            pitch = self.recovery_tilt_residual_pitch
+            roll = self.recovery_tilt_residual_roll
+        else:
+            pitch = None
+            roll = None
+
+        if pitch is None:
+            pitch = self.fixed_tilt_residual_pitch
+        if roll is None:
+            roll = self.fixed_tilt_residual_roll
+        return np.array([pitch, roll], dtype=float)
 
     def predict(self, env: PingPongKeepUpEnv) -> np.ndarray:
         if env.action_mode not in ("position_strike", "position_strike_tilt"):
@@ -45,5 +68,6 @@ class HeuristicKeepUpPolicy:
 
         action = desired_target - base_target
         if env.action_mode == "position_strike_tilt":
-            action = np.concatenate([action, np.zeros(2, dtype=float)])
+            tilt_residual = self._tilt_residual_for_phase(phase_name)
+            action = np.concatenate([action, tilt_residual])
         return np.clip(action, env.action_low, env.action_high)
