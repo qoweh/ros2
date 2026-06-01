@@ -52,3 +52,5 @@
   - 최신 모델/strict sweet spot 평가, pitch-roll/no-rise-chase/nullspace 실험 해석, 최종 목표를 위해 필요한 planned contact-time strike primitive 방향을 정리한 보고서
 - `24_self_rally_planner_primitive_report.md`
   - DeepMind/table-tennis 연구에서 참고한 계층적 skill 구조를 keep-up에 맞게 적용하고, fixed planner / primitive base strike / residual-only RL / strict reward-success 구현을 정리한 보고서
+- `25_cleanup_and_self_rally_status.md`
+  - artifacts 정리 결과, `pmk_cf_self_rally_v1`이 150k에서 early-stop된 이유, checkpoint/TensorBoard 설명, 안정적 self-rally를 위한 다음 학습 기준을 정리한 보고서

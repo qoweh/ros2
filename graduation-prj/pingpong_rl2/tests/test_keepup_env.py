@@ -574,6 +574,35 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         )
         self.assertEqual(success_reason, "useful_keepup_bounce")
 
+    def test_success_reason_rejects_apex_overshoot_when_window_required(self) -> None:
+        env = PingPongKeepUpEnv(
+            target_ball_height=0.25,
+            height_tolerance=0.10,
+            require_apex_height_window_for_success=True,
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        gravity = abs(env._gravity_z())
+        contact_height_above_racket = 0.02
+        overshoot_apex_height = env.target_ball_height + env.height_tolerance + 0.05
+        velocity_z = float(np.sqrt(2.0 * gravity * (overshoot_apex_height - contact_height_above_racket)))
+
+        success_reason = env._success_reason(
+            failure_reason=None,
+            contact_trace={
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": velocity_z,
+                "contact_racket_velocity_z": 0.2,
+                "contact_xy_alignment_error": env.contact_centering_radius - 0.01,
+                "contact_ball_height_above_racket": contact_height_above_racket,
+            },
+            contact_event=True,
+        )
+
+        self.assertIsNone(success_reason)
+
     def test_contact_apex_height_uses_anchor_reference_when_position_is_available(self) -> None:
         env = PingPongKeepUpEnv(
             target_ball_height=0.25,

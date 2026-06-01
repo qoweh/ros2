@@ -42,6 +42,8 @@
 - 새 preset `contact_frame_self_rally_candidate`를 추가했다.
 - 이 preset은 `position_contact_frame` action을 작은 residual로 제한한다.
 - 기존 heuristic warm-start는 이 새 contract와 맞지 않을 수 있어 preset 기본에서는 끈다. zero action이 planner/primitive 기본 타격을 뜻하고, PPO는 그 주변 residual을 탐색한다.
+- 2026-06-01 추가 정리: `pmk_cf_self_rally_v1`은 `--total-timesteps 1000000`로 실행했지만 checkpoint early-stop 때문에 150k에서 멈췄다. 새 preset은 early-stop을 끄고, checkpoint 평가 주기를 50k/20 episodes로 낮춰 1M 학습이 실제로 진행되게 했다.
+- 2026-06-01 추가 정리: 너무 높게 튀긴 contact가 useful로 인정되는 문제를 막기 위해 `require_apex_height_window_for_success=True`, `min_easy_next_ball_score_for_success=0.35`, `easy_next_ball_reward_weight=1.0`로 강화했다.
 - 기본값:
   - `lateral_action_limit=0.02`
   - `vertical_action_limit=0.025`

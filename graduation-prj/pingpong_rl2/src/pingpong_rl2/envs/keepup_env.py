@@ -177,6 +177,7 @@ class PingPongKeepUpEnv:
         next_intercept_reachable_bonus_weight: float = 0.0,
         easy_next_ball_reward_weight: float = 0.0,
         require_reachable_next_intercept_for_success: bool = False,
+        require_apex_height_window_for_success: bool = False,
         min_easy_next_ball_score_for_success: float | None = None,
         terminate_on_nonuseful_contact: bool = False,
         include_velocity_domain_observation: bool = False,
@@ -322,6 +323,7 @@ class PingPongKeepUpEnv:
         self.next_intercept_reachable_bonus_weight = float(next_intercept_reachable_bonus_weight)
         self.easy_next_ball_reward_weight = float(easy_next_ball_reward_weight)
         self.require_reachable_next_intercept_for_success = bool(require_reachable_next_intercept_for_success)
+        self.require_apex_height_window_for_success = bool(require_apex_height_window_for_success)
         self.min_easy_next_ball_score_for_success = (
             None if min_easy_next_ball_score_for_success is None else float(min_easy_next_ball_score_for_success)
         )
@@ -1317,6 +1319,7 @@ class PingPongKeepUpEnv:
             "next_intercept_reachable_bonus_weight": self.next_intercept_reachable_bonus_weight,
             "easy_next_ball_reward_weight": self.easy_next_ball_reward_weight,
             "require_reachable_next_intercept_for_success": self.require_reachable_next_intercept_for_success,
+            "require_apex_height_window_for_success": self.require_apex_height_window_for_success,
             "min_easy_next_ball_score_for_success": self.min_easy_next_ball_score_for_success,
             "terminate_on_nonuseful_contact": self.terminate_on_nonuseful_contact,
             "include_velocity_domain_observation": self.include_velocity_domain_observation,
@@ -2161,8 +2164,13 @@ class PingPongKeepUpEnv:
             return None
         if contact_xy_alignment_error > self.contact_centering_radius:
             return None
-        if self._projected_contact_apex_height_above_racket(contact_trace) + 1.0e-6 < self._target_ball_height_above_racket():
+        projected_apex_height = self._projected_contact_apex_height_above_racket(contact_trace)
+        target_apex_height = self._target_ball_height_above_racket()
+        if projected_apex_height + 1.0e-6 < target_apex_height:
             return None
+        if self.require_apex_height_window_for_success:
+            if abs(projected_apex_height - target_apex_height) > self.height_tolerance:
+                return None
         next_intercept_metrics = self._next_intercept_metrics()
         if self.require_reachable_next_intercept_for_success and not bool(next_intercept_metrics["reachable"]):
             return None

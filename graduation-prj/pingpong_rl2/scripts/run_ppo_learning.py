@@ -290,6 +290,11 @@ _ENV_PRESETS["contact_frame_planned_intercept_candidate"] = {
 
 _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     **_ENV_PRESETS["contact_frame_planned_intercept_candidate"],
+    "n_envs": 4,
+    "batch_size": 512,
+    "checkpoint_interval": 50_000,
+    "checkpoint_eval_episodes": 20,
+    "early_stop_patience_evals": 0,
     "target_ball_height": 0.25,
     "lateral_action_limit": 0.02,
     "vertical_action_limit": 0.025,
@@ -306,7 +311,9 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_centering_tilt_radius": 0.08,
     "contact_frame_centering_tilt_deadband": 0.008,
     "require_reachable_next_intercept_for_success": True,
-    "min_easy_next_ball_score_for_success": 0.0,
+    "require_apex_height_window_for_success": True,
+    "min_easy_next_ball_score_for_success": 0.35,
+    "easy_next_ball_reward_weight": 1.0,
     "next_intercept_xy_error_penalty_weight": 0.75,
     "post_contact_lateral_velocity_penalty_weight": 0.30,
     "contact_xy_error_penalty_weight": 0.25,
@@ -419,6 +426,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "next_intercept_reachable_bonus_weight": None,
     "easy_next_ball_reward_weight": None,
     "require_reachable_next_intercept_for_success": False,
+    "require_apex_height_window_for_success": False,
     "min_easy_next_ball_score_for_success": None,
     "terminate_on_nonuseful_contact": False,
     "followup_strike_target_tilt": None,
@@ -850,6 +858,11 @@ def parse_args() -> argparse.Namespace:
         help="Only count a contact as useful when the next descending intercept remains inside the strike zone.",
     )
     parser.add_argument(
+        "--require-apex-height-window-for-success",
+        action="store_true",
+        help="Only count a contact as useful when the projected post-contact apex stays within height_tolerance of target_ball_height.",
+    )
+    parser.add_argument(
         "--min-easy-next-ball-score-for-success",
         type=float,
         default=None,
@@ -1207,6 +1220,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["easy_next_ball_xy_radius"] = args.easy_next_ball_xy_radius
     if args.require_reachable_next_intercept_for_success:
         env_kwargs["require_reachable_next_intercept_for_success"] = True
+    if args.require_apex_height_window_for_success:
+        env_kwargs["require_apex_height_window_for_success"] = True
     if args.min_easy_next_ball_score_for_success is not None:
         env_kwargs["min_easy_next_ball_score_for_success"] = args.min_easy_next_ball_score_for_success
     if args.terminate_on_nonuseful_contact:
