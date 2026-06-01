@@ -191,6 +191,7 @@ class PingPongKeepUpEnv:
         keepup_target_xy_offset: Sequence[float] = (0.0, 0.0),
         trajectory_match_reward_weight: float = 0.0,
         trajectory_error_penalty_weight: float = 0.0,
+        reward_contact_quality_on_any_upward_contact: bool = False,
         contact_oracle_mode: str = "none",
         contact_oracle_blend: float = 1.0,
         next_intercept_max_time: float = 1.25,
@@ -239,6 +240,7 @@ class PingPongKeepUpEnv:
         contact_frame_trajectory_tilt_gain: float = 0.0,
         contact_frame_trajectory_tilt_limit: Sequence[float] | None = None,
         contact_frame_trajectory_tilt_deadband: float = 0.0,
+        contact_frame_tilt_ramp_time: float = 0.16,
         contact_frame_centering_tilt_limit: Sequence[float] | None = None,
         contact_frame_centering_tilt_radius: float | None = None,
         contact_frame_centering_tilt_deadband: float = 0.015,
@@ -347,6 +349,7 @@ class PingPongKeepUpEnv:
         self.keepup_target_xy_offset = np.asarray(keepup_target_xy_offset, dtype=float)
         self.trajectory_match_reward_weight = float(trajectory_match_reward_weight)
         self.trajectory_error_penalty_weight = float(trajectory_error_penalty_weight)
+        self.reward_contact_quality_on_any_upward_contact = bool(reward_contact_quality_on_any_upward_contact)
         self.contact_oracle_mode = str(contact_oracle_mode)
         self.contact_oracle_blend = float(contact_oracle_blend)
         self.next_intercept_max_time = float(next_intercept_max_time)
@@ -413,6 +416,7 @@ class PingPongKeepUpEnv:
             else np.asarray(contact_frame_trajectory_tilt_limit, dtype=float)
         )
         self.contact_frame_trajectory_tilt_deadband = float(contact_frame_trajectory_tilt_deadband)
+        self.contact_frame_tilt_ramp_time = float(contact_frame_tilt_ramp_time)
         self.contact_frame_centering_tilt_limit = (
             None
             if contact_frame_centering_tilt_limit is None
@@ -796,6 +800,11 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 "contact_frame_trajectory_tilt_deadband must be non-negative, got "
                 f"{self.contact_frame_trajectory_tilt_deadband}."
+            )
+        if self.contact_frame_tilt_ramp_time <= 0.0:
+            raise ValueError(
+                "contact_frame_tilt_ramp_time must be positive, got "
+                f"{self.contact_frame_tilt_ramp_time}."
             )
         if self.contact_frame_base_tilt_residual is not None:
             if self.contact_frame_base_tilt_residual.shape != (2,):
@@ -1381,6 +1390,7 @@ class PingPongKeepUpEnv:
             "keepup_target_xy_offset": self.keepup_target_xy_offset.tolist(),
             "trajectory_match_reward_weight": self.trajectory_match_reward_weight,
             "trajectory_error_penalty_weight": self.trajectory_error_penalty_weight,
+            "reward_contact_quality_on_any_upward_contact": self.reward_contact_quality_on_any_upward_contact,
             "contact_oracle_mode": self.contact_oracle_mode,
             "contact_oracle_blend": self.contact_oracle_blend,
             "next_intercept_max_time": self.next_intercept_max_time,
@@ -1398,6 +1408,10 @@ class PingPongKeepUpEnv:
             "controller_body_clearance_vertical_margin": self.controller_body_clearance_vertical_margin,
             "controller_body_clearance_max_step": self.controller_body_clearance_max_step,
             "controller_body_clearance_body_names": list(self.controller_body_clearance_body_names),
+            "controller_position_gain": self.controller_position_gain,
+            "controller_orientation_gain": self.controller_orientation_gain,
+            "controller_max_position_step": self.controller_max_position_step,
+            "controller_max_orientation_step": self.controller_max_orientation_step,
             "controller_velocity_gain": self.controller_velocity_gain,
             "controller_velocity_feedback_gain": self.controller_velocity_feedback_gain,
             "controller_max_velocity_step": self.controller_max_velocity_step,
@@ -1435,6 +1449,7 @@ class PingPongKeepUpEnv:
                 else self.contact_frame_trajectory_tilt_limit.tolist()
             ),
             "contact_frame_trajectory_tilt_deadband": self.contact_frame_trajectory_tilt_deadband,
+            "contact_frame_tilt_ramp_time": self.contact_frame_tilt_ramp_time,
             "contact_frame_centering_tilt_limit": (
                 None
                 if self.contact_frame_centering_tilt_limit is None
@@ -2321,6 +2336,13 @@ class PingPongKeepUpEnv:
             if actual_outgoing_velocity_z is None:
                 actual_outgoing_velocity_z = float(self.sim.ball_velocity[2])
             if float(actual_outgoing_velocity_z) > self.success_velocity_threshold:
+                if success_reason is None and self.reward_contact_quality_on_any_upward_contact:
+                    next_intercept_metrics = self._next_intercept_metrics()
+                    reward_terms["apex_match_term"] = self._apex_match_term(contact_trace)
+                    reward_terms["easy_next_ball_term"] = self.easy_next_ball_reward_weight * max(
+                        float(next_intercept_metrics["easy_next_ball_score"]),
+                        0.0,
+                    )
                 if self.next_intercept_xy_error_penalty_weight > 0.0:
                     next_intercept_metrics = self._next_intercept_metrics()
                     next_intercept_xy_error = next_intercept_metrics["info_xy_error"]
@@ -2526,7 +2548,7 @@ class PingPongKeepUpEnv:
             if self._contact_frame_plan_active
             else self._predicted_intercept_time()
         )
-        urgency = 1.0 - np.clip(intercept_time / 0.16, 0.0, 1.0)
+        urgency = 1.0 - np.clip(intercept_time / self.contact_frame_tilt_ramp_time, 0.0, 1.0)
         ramp = float(np.clip(max(height_readiness, urgency), 0.0, 1.0))
         pitch = 0.0
         roll = 0.0
@@ -2554,7 +2576,7 @@ class PingPongKeepUpEnv:
             if self._contact_frame_plan_active
             else self._predicted_intercept_time()
         )
-        urgency = 1.0 - np.clip(intercept_time / 0.16, 0.0, 1.0)
+        urgency = 1.0 - np.clip(intercept_time / self.contact_frame_tilt_ramp_time, 0.0, 1.0)
         ramp = float(np.clip(max(height_readiness, urgency), 0.0, 1.0))
         return np.array([self.strike_tilt_ramp_pitch * ramp, 0.0], dtype=float)
 
@@ -2943,7 +2965,7 @@ class PingPongKeepUpEnv:
             if self._contact_frame_plan_active
             else self._predicted_intercept_time()
         )
-        urgency = 1.0 - np.clip(intercept_time / 0.16, 0.0, 1.0)
+        urgency = 1.0 - np.clip(intercept_time / self.contact_frame_tilt_ramp_time, 0.0, 1.0)
         ramp = float(np.clip(max(self._pre_contact_height_readiness(), urgency), 0.0, 1.0))
         return np.array(
             [
@@ -2984,7 +3006,7 @@ class PingPongKeepUpEnv:
             if self._contact_frame_plan_active
             else self._predicted_intercept_time()
         )
-        urgency = 1.0 - np.clip(intercept_time / 0.16, 0.0, 1.0)
+        urgency = 1.0 - np.clip(intercept_time / self.contact_frame_tilt_ramp_time, 0.0, 1.0)
         ramp = float(np.clip(max(self._pre_contact_height_readiness(), urgency), 0.0, 1.0))
         target_tilt = self.contact_frame_trajectory_tilt_gain * raw_tilt * ramp
         return np.clip(target_tilt, -self.contact_frame_trajectory_tilt_limit, self.contact_frame_trajectory_tilt_limit)

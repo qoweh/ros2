@@ -290,7 +290,7 @@ _ENV_PRESETS["contact_frame_planned_intercept_candidate"] = {
 
 _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     **_ENV_PRESETS["contact_frame_planned_intercept_candidate"],
-    "scene_path": "assets/scene_racket_outward.xml",
+    "scene_path": "assets/scene.xml",
     "n_envs": 4,
     "batch_size": 512,
     "checkpoint_interval": 0,
@@ -299,13 +299,15 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "target_ball_height": 0.30,
     "lateral_action_limit": 0.02,
     "vertical_action_limit": 0.025,
-    "tilt_action_limit": 0.008,
-    "target_tilt_limit": (0.12, 0.12),
+    "tilt_action_limit": 0.006,
+    "target_tilt_limit": (0.16, 0.16),
     "strike_tilt_ramp_pitch": None,
     "followup_strike_target_tilt": None,
     "contact_frame_base_tilt_residual": None,
+    "controller_orientation_gain": 1.10,
+    "controller_max_orientation_step": 0.24,
     "controller_velocity_feedback_gain": 0.25,
-    "controller_max_velocity_step": 0.03,
+    "controller_max_velocity_step": 0.04,
     "controller_nullspace_posture_gain": 0.20,
     "controller_nullspace_posture_max_step": 0.010,
     "controller_body_clearance_gain": 0.75,
@@ -320,15 +322,16 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_strike_hold_time": 0.05,
     "contact_frame_strike_hold_min_readiness": 0.60,
     "contact_frame_apex_lift_gain": 0.05,
-    "contact_frame_apex_lift_max": 0.025,
+    "contact_frame_apex_lift_max": 0.040,
     "contact_frame_velocity_lead_gain": 0.04,
     "contact_frame_velocity_lead_max": 0.025,
-    "contact_frame_velocity_target_gain": 0.65,
-    "contact_frame_velocity_target_max": 1.6,
+    "contact_frame_velocity_target_gain": 0.90,
+    "contact_frame_velocity_target_max": 1.8,
     "contact_frame_trajectory_tilt_gain": 1.0,
-    "contact_frame_trajectory_tilt_limit": (0.06, 0.06),
-    "contact_frame_centering_tilt_limit": (0.04, 0.05),
-    "contact_frame_centering_tilt_radius": 0.08,
+    "contact_frame_trajectory_tilt_limit": (0.08, 0.08),
+    "contact_frame_tilt_ramp_time": 0.35,
+    "contact_frame_centering_tilt_limit": (0.06, 0.06),
+    "contact_frame_centering_tilt_radius": 0.10,
     "contact_frame_centering_tilt_deadband": 0.008,
     "require_reachable_next_intercept_for_success": True,
     "require_apex_height_window_for_success": True,
@@ -340,9 +343,10 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_racket_lateral_velocity_penalty_weight": 0.25,
     "contact_racket_lateral_velocity_tolerance": 0.18,
     "max_contact_racket_lateral_speed_for_success": 0.45,
-    "nonuseful_contact_penalty_weight": 1.25,
-    "trajectory_match_reward_weight": 0.35,
+    "nonuseful_contact_penalty_weight": 0.75,
+    "trajectory_match_reward_weight": 0.50,
     "trajectory_error_penalty_weight": 0.50,
+    "reward_contact_quality_on_any_upward_contact": True,
     "bootstrap_heuristic_episodes": 0,
     "bootstrap_epochs": 0,
     "bootstrap_followup_epochs": 0,
@@ -446,6 +450,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "keepup_target_xy_offset": None,
     "trajectory_match_reward_weight": None,
     "trajectory_error_penalty_weight": None,
+    "reward_contact_quality_on_any_upward_contact": False,
     "useful_contact_return_target_xy_reward_weight": None,
     "return_target_xy_tolerance": None,
     "next_intercept_reachable_bonus_weight": None,
@@ -486,6 +491,9 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_trajectory_tilt_gain": None,
     "contact_frame_trajectory_tilt_limit": None,
     "contact_frame_trajectory_tilt_deadband": None,
+    "contact_frame_tilt_ramp_time": None,
+    "controller_orientation_gain": None,
+    "controller_max_orientation_step": None,
     "controller_velocity_gain": None,
     "controller_velocity_feedback_gain": None,
     "controller_max_velocity_step": None,
@@ -824,6 +832,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
     )
     parser.add_argument("--contact-frame-trajectory-tilt-deadband", type=float, default=None)
+    parser.add_argument("--contact-frame-tilt-ramp-time", type=float, default=None)
+    parser.add_argument("--controller-orientation-gain", type=float, default=None)
+    parser.add_argument("--controller-max-orientation-step", type=float, default=None)
     parser.add_argument("--controller-velocity-gain", type=float, default=None)
     parser.add_argument("--controller-velocity-feedback-gain", type=float, default=None)
     parser.add_argument("--controller-max-velocity-step", type=float, default=None)
@@ -925,6 +936,11 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Optional contact-event penalty for outgoing ball velocity error.",
+    )
+    parser.add_argument(
+        "--reward-contact-quality-on-any-upward-contact",
+        action="store_true",
+        help="Apply apex/easy-next-ball shaping to upward contacts even before they satisfy strict success.",
     )
     parser.add_argument("--next-intercept-max-time", type=float, default=None)
     parser.add_argument(
@@ -1209,6 +1225,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_trajectory_tilt_limit"] = tuple(args.contact_frame_trajectory_tilt_limit)
     if args.contact_frame_trajectory_tilt_deadband is not None:
         env_kwargs["contact_frame_trajectory_tilt_deadband"] = args.contact_frame_trajectory_tilt_deadband
+    if args.contact_frame_tilt_ramp_time is not None:
+        env_kwargs["contact_frame_tilt_ramp_time"] = args.contact_frame_tilt_ramp_time
+    if args.controller_orientation_gain is not None:
+        env_kwargs["controller_orientation_gain"] = args.controller_orientation_gain
+    if args.controller_max_orientation_step is not None:
+        env_kwargs["controller_max_orientation_step"] = args.controller_max_orientation_step
     if args.controller_velocity_gain is not None:
         env_kwargs["controller_velocity_gain"] = args.controller_velocity_gain
     if args.controller_velocity_feedback_gain is not None:
@@ -1287,6 +1309,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["trajectory_match_reward_weight"] = args.trajectory_match_reward_weight
     if args.trajectory_error_penalty_weight is not None:
         env_kwargs["trajectory_error_penalty_weight"] = args.trajectory_error_penalty_weight
+    if args.reward_contact_quality_on_any_upward_contact:
+        env_kwargs["reward_contact_quality_on_any_upward_contact"] = True
     if args.next_intercept_max_time is not None:
         env_kwargs["next_intercept_max_time"] = args.next_intercept_max_time
     if args.include_velocity_domain_observation:

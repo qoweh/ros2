@@ -216,21 +216,19 @@
                       <geom mesh="hand_4" material="off_white" class="visual"/>
                       <geom mesh="hand_c" class="collision"/>
                       <body name="racket" pos="0.005 0 0.1">
-                        <geom name="racket_handle_core" type="capsule" fromto="-0.035 0 0 0.03 0 0" size="0.0105"
+                        <geom name="racket_handle_core" type="capsule" fromto="-0.035 0 0 0.09 0 0" size="0.0105"
                           rgba="0.44 0.29 0.14 1" contype="0" conaffinity="0"/>
-                        <geom name="racket_handle_grip" type="capsule" fromto="-0.025 0 0 0.015 0 0" size="0.0135"
+                        <geom name="racket_handle_grip" type="capsule" fromto="-0.035 0 0 0.045 0 0" size="0.0135"
                           rgba="0.08 0.08 0.08 1" contype="0" conaffinity="0"/>
-                        <geom name="racket_neck" type="box" size="0.018 0.028 0.008" pos="0.045 0 0"
-                          rgba="0.83 0.76 0.6 1" contype="0" conaffinity="0"/>
-                        <geom name="racket_head" type="cylinder" size="0.084 0.006" pos="0.12 0 0"
+                        <geom name="racket_head" type="cylinder" size="0.084 0.006" pos="0.16 0 0"
                           contype="1" conaffinity="1"
                           mass="0.11" rgba="0.84 0.14 0.12 1" friction="0.22 0.001 0.0001"
                           solref="0.002 1" solimp="0.95 0.99 0.001"/>
-                        <geom name="racket_head_back" type="cylinder" size="0.079 0.0025" pos="0.12 0 -0.0036"
+                        <geom name="racket_head_back" type="cylinder" size="0.079 0.0025" pos="0.16 0 -0.0036"
                           rgba="0.11 0.11 0.11 1" contype="0" conaffinity="0"/>
-                        <geom name="racket_rim" type="cylinder" size="0.09 0.0045" pos="0.12 0 0"
+                        <geom name="racket_rim" type="cylinder" size="0.09 0.0045" pos="0.16 0 0"
                           rgba="0.86 0.8 0.67 1" contype="0" conaffinity="0"/>
-                        <site name="racket_center" pos="0.12 0 0" size="0.004" rgba="0 0 0 0"/>
+                        <site name="racket_center" pos="0.16 0 0" size="0.004" rgba="0 0 0 0"/>
                       </body>
                       <body name="left_finger" pos="0 0 0.0555">
                         <inertial mass="0.015" pos="0 0 0" diaginertia="2.375e-6 2.375e-6 7.5e-7"/>

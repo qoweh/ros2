@@ -33,7 +33,7 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
             outward_env.sim.racket_position[:2] - outward_env.sim.data.xpos[outward_hand_id][:2]
         )
 
-        self.assertGreater(outward_hand_distance, default_hand_distance + 0.04)
+        self.assertGreater(outward_hand_distance, default_hand_distance + 0.015)
         self.assertTrue(outward_env.training_config()["scene_path"].endswith("scene_racket_outward.xml"))
 
     def test_step_info_exposes_controller_anchor_position(self) -> None:

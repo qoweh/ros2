@@ -60,3 +60,5 @@
   - 낮은 타격, 가까운 공에서 팔 회피 실패, 먼 공 회복 실패를 겨냥해 body-clearance/nullspace, strike hold window, velocity primitive 강화, side-sweep contact gate를 구현한 보고서
 - `28_outward_racket_scene_and_state_tilt_report.md`
   - 라켓을 손에서 더 바깥쪽으로 뺀 scene variant, `scene_path` 저장/복원, 고정 pitch 제거와 상태 기반 tilt 중심 self-rally preset 변경을 정리한 보고서
+- `29_v4_tilt_timing_and_contact_quality_fix.md`
+  - `pmk_cf_self_rally_v4`가 useful bounce 0에 머문 원인을 contact 분석으로 분리하고, tilt ramp/자세 추종/z 타격/strict success 전 shaping reward 보강을 정리한 보고서
