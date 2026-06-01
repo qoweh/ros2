@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
         "--action-mode",
         type=str,
         default="position_strike",
-        choices=("position_strike", "position_strike_tilt", "position_strike_tilt_lift"),
+        choices=("position_strike", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"),
     )
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=211)

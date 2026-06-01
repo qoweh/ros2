@@ -144,6 +144,18 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "include_contact_context_observation": True,
         "include_next_intercept_observation": True,
     },
+    "contact_frame_candidate": {
+        "action_mode": "position_contact_frame",
+        "tilt_profile": "early",
+        "strike_tilt_ramp_pitch": -0.06,
+        "strike_tilt_ramp_xy_tolerance": 0.04,
+        "followup_strike_target_tilt": (-0.06, 0.0),
+        "post_contact_return_assist_weight": 0.5,
+        "post_contact_return_max_intercept_time": 0.6,
+        "include_task_phase_observation": True,
+        "include_contact_context_observation": True,
+        "include_next_intercept_observation": True,
+    },
 }
 
 _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
@@ -279,7 +291,14 @@ def parse_args() -> argparse.Namespace:
         "--action-mode",
         type=str,
         default="position",
-        choices=("position", "position_strike", "position_tilt", "position_strike_tilt", "position_strike_tilt_lift"),
+        choices=(
+            "position",
+            "position_strike",
+            "position_tilt",
+            "position_strike_tilt",
+            "position_strike_tilt_lift",
+            "position_contact_frame",
+        ),
     )
     parser.add_argument(
         "--tilt-profile",
@@ -521,7 +540,7 @@ def build_checkpoint_dir(run_dir: Path) -> Path:
 
 
 def resolve_tilt_profile(args: argparse.Namespace) -> str:
-    if args.action_mode not in ("position_tilt", "position_strike_tilt", "position_strike_tilt_lift"):
+    if args.action_mode not in ("position_tilt", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"):
         if args.tracking_during_contact_scale is None:
             args.tracking_during_contact_scale = 0.0
         return "disabled"
@@ -547,7 +566,7 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
 
 
 def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
-    if args.action_mode not in ("position_tilt", "position_strike_tilt", "position_strike_tilt_lift") or args.tilt_action_limit is None or args.target_tilt_limit is None:
+    if args.action_mode not in ("position_tilt", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame") or args.tilt_action_limit is None or args.target_tilt_limit is None:
         return None
     return float(args.tilt_action_limit / max(min(args.target_tilt_limit), 1.0e-6))
 
@@ -709,9 +728,9 @@ def collect_heuristic_bootstrap_dataset(
             "observations": np.empty((0, 0), dtype=np.float32),
             "actions": np.empty((0, 0), dtype=np.float32),
         }
-    if env_kwargs.get("action_mode") not in {"position_strike", "position_strike_tilt", "position_strike_tilt_lift"}:
+    if env_kwargs.get("action_mode") not in {"position_strike", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"}:
         raise ValueError(
-            "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', or 'position_strike_tilt_lift'."
+            "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', 'position_strike_tilt_lift', or 'position_contact_frame'."
         )
     if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
         raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")

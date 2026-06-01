@@ -93,12 +93,15 @@ class HeuristicKeepUpPolicy:
         return float(followup_lift_residual)
 
     def predict(self, env: PingPongKeepUpEnv) -> np.ndarray:
-        if env.action_mode not in ("position_strike", "position_strike_tilt", "position_strike_tilt_lift"):
+        if env.action_mode not in ("position_strike", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"):
             raise ValueError(
                 "HeuristicKeepUpPolicy requires a strike-contract action mode so it can steer the strike controller."
             )
 
-        base_target = env._strike_action_target_position(np.zeros(3, dtype=float))
+        if env.action_mode == "position_contact_frame":
+            base_target = env._contact_frame_action_target_position(np.zeros(3, dtype=float))
+        else:
+            base_target = env._strike_action_target_position(np.zeros(3, dtype=float))
         anchor_position = env._controller_anchor_position()
         desired_target = base_target.copy()
         phase_name = env._phase_name()
@@ -118,7 +121,19 @@ class HeuristicKeepUpPolicy:
 
         desired_target = desired_target + self._position_residual_for_phase(phase_name)
         desired_target = desired_target + self._state_dependent_strike_xy_residual(env, phase_name)
-        action = desired_target - base_target
+        world_delta = desired_target - base_target
+        if env.action_mode == "position_contact_frame":
+            radial, tangent, _ = env._contact_frame_basis_xy()
+            action = np.array(
+                [
+                    float(np.dot(world_delta[:2], radial)),
+                    float(np.dot(world_delta[:2], tangent)),
+                    float(world_delta[2]),
+                ],
+                dtype=float,
+            )
+        else:
+            action = world_delta
         if env.action_mode == "position_strike_tilt":
             tilt_residual = self._tilt_residual_for_phase(phase_name)
             action = np.concatenate([action, tilt_residual])
@@ -126,4 +141,7 @@ class HeuristicKeepUpPolicy:
             tilt_residual = self._tilt_residual_for_phase(phase_name)
             followup_lift_residual = np.array([self._followup_lift_residual_for_phase(phase_name)], dtype=float)
             action = np.concatenate([action, tilt_residual, followup_lift_residual])
+        elif env.action_mode == "position_contact_frame":
+            tilt_residual = self._tilt_residual_for_phase(phase_name)
+            action = np.concatenate([action, tilt_residual])
         return np.clip(action, env.action_low, env.action_high)

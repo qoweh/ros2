@@ -4,6 +4,7 @@ import unittest
 
 import numpy as np
 
+from pingpong_rl2.controllers import HeuristicKeepUpPolicy
 from pingpong_rl2.envs import PingPongKeepUpEnv, PingPongKeepUpGymEnv
 
 
@@ -538,6 +539,8 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         success_reason = env._success_reason(
             failure_reason=None,
             contact_trace={
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
                 "contact_ball_velocity_z": 4.0,
                 "contact_racket_velocity_z": 0.2,
                 "contact_xy_alignment_error": env.contact_centering_radius - 0.01,
@@ -582,6 +585,39 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         observation, _ = env.reset(seed=7)
         self.assertEqual(observation.shape, env.observation_space.shape)
         self.assertEqual(env.action_space.shape, (3,))
+
+    def test_position_contact_frame_mode_exposes_tilt_state(self) -> None:
+        env = PingPongKeepUpEnv(action_mode="position_contact_frame", reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        observation, _ = env.reset()
+        self.assertEqual(env.action_size, 5)
+        self.assertIn("racket_face_normal", env.observation_slices)
+        self.assertIn("target_tilt", env.observation_slices)
+        self.assertEqual(observation.shape, (env.observation_size,))
+
+    def test_contact_frame_radial_action_moves_target_toward_anchor(self) -> None:
+        env = PingPongKeepUpEnv(action_mode="position_contact_frame", reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        ball_position = anchor_position + np.array([0.04, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        base_target = env._contact_frame_action_target_position(np.zeros(3, dtype=float))
+        radial_target = env._contact_frame_action_target_position(np.array([0.02, 0.0, 0.0], dtype=float))
+        self.assertLess(float(radial_target[0]), float(base_target[0]))
+        self.assertAlmostEqual(float(radial_target[1]), float(base_target[1]))
+
+    def test_heuristic_policy_supports_contact_frame_mode(self) -> None:
+        env = PingPongKeepUpEnv(action_mode="position_contact_frame", reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        env.reset(ball_height=env.ball_height)
+        action = HeuristicKeepUpPolicy().predict(env)
+        self.assertEqual(action.shape, (env.action_size,))
+        self.assertTrue(np.all(action <= env.action_high + 1.0e-9))
+        self.assertTrue(np.all(action >= env.action_low - 1.0e-9))
+
+    def test_gym_wrapper_exposes_position_contact_frame_spaces(self) -> None:
+        env = PingPongKeepUpGymEnv(action_mode="position_contact_frame", reset_xy_range=0.0)
+        observation, _ = env.reset(seed=7)
+        self.assertEqual(observation.shape, env.observation_space.shape)
+        self.assertEqual(env.action_space.shape, (5,))
 
 
 if __name__ == "__main__":
