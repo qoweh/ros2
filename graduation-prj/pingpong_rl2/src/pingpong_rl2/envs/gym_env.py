@@ -7,6 +7,11 @@ from gymnasium import spaces
 from pingpong_rl2.envs.keepup_env import PingPongKeepUpEnv
 
 
+def _vector_safe_info(info: dict[str, object]) -> dict[str, object]:
+    """Drop absent optional values so Gymnasium vector env can mask them."""
+    return {key: value for key, value in info.items() if value is not None}
+
+
 class PingPongKeepUpGymEnv(gym.Env[np.ndarray, np.ndarray]):
     metadata = {"render_modes": []}
 
@@ -41,11 +46,11 @@ class PingPongKeepUpGymEnv(gym.Env[np.ndarray, np.ndarray]):
             ball_velocity=options.get("ball_velocity"),
             ball_xy_offset=options.get("ball_xy_offset"),
         )
-        return observation.astype(np.float32, copy=False), info
+        return observation.astype(np.float32, copy=False), _vector_safe_info(info)
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, object]]:
         observation, reward, terminated, truncated, info = self.base_env.step(action)
-        return observation.astype(np.float32, copy=False), reward, terminated, truncated, info
+        return observation.astype(np.float32, copy=False), reward, terminated, truncated, _vector_safe_info(info)
 
     def training_config(self) -> dict[str, object]:
         return self.base_env.training_config()

@@ -1104,6 +1104,7 @@ def main() -> None:
                         "racket_velocity_x": info.get("contact_racket_velocity_x"),
                         "racket_velocity_y": info.get("contact_racket_velocity_y"),
                         "racket_velocity_z": info.get("contact_racket_velocity_z"),
+                        "racket_lateral_speed": info.get("contact_racket_lateral_speed"),
                         "racket_speed_norm": info.get("contact_racket_speed_norm"),
                         "target_velocity_x": (
                             None if info.get("target_velocity") is None else float(info["target_velocity"][0])
@@ -1130,6 +1131,8 @@ def main() -> None:
                             else float(info["contact_frame_intercept_velocity_target"][2])
                         ),
                         "contact_frame_planner_active": info.get("contact_frame_planner_active"),
+                        "contact_frame_strike_hold_active": info.get("contact_frame_strike_hold_active"),
+                        "controller_body_clearance_active": info.get("controller_body_clearance_active"),
                         "contact_frame_planner_intercept_time": info.get("contact_frame_planner_intercept_time"),
                         "contact_frame_planner_contact_x": (
                             None

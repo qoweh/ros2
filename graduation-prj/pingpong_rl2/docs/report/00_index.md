@@ -54,3 +54,7 @@
   - DeepMind/table-tennis 연구에서 참고한 계층적 skill 구조를 keep-up에 맞게 적용하고, fixed planner / primitive base strike / residual-only RL / strict reward-success 구현을 정리한 보고서
 - `25_cleanup_and_self_rally_status.md`
   - artifacts 정리 결과, `pmk_cf_self_rally_v1`이 150k에서 early-stop된 이유, checkpoint/TensorBoard 설명, 안정적 self-rally를 위한 다음 학습 기준을 정리한 보고서
+- `26_learning_runtime_parallel_and_v2_diagnosis.md`
+  - `pmk_cf_self_rally_v2` 2M 학습 상태, 병렬 PPO/ MuJoCo runtime 로그 해석, checkpoint 비활성화 판단, 안정적 self-rally 실패 원인을 정리한 보고서
+- `27_self_rally_execution_stabilization_report.md`
+  - 낮은 타격, 가까운 공에서 팔 회피 실패, 먼 공 회복 실패를 겨냥해 body-clearance/nullspace, strike hold window, velocity primitive 강화, side-sweep contact gate를 구현한 보고서

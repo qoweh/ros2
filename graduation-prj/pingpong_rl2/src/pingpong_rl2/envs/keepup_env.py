@@ -229,6 +229,8 @@ class PingPongKeepUpEnv:
         contact_frame_planner_min_intercept_time: float = 0.03,
         contact_frame_planner_max_intercept_time: float = 0.60,
         contact_frame_planner_target_apex_z_offset: float = 0.0,
+        contact_frame_strike_hold_time: float = 0.0,
+        contact_frame_strike_hold_min_readiness: float = 0.65,
         contact_frame_followthrough_gain: float = 0.0,
         contact_frame_followthrough_time: float = 0.06,
         contact_frame_followthrough_max: float = 0.0,
@@ -242,6 +244,9 @@ class PingPongKeepUpEnv:
         next_intercept_xy_error_penalty_weight: float = 0.0,
         post_contact_lateral_velocity_penalty_weight: float = 0.0,
         contact_xy_error_penalty_weight: float = 0.0,
+        contact_racket_lateral_velocity_penalty_weight: float = 0.0,
+        contact_racket_lateral_velocity_tolerance: float = 0.20,
+        max_contact_racket_lateral_speed_for_success: float | None = None,
         nonuseful_contact_penalty_weight: float = 0.0,
     ) -> None:
         self.sim = PingPongSim() if sim is None else sim
@@ -391,6 +396,8 @@ class PingPongKeepUpEnv:
         self.contact_frame_planner_min_intercept_time = float(contact_frame_planner_min_intercept_time)
         self.contact_frame_planner_max_intercept_time = float(contact_frame_planner_max_intercept_time)
         self.contact_frame_planner_target_apex_z_offset = float(contact_frame_planner_target_apex_z_offset)
+        self.contact_frame_strike_hold_time = float(contact_frame_strike_hold_time)
+        self.contact_frame_strike_hold_min_readiness = float(contact_frame_strike_hold_min_readiness)
         self.contact_frame_followthrough_gain = float(contact_frame_followthrough_gain)
         self.contact_frame_followthrough_time = float(contact_frame_followthrough_time)
         self.contact_frame_followthrough_max = float(contact_frame_followthrough_max)
@@ -414,6 +421,13 @@ class PingPongKeepUpEnv:
         self.next_intercept_xy_error_penalty_weight = float(next_intercept_xy_error_penalty_weight)
         self.post_contact_lateral_velocity_penalty_weight = float(post_contact_lateral_velocity_penalty_weight)
         self.contact_xy_error_penalty_weight = float(contact_xy_error_penalty_weight)
+        self.contact_racket_lateral_velocity_penalty_weight = float(contact_racket_lateral_velocity_penalty_weight)
+        self.contact_racket_lateral_velocity_tolerance = float(contact_racket_lateral_velocity_tolerance)
+        self.max_contact_racket_lateral_speed_for_success = (
+            None
+            if max_contact_racket_lateral_speed_for_success is None
+            else float(max_contact_racket_lateral_speed_for_success)
+        )
         self.nonuseful_contact_penalty_weight = float(nonuseful_contact_penalty_weight)
         if self.action_mode not in _ACTION_MODES:
             raise ValueError(f"action_mode must be one of {_ACTION_MODES}, got {self.action_mode!r}.")
@@ -733,6 +747,15 @@ class PingPongKeepUpEnv:
                 "contact_frame_planner_target_apex_z_offset must be finite, got "
                 f"{self.contact_frame_planner_target_apex_z_offset}."
             )
+        if self.contact_frame_strike_hold_time < 0.0:
+            raise ValueError(
+                f"contact_frame_strike_hold_time must be non-negative, got {self.contact_frame_strike_hold_time}."
+            )
+        if not 0.0 <= self.contact_frame_strike_hold_min_readiness <= 1.0:
+            raise ValueError(
+                "contact_frame_strike_hold_min_readiness must be within [0, 1], got "
+                f"{self.contact_frame_strike_hold_min_readiness}."
+            )
         if self.contact_frame_followthrough_gain < 0.0:
             raise ValueError(
                 "contact_frame_followthrough_gain must be non-negative, got "
@@ -824,6 +847,24 @@ class PingPongKeepUpEnv:
         if self.contact_xy_error_penalty_weight < 0.0:
             raise ValueError(
                 f"contact_xy_error_penalty_weight must be non-negative, got {self.contact_xy_error_penalty_weight}."
+            )
+        if self.contact_racket_lateral_velocity_penalty_weight < 0.0:
+            raise ValueError(
+                "contact_racket_lateral_velocity_penalty_weight must be non-negative, got "
+                f"{self.contact_racket_lateral_velocity_penalty_weight}."
+            )
+        if self.contact_racket_lateral_velocity_tolerance <= 0.0:
+            raise ValueError(
+                "contact_racket_lateral_velocity_tolerance must be positive, got "
+                f"{self.contact_racket_lateral_velocity_tolerance}."
+            )
+        if (
+            self.max_contact_racket_lateral_speed_for_success is not None
+            and self.max_contact_racket_lateral_speed_for_success <= 0.0
+        ):
+            raise ValueError(
+                "max_contact_racket_lateral_speed_for_success must be positive when provided, got "
+                f"{self.max_contact_racket_lateral_speed_for_success}."
             )
         if self.nonuseful_contact_penalty_weight < 0.0:
             raise ValueError(
@@ -1155,6 +1196,8 @@ class PingPongKeepUpEnv:
             "contact_frame_velocity_target": self.controller.target_velocity,
             "contact_frame_intercept_velocity_target": contact_frame_intercept_velocity_target,
             "contact_frame_planner_active": self._contact_frame_plan_active,
+            "contact_frame_strike_hold_active": self._contact_frame_strike_hold_active,
+            "controller_body_clearance_active": self._controller_body_clearance_active(),
             "contact_frame_planner_contact_position": (
                 self._contact_frame_plan_contact_position.copy() if self._contact_frame_plan_active else None
             ),
@@ -1244,6 +1287,7 @@ class PingPongKeepUpEnv:
             "contact_ball_speed_norm": contact_trace.get("contact_ball_speed_norm"),
             "contact_racket_velocity_x": contact_trace.get("contact_racket_velocity_x"),
             "contact_racket_velocity_y": contact_trace.get("contact_racket_velocity_y"),
+            "contact_racket_lateral_speed": self._contact_racket_lateral_speed(contact_trace),
             "racket_velocity_z": float(self.sim.racket_velocity[2]),
             "contact_ball_velocity_z": contact_trace.get("contact_ball_velocity_z"),
             "contact_racket_velocity_z": contact_trace.get("contact_racket_velocity_z"),
@@ -1373,6 +1417,8 @@ class PingPongKeepUpEnv:
             "contact_frame_planner_min_intercept_time": self.contact_frame_planner_min_intercept_time,
             "contact_frame_planner_max_intercept_time": self.contact_frame_planner_max_intercept_time,
             "contact_frame_planner_target_apex_z_offset": self.contact_frame_planner_target_apex_z_offset,
+            "contact_frame_strike_hold_time": self.contact_frame_strike_hold_time,
+            "contact_frame_strike_hold_min_readiness": self.contact_frame_strike_hold_min_readiness,
             "contact_frame_followthrough_gain": self.contact_frame_followthrough_gain,
             "contact_frame_followthrough_time": self.contact_frame_followthrough_time,
             "contact_frame_followthrough_max": self.contact_frame_followthrough_max,
@@ -1394,6 +1440,9 @@ class PingPongKeepUpEnv:
             "next_intercept_xy_error_penalty_weight": self.next_intercept_xy_error_penalty_weight,
             "post_contact_lateral_velocity_penalty_weight": self.post_contact_lateral_velocity_penalty_weight,
             "contact_xy_error_penalty_weight": self.contact_xy_error_penalty_weight,
+            "contact_racket_lateral_velocity_penalty_weight": self.contact_racket_lateral_velocity_penalty_weight,
+            "contact_racket_lateral_velocity_tolerance": self.contact_racket_lateral_velocity_tolerance,
+            "max_contact_racket_lateral_speed_for_success": self.max_contact_racket_lateral_speed_for_success,
             "nonuseful_contact_penalty_weight": self.nonuseful_contact_penalty_weight,
         }
 
@@ -1402,6 +1451,7 @@ class PingPongKeepUpEnv:
 
     def _reset_contact_frame_plan(self) -> None:
         self._contact_frame_plan_active = False
+        self._contact_frame_strike_hold_active = False
         self._contact_frame_plan_intercept_time = 0.0
         self._contact_frame_plan_contact_position = np.zeros(3, dtype=float)
         self._contact_frame_plan_target_xy = np.zeros(2, dtype=float)
@@ -1444,6 +1494,7 @@ class PingPongKeepUpEnv:
             self._reset_contact_frame_plan()
             return
 
+        was_strike_hold_active = self._contact_frame_strike_hold_active
         if not self._contact_frame_plan_active or not self.contact_frame_planner_hold_during_descent:
             self._contact_frame_plan_target_xy = self._keepup_target_xy()
             self._contact_frame_plan_target_apex_z = float(
@@ -1451,6 +1502,18 @@ class PingPongKeepUpEnv:
                 + self._target_ball_height_above_racket()
                 + self.contact_frame_planner_target_apex_z_offset
             )
+            self._contact_frame_strike_hold_active = False
+        if (
+            not self._contact_frame_strike_hold_active
+            and self.contact_frame_strike_hold_time > 0.0
+            and intercept_time <= self.contact_frame_strike_hold_time
+            and self._pre_contact_readiness() >= self.contact_frame_strike_hold_min_readiness
+        ):
+            self._contact_frame_strike_hold_active = True
+
+        if was_strike_hold_active:
+            contact_position = self._contact_frame_plan_contact_position.copy()
+
         desired_velocity, desired_time_to_apex, _ = self._desired_outgoing_velocity(
             contact_position,
             target_xy=self._contact_frame_plan_target_xy,
@@ -1507,6 +1570,15 @@ class PingPongKeepUpEnv:
         if x_value is None or y_value is None or z_value is None:
             return None
         return np.array([float(x_value), float(y_value), float(z_value)], dtype=float)
+
+    def _contact_racket_lateral_speed(self, contact_trace: dict[str, object] | None) -> float:
+        if contact_trace is None:
+            return float(np.linalg.norm(self.sim.racket_velocity[:2]))
+        velocity_x = contact_trace.get("contact_racket_velocity_x")
+        velocity_y = contact_trace.get("contact_racket_velocity_y")
+        if velocity_x is None or velocity_y is None:
+            return float(np.linalg.norm(self.sim.racket_velocity[:2]))
+        return float(np.linalg.norm(np.array([float(velocity_x), float(velocity_y)], dtype=float)))
 
     def _resolved_outgoing_ball_velocity(self, contact_trace: dict[str, object] | None) -> tuple[np.ndarray | None, str | None]:
         if contact_trace is None:
@@ -2164,6 +2236,9 @@ class PingPongKeepUpEnv:
             return None
         if contact_xy_alignment_error > self.contact_centering_radius:
             return None
+        if self.max_contact_racket_lateral_speed_for_success is not None:
+            if self._contact_racket_lateral_speed(contact_trace) > self.max_contact_racket_lateral_speed_for_success:
+                return None
         projected_apex_height = self._projected_contact_apex_height_above_racket(contact_trace)
         target_apex_height = self._target_ball_height_above_racket()
         if projected_apex_height + 1.0e-6 < target_apex_height:
@@ -2204,6 +2279,7 @@ class PingPongKeepUpEnv:
             "next_intercept_xy_error_penalty": 0.0,
             "post_contact_lateral_velocity_penalty": 0.0,
             "contact_xy_error_penalty": 0.0,
+            "contact_racket_lateral_velocity_penalty": 0.0,
             "nonuseful_contact_penalty": 0.0,
             "outgoing_x_term": 0.0,
             "failure_penalty": 0.0,
@@ -2281,6 +2357,16 @@ class PingPongKeepUpEnv:
                     )
                     reward_terms["contact_xy_error_penalty"] = (
                         -self.contact_xy_error_penalty_weight * normalized_contact_error
+                    )
+                if self.contact_racket_lateral_velocity_penalty_weight > 0.0:
+                    lateral_speed = self._contact_racket_lateral_speed(contact_trace)
+                    excess_lateral_speed = max(lateral_speed - self.contact_racket_lateral_velocity_tolerance, 0.0)
+                    normalized_lateral_speed = min(
+                        excess_lateral_speed / max(self.contact_racket_lateral_velocity_tolerance, 1.0e-6),
+                        4.0,
+                    )
+                    reward_terms["contact_racket_lateral_velocity_penalty"] = (
+                        -self.contact_racket_lateral_velocity_penalty_weight * normalized_lateral_speed
                     )
                 if success_reason is None and self.nonuseful_contact_penalty_weight > 0.0:
                     reward_terms["nonuseful_contact_penalty"] = -self.nonuseful_contact_penalty_weight
@@ -2717,6 +2803,8 @@ class PingPongKeepUpEnv:
         if self.action_mode != "position_contact_frame":
             return np.zeros(3, dtype=float)
         intercept_velocity = self._contact_frame_intercept_velocity_target(target_position)
+        if self._contact_frame_strike_hold_active:
+            intercept_velocity = np.zeros(3, dtype=float)
         if self.contact_frame_velocity_target_gain <= 0.0 or self.contact_frame_velocity_target_max <= 0.0:
             return intercept_velocity
         if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
@@ -2949,9 +3037,13 @@ class PingPongKeepUpEnv:
             return False
         if float(self.sim.ball_velocity[2]) < self.descending_ball_velocity_threshold:
             return True
-        if self.successful_bounce_count <= 0:
+        if self.contact_count <= 0 and self._last_contact_step is None:
             return False
-        return self._ball_height_above_racket() <= self._target_ball_height_above_racket()
+        time_since_contact = self._time_since_contact()
+        if time_since_contact is not None and time_since_contact > self.next_intercept_max_time:
+            return False
+        clearance_height = self._target_ball_height_above_racket() + self.controller_body_clearance_vertical_margin
+        return self._ball_height_above_racket() <= clearance_height
 
     def _body_safe_target_position(self, target_position: Sequence[float]) -> np.ndarray:
         safe_target = np.asarray(target_position, dtype=float).copy()

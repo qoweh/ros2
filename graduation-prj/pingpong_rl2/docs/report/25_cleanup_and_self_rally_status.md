@@ -2,6 +2,8 @@
 
 작성일: 2026-06-01
 
+최신 `pmk_cf_self_rally_v2` 2M 학습 결과, 병렬 PPO 로그 해석, checkpoint 비활성화, 현재 실패 원인은 `26_learning_runtime_parallel_and_v2_diagnosis.md`를 우선 참고한다. 이 문서는 직전 artifact 정리와 `v1` 기준 상태를 남긴 기록이다.
+
 ## Artifact 정리
 
 정리 전 `artifacts`는 약 221MB였다. 발표/비교용 모델만 남기는 기준으로 정리했다.
@@ -31,7 +33,8 @@ checkpoint는 중간 모델을 되돌리거나 best checkpoint를 뽑기 위한 
 새 self-rally preset은 checkpoint overhead를 줄이도록 바꿨다.
 
 - 기존: 10k마다 50 episode 평가, early-stop 4회
-- 변경: 50k마다 20 episode 평가, early-stop 끔
+- 중간 변경: 50k마다 20 episode 평가, early-stop 끔
+- 최신 변경: 기본 checkpoint 끔. 필요할 때만 `--checkpoint-interval`을 명시한다.
 
 ## TensorBoard event 파일
 

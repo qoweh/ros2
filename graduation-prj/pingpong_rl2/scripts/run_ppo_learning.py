@@ -292,22 +292,38 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     **_ENV_PRESETS["contact_frame_planned_intercept_candidate"],
     "n_envs": 4,
     "batch_size": 512,
-    "checkpoint_interval": 50_000,
+    "checkpoint_interval": 0,
     "checkpoint_eval_episodes": 20,
     "early_stop_patience_evals": 0,
     "target_ball_height": 0.25,
     "lateral_action_limit": 0.02,
     "vertical_action_limit": 0.025,
     "tilt_action_limit": 0.01,
+    "target_tilt_limit": (0.09, 0.09),
+    "controller_velocity_feedback_gain": 0.25,
+    "controller_max_velocity_step": 0.03,
+    "controller_nullspace_posture_gain": 0.20,
+    "controller_nullspace_posture_max_step": 0.010,
+    "controller_body_clearance_gain": 0.75,
+    "controller_body_clearance_margin": 0.14,
+    "controller_body_clearance_vertical_margin": 0.32,
+    "controller_body_clearance_max_step": 0.018,
+    "controller_body_clearance_body_names": ("link5", "link6"),
     "contact_frame_planner_enabled": True,
     "contact_frame_planner_hold_during_descent": True,
     "contact_frame_planner_min_intercept_time": 0.03,
     "contact_frame_planner_max_intercept_time": 0.60,
-    "contact_frame_velocity_target_gain": 0.35,
-    "contact_frame_velocity_target_max": 1.2,
+    "contact_frame_strike_hold_time": 0.05,
+    "contact_frame_strike_hold_min_readiness": 0.60,
+    "contact_frame_apex_lift_gain": 0.05,
+    "contact_frame_apex_lift_max": 0.025,
+    "contact_frame_velocity_lead_gain": 0.04,
+    "contact_frame_velocity_lead_max": 0.025,
+    "contact_frame_velocity_target_gain": 0.65,
+    "contact_frame_velocity_target_max": 1.6,
     "contact_frame_trajectory_tilt_gain": 1.0,
-    "contact_frame_trajectory_tilt_limit": (0.035, 0.035),
-    "contact_frame_centering_tilt_limit": (0.025, 0.035),
+    "contact_frame_trajectory_tilt_limit": (0.05, 0.05),
+    "contact_frame_centering_tilt_limit": (0.035, 0.045),
     "contact_frame_centering_tilt_radius": 0.08,
     "contact_frame_centering_tilt_deadband": 0.008,
     "require_reachable_next_intercept_for_success": True,
@@ -317,6 +333,9 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "next_intercept_xy_error_penalty_weight": 0.75,
     "post_contact_lateral_velocity_penalty_weight": 0.30,
     "contact_xy_error_penalty_weight": 0.25,
+    "contact_racket_lateral_velocity_penalty_weight": 0.25,
+    "contact_racket_lateral_velocity_tolerance": 0.18,
+    "max_contact_racket_lateral_speed_for_success": 0.45,
     "nonuseful_contact_penalty_weight": 1.0,
     "trajectory_error_penalty_weight": 0.25,
     "bootstrap_heuristic_episodes": 0,
@@ -453,6 +472,8 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_planner_min_intercept_time": None,
     "contact_frame_planner_max_intercept_time": None,
     "contact_frame_planner_target_apex_z_offset": None,
+    "contact_frame_strike_hold_time": None,
+    "contact_frame_strike_hold_min_readiness": None,
     "contact_frame_followthrough_gain": None,
     "contact_frame_followthrough_time": None,
     "contact_frame_followthrough_max": None,
@@ -479,6 +500,9 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "next_intercept_xy_error_penalty_weight": None,
     "post_contact_lateral_velocity_penalty_weight": None,
     "contact_xy_error_penalty_weight": None,
+    "contact_racket_lateral_velocity_penalty_weight": None,
+    "contact_racket_lateral_velocity_tolerance": None,
+    "max_contact_racket_lateral_speed_for_success": None,
     "nonuseful_contact_penalty_weight": None,
     "log_std_init": None,
     "zero_init_action_mean": False,
@@ -774,6 +798,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-planner-min-intercept-time", type=float, default=None)
     parser.add_argument("--contact-frame-planner-max-intercept-time", type=float, default=None)
     parser.add_argument("--contact-frame-planner-target-apex-z-offset", type=float, default=None)
+    parser.add_argument("--contact-frame-strike-hold-time", type=float, default=None)
+    parser.add_argument("--contact-frame-strike-hold-min-readiness", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-gain", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-time", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-max", type=float, default=None)
@@ -822,6 +848,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--next-intercept-xy-error-penalty-weight", type=float, default=None)
     parser.add_argument("--post-contact-lateral-velocity-penalty-weight", type=float, default=None)
     parser.add_argument("--contact-xy-error-penalty-weight", type=float, default=None)
+    parser.add_argument("--contact-racket-lateral-velocity-penalty-weight", type=float, default=None)
+    parser.add_argument("--contact-racket-lateral-velocity-tolerance", type=float, default=None)
+    parser.add_argument("--max-contact-racket-lateral-speed-for-success", type=float, default=None)
     parser.add_argument("--nonuseful-contact-penalty-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
@@ -1150,6 +1179,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_planner_max_intercept_time"] = args.contact_frame_planner_max_intercept_time
     if args.contact_frame_planner_target_apex_z_offset is not None:
         env_kwargs["contact_frame_planner_target_apex_z_offset"] = args.contact_frame_planner_target_apex_z_offset
+    if args.contact_frame_strike_hold_time is not None:
+        env_kwargs["contact_frame_strike_hold_time"] = args.contact_frame_strike_hold_time
+    if args.contact_frame_strike_hold_min_readiness is not None:
+        env_kwargs["contact_frame_strike_hold_min_readiness"] = args.contact_frame_strike_hold_min_readiness
     if args.contact_frame_followthrough_gain is not None:
         env_kwargs["contact_frame_followthrough_gain"] = args.contact_frame_followthrough_gain
     if args.contact_frame_followthrough_time is not None:
@@ -1200,6 +1233,16 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         )
     if args.contact_xy_error_penalty_weight is not None:
         env_kwargs["contact_xy_error_penalty_weight"] = args.contact_xy_error_penalty_weight
+    if args.contact_racket_lateral_velocity_penalty_weight is not None:
+        env_kwargs["contact_racket_lateral_velocity_penalty_weight"] = (
+            args.contact_racket_lateral_velocity_penalty_weight
+        )
+    if args.contact_racket_lateral_velocity_tolerance is not None:
+        env_kwargs["contact_racket_lateral_velocity_tolerance"] = args.contact_racket_lateral_velocity_tolerance
+    if args.max_contact_racket_lateral_speed_for_success is not None:
+        env_kwargs["max_contact_racket_lateral_speed_for_success"] = (
+            args.max_contact_racket_lateral_speed_for_success
+        )
     if args.nonuseful_contact_penalty_weight is not None:
         env_kwargs["nonuseful_contact_penalty_weight"] = args.nonuseful_contact_penalty_weight
     if args.post_contact_return_assist_weight is not None:
@@ -1502,9 +1545,19 @@ def save_periodic_checkpoints(
         raise ValueError(
             f"early-stop-patience-evals must be non-negative, got {early_stop_patience_evals}."
         )
+    if checkpoint_interval == 0:
+        completed_timesteps = 0
+        if total_timesteps > 0:
+            model.learn(
+                total_timesteps=total_timesteps,
+                progress_bar=False,
+                reset_num_timesteps=initial_reset_num_timesteps,
+            )
+            completed_timesteps = total_timesteps
+        return run_dir / "checkpoints", [], None, completed_timesteps, False
 
     checkpoint_dir = build_checkpoint_dir(run_dir)
-    effective_interval = total_timesteps if checkpoint_interval == 0 else checkpoint_interval
+    effective_interval = checkpoint_interval
     completed_timesteps = 0
     no_improvement_evals = 0
     stopped_early = False
