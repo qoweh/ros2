@@ -125,6 +125,88 @@ Interpretation:
 
 The contact-frame primitive passes the first scripted gate because it produced `max_useful_bounces >= 3` without a contact oracle. It is not stable enough yet. The next work should reduce failure modes and improve `three_or_more_useful_bounce_rate`, not abandon this primitive.
 
+## Residual-RL Follow-Up
+
+The contact-frame primitive was extended so that `position_contact_frame` can be used as a residual-RL action mode.
+
+New environment parameters:
+
+```text
+contact_frame_base_strike_z_boost
+contact_frame_base_strike_z_offset
+contact_frame_base_strike_time_horizon
+contact_frame_base_tilt_residual
+contact_frame_action_penalty_weight
+```
+
+The `contact_frame_candidate` PPO preset now uses:
+
+```text
+contact_frame_base_strike_z_boost = 0.024
+contact_frame_base_strike_z_offset = 0.01
+contact_frame_base_tilt_residual = (-0.02, 0.0)
+contact_frame_action_penalty_weight = 0.05
+post_contact_return_assist_weight = 0.8
+log_std_init = -3.0
+zero_init_action_mean = True
+```
+
+This means deterministic zero residual is no longer an empty action. It is the centered scripted contact-frame strike, and PPO learns residuals around it.
+
+Validation:
+
+```text
+PYTHONPATH=src conda run -n mujoco_env python -m unittest tests/test_keepup_env.py
+Ran 53 tests in 1.773s
+OK
+```
+
+Zero-residual manual baseline over 100 episodes:
+
+```text
+mean_useful_bounces = 0.83
+max_useful_bounces = 4
+one_or_more_useful_bounce_rate = 0.48
+two_or_more_useful_bounce_rate = 0.17
+three_or_more_useful_bounce_rate = 0.12
+failure_counts = {"ball_out_of_bounds": 77, "ball_speed_limit": 14, "floor_contact": 9}
+```
+
+PPO zero-initialized model with `total_timesteps=0`, 100 eval episodes:
+
+```text
+run = pmk_cf_zero_init_eval_v2
+mean_useful_bounces = 0.67
+max_useful_bounces = 4
+one_or_more_useful_bounce_rate = 0.40
+two_or_more_useful_bounce_rate = 0.16
+three_or_more_useful_bounce_rate = 0.07
+```
+
+Short PPO training, 20k timesteps, low learning rate:
+
+```text
+run = pmk_cf_zero_init_20k
+learning_rate = 0.00005
+mean_useful_bounces = 0.73
+max_useful_bounces = 2
+one_or_more_useful_bounce_rate = 0.56
+two_or_more_useful_bounce_rate = 0.17
+three_or_more_useful_bounce_rate = 0.00
+```
+
+Interpretation:
+
+The project now has a PPO-compatible policy/model path that can produce multiple keep-up bounces through residual action structure. However, PPO updates still tend to trade away rare `3+` episodes even when mean one-bounce performance improves. The next learning work should preserve the zero-residual baseline while allowing small residual improvements.
+
+Recommended next learning changes:
+
+- add an evaluation metric for `three_or_more_useful_bounce_rate` to checkpoint ranking,
+- use early stopping or model selection based on `max_useful_bounces` and `three_or_more_useful_bounce_rate`, not only mean/two-or-more rate,
+- try lower `clip_range` and/or lower learning rate before increasing timesteps,
+- consider an explicit KL/action-mean regularizer toward zero residual for early curriculum stages,
+- only broaden reset randomization after `3+` survives PPO updates.
+
 ## Required Next Diagnostic
 
 Run this inside the MuJoCo project environment:

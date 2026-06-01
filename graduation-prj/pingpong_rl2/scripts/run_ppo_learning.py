@@ -155,6 +155,7 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "contact_frame_base_tilt_residual": (-0.02, 0.0),
         "contact_frame_action_penalty_weight": 0.05,
         "log_std_init": -3.0,
+        "zero_init_action_mean": True,
         "post_contact_return_assist_weight": 0.8,
         "post_contact_return_max_intercept_time": 0.6,
         "include_task_phase_observation": True,
@@ -188,6 +189,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_base_tilt_residual": None,
     "contact_frame_action_penalty_weight": None,
     "log_std_init": None,
+    "zero_init_action_mean": False,
 }
 
 
@@ -498,6 +500,11 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional initial log std for PPO Gaussian actions. Useful for small residual action spaces.",
     )
+    parser.add_argument(
+        "--zero-init-action-mean",
+        action="store_true",
+        help="Initialize the PPO action mean head to zero for residual action spaces.",
+    )
     parser.add_argument("--smoke", action="store_true")
     return parser.parse_args()
 
@@ -719,6 +726,7 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
     bounce_array = np.asarray(useful_bounces, dtype=float)
     one_or_more_useful = int(np.count_nonzero(bounce_array >= 1.0)) if bounce_array.size else 0
     two_or_more_useful = int(np.count_nonzero(bounce_array >= 2.0)) if bounce_array.size else 0
+    three_or_more_useful = int(np.count_nonzero(bounce_array >= 3.0)) if bounce_array.size else 0
     ball_out_of_bounds_count = int(failure_counts.get("ball_out_of_bounds", 0))
     return {
         "episodes": episodes,
@@ -729,6 +737,8 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
         "one_or_more_useful_bounce_rate": (one_or_more_useful / episodes) if episodes > 0 else 0.0,
         "episodes_with_two_or_more_useful_bounces": two_or_more_useful,
         "two_or_more_useful_bounce_rate": (two_or_more_useful / episodes) if episodes > 0 else 0.0,
+        "episodes_with_three_or_more_useful_bounces": three_or_more_useful,
+        "three_or_more_useful_bounce_rate": (three_or_more_useful / episodes) if episodes > 0 else 0.0,
         "ball_out_of_bounds_rate": (ball_out_of_bounds_count / episodes) if episodes > 0 else 0.0,
         "failure_counts": dict(failure_counts),
     }
@@ -739,6 +749,7 @@ def evaluation_sort_key(evaluation: dict[str, object]) -> tuple[float, float, in
     if not isinstance(failure_counts, dict):
         failure_counts = {}
     return (
+        float(evaluation.get("three_or_more_useful_bounce_rate", 0.0)),
         float(evaluation.get("two_or_more_useful_bounce_rate", 0.0)),
         float(evaluation.get("mean_useful_bounces", 0.0)),
         int(evaluation.get("max_useful_bounces", 0)),
@@ -1039,6 +1050,9 @@ def main() -> None:
             device=args.device,
             policy_kwargs=policy_kwargs,
         )
+        if args.zero_init_action_mean:
+            th.nn.init.zeros_(model.policy.action_net.weight)
+            th.nn.init.zeros_(model.policy.action_net.bias)
     else:
         model = PPO.load(
             str(starting_checkpoint),
@@ -1160,6 +1174,7 @@ def main() -> None:
             "seed": args.seed,
             "device": args.device,
             "log_std_init": args.log_std_init,
+            "zero_init_action_mean": args.zero_init_action_mean,
             "checkpoint_interval": args.checkpoint_interval,
             "checkpoint_eval_episodes": args.checkpoint_eval_episodes,
             "early_stop_patience_evals": args.early_stop_patience_evals,
@@ -1224,7 +1239,8 @@ def main() -> None:
         f"mean_return={evaluation['mean_return']:.3f} "
         f"mean_useful_bounces={evaluation['mean_useful_bounces']:.3f} "
         f"max_useful_bounces={evaluation['max_useful_bounces']} "
-        f"two_or_more_rate={evaluation['two_or_more_useful_bounce_rate']:.3f}"
+        f"two_or_more_rate={evaluation['two_or_more_useful_bounce_rate']:.3f} "
+        f"three_or_more_rate={evaluation['three_or_more_useful_bounce_rate']:.3f}"
     )
 
 
