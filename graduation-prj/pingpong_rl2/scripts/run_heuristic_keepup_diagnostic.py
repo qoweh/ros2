@@ -38,6 +38,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Desired post-contact apex height above the racket. Defaults to --ball-height.",
     )
+    parser.add_argument(
+        "--keepup-target-xy-offset",
+        type=float,
+        nargs=2,
+        metavar=("X", "Y"),
+        default=(0.0, 0.0),
+    )
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--reset-xy-range", type=float, default=0.0)
     parser.add_argument("--reset-velocity-xy-range", type=float, default=0.0)
@@ -216,6 +223,7 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "action_mode": args.action_mode,
         "ball_height": args.ball_height,
         "target_ball_height": args.ball_height if args.target_ball_height is None else args.target_ball_height,
+        "keepup_target_xy_offset": tuple(args.keepup_target_xy_offset),
         "max_episode_steps": args.max_episode_steps,
         "reset_xy_range": args.reset_xy_range,
         "reset_velocity_xy_range": args.reset_velocity_xy_range,

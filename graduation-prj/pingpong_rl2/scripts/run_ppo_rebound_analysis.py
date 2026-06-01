@@ -60,6 +60,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--success-velocity-threshold", type=float, default=None)
     parser.add_argument(
+        "--keepup-target-xy-offset",
+        type=float,
+        nargs=2,
+        metavar=("X", "Y"),
+        default=None,
+        help="Override the repeat keep-up target XY offset from the controller anchor.",
+    )
+    parser.add_argument(
         "--post-contact-return-z-offset",
         type=float,
         default=None,
@@ -772,6 +780,8 @@ def main() -> None:
         env_kwargs["require_reachable_next_intercept_for_success"] = True
     if args.min_easy_next_ball_score_for_success is not None:
         env_kwargs["min_easy_next_ball_score_for_success"] = args.min_easy_next_ball_score_for_success
+    if args.keepup_target_xy_offset is not None:
+        env_kwargs["keepup_target_xy_offset"] = tuple(args.keepup_target_xy_offset)
     if args.post_contact_return_z_offset is not None:
         env_kwargs["post_contact_return_z_offset"] = args.post_contact_return_z_offset
     if args.contact_frame_velocity_target_gain is not None:

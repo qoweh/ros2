@@ -251,6 +251,11 @@ _ENV_PRESETS["contact_frame_recovery_roll_retract_bootstrap_candidate"] = {
     "post_contact_return_z_offset": -0.01,
 }
 
+_ENV_PRESETS["contact_frame_body_safe_offset_bootstrap_candidate"] = {
+    **_ENV_PRESETS["contact_frame_recovery_roll_retract_bootstrap_candidate"],
+    "keepup_target_xy_offset": (0.0, 0.03),
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -341,6 +346,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "include_next_intercept_observation": False,
     "include_desired_outgoing_velocity_observation": False,
     "desired_outgoing_xy_mode": "next_intercept",
+    "keepup_target_xy_offset": None,
     "trajectory_match_reward_weight": None,
     "trajectory_error_penalty_weight": None,
     "useful_contact_return_target_xy_reward_weight": None,
@@ -521,6 +527,14 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Desired post-contact apex height above the racket. Defaults to --ball-height for backward compatibility.",
+    )
+    parser.add_argument(
+        "--keepup-target-xy-offset",
+        type=float,
+        nargs=2,
+        metavar=("X", "Y"),
+        default=None,
+        help="Optional XY offset from the controller anchor for the repeat keep-up target.",
     )
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--reset-xy-range", type=float, default=DEFAULT_RESET_XY_RANGE)
@@ -899,6 +913,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["useful_contact_outgoing_x_penalty_weight"] = args.useful_contact_outgoing_x_penalty_weight
     if args.desired_outgoing_ball_velocity_x is not None:
         env_kwargs["desired_outgoing_ball_velocity_x"] = args.desired_outgoing_ball_velocity_x
+    if args.keepup_target_xy_offset is not None:
+        env_kwargs["keepup_target_xy_offset"] = tuple(args.keepup_target_xy_offset)
     if args.useful_contact_return_target_xy_reward_weight is not None:
         env_kwargs["useful_contact_return_target_xy_reward_weight"] = (
             args.useful_contact_return_target_xy_reward_weight

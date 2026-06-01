@@ -948,6 +948,7 @@ class PingPongKeepUpEnv:
             "phase_one_hot": self._phase_one_hot(),
             "time_since_contact": self._time_since_contact(),
             "controller_anchor_position": self._controller_anchor_position(),
+            "keepup_target_xy": self._keepup_target_xy(),
             "target_position": self.controller.target_position,
             "ball_height_above_racket": self._ball_height_above_racket(),
             "target_ball_height_above_racket": self._target_ball_height_above_racket(),
@@ -1429,6 +1430,7 @@ class PingPongKeepUpEnv:
 
     def _next_intercept_metrics(self) -> dict[str, object]:
         anchor_position = self._controller_anchor_position()
+        target_xy = self._keepup_target_xy()
         target_z = float(anchor_position[2] + self._tracking_strike_plane_offset())
         candidate_times = self._ballistic_intercept_times(target_z, max_intercept_time=self.next_intercept_max_time)
         descending_times = [
@@ -1462,7 +1464,7 @@ class PingPongKeepUpEnv:
             self.sim.ball_position[:2] + next_intercept_time * self.sim.ball_velocity[:2],
             dtype=float,
         )
-        anchor_xy_error = float(np.linalg.norm(next_intercept_xy - anchor_position[:2]))
+        anchor_xy_error = float(np.linalg.norm(next_intercept_xy - target_xy))
         recovery_distance = float(np.linalg.norm(next_intercept_xy - self.sim.racket_position[:2]))
         reachable = anchor_xy_error <= self.strike_zone_xy_radius
         recovery_speed_limit = max(self.controller_max_position_step / max(self.sim.control_dt, 1.0e-6), 1.0e-6)
@@ -1602,7 +1604,7 @@ class PingPongKeepUpEnv:
             else np.asarray(ball_position, dtype=float)
         )
         anchor_position = self._controller_anchor_position()
-        desired_target_xy = np.asarray(anchor_position[:2], dtype=float)
+        desired_target_xy = self._keepup_target_xy()
         target_apex_z = float(anchor_position[2] + self._target_ball_height_above_racket())
         gravity_magnitude = max(abs(self._gravity_z()), 1.0e-6)
         height_delta = max(target_apex_z - float(contact_ball_position[2]), _MIN_DESIRED_APEX_HEIGHT_DELTA)
@@ -1751,7 +1753,7 @@ class PingPongKeepUpEnv:
 
     def _return_target_xy(self) -> np.ndarray:
         if self.return_target_xy_source in ("controller_anchor", "racket_home"):
-            return np.asarray(self._controller_anchor_position()[:2], dtype=float)
+            return self._keepup_target_xy()
         if self.return_target_xy_source == "racket_position":
             return np.asarray(self.sim.racket_position[:2], dtype=float)
         return np.asarray(self.controller.target_position[:2], dtype=float)
@@ -2029,7 +2031,7 @@ class PingPongKeepUpEnv:
         if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
             return np.zeros(2, dtype=float)
 
-        correction_xy = self._controller_anchor_position()[:2] - self._predicted_intercept_xy()
+        correction_xy = self._keepup_target_xy() - self._predicted_intercept_xy()
         axis_active = np.abs(correction_xy) > self.strike_tilt_assist_deadband
         if not np.any(axis_active):
             return np.zeros(2, dtype=float)
@@ -2072,7 +2074,7 @@ class PingPongKeepUpEnv:
             return np.asarray(predicted_intercept_xy, dtype=float)
         if self.followup_strike_contact_offset_ratio <= 0.0 or self.followup_strike_contact_offset_max <= 0.0:
             return np.asarray(predicted_intercept_xy, dtype=float)
-        anchor_xy = np.asarray(self._controller_anchor_position()[:2], dtype=float)
+        anchor_xy = self._keepup_target_xy()
         correction_xy = anchor_xy - np.asarray(predicted_intercept_xy, dtype=float)
         correction_norm = float(np.linalg.norm(correction_xy))
         if correction_norm <= 1.0e-9:
@@ -2106,7 +2108,7 @@ class PingPongKeepUpEnv:
         return self._constrained_target_tilt(target_tilt)
 
     def _post_contact_return_target_xy(self) -> np.ndarray:
-        anchor_xy = np.asarray(self._controller_anchor_position()[:2], dtype=float)
+        anchor_xy = self._keepup_target_xy()
         if self.action_mode not in ("position_strike", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"):
             return anchor_xy
         if self.post_contact_return_assist_weight <= 0.0:
@@ -2151,7 +2153,7 @@ class PingPongKeepUpEnv:
 
     def _contact_frame_basis_xy(self) -> tuple[np.ndarray, np.ndarray, str]:
         predicted_intercept_xy = self._predicted_intercept_xy()
-        anchor_xy = np.asarray(self._controller_anchor_position()[:2], dtype=float)
+        anchor_xy = self._keepup_target_xy()
         radial = anchor_xy - predicted_intercept_xy
         frame_source = "anchor_minus_intercept"
         radial_norm = float(np.linalg.norm(radial))
@@ -2342,7 +2344,7 @@ class PingPongKeepUpEnv:
         if not self._contact_frame_strike_tilt_active():
             return np.zeros(2, dtype=float)
 
-        correction_xy = self._controller_anchor_position()[:2] - self._predicted_intercept_xy()
+        correction_xy = self._keepup_target_xy() - self._predicted_intercept_xy()
         radius = (
             self.contact_frame_centering_tilt_radius
             if self.contact_frame_centering_tilt_radius is not None

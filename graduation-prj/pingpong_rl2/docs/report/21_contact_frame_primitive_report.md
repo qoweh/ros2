@@ -1483,3 +1483,212 @@ mjpython scripts/run_viewer.py \
 
 - Do not replace the best model with `pmk_cf_recovery_retract_bootstrap_zero_eval`; it did not beat the best model under independent strict evaluation.
 - The next meaningful work is no longer another scalar sweep. The remaining gap likely needs a stronger low-level strike primitive or residual controller that explicitly solves desired outgoing velocity/next-intercept while preserving a safe recovery pose.
+
+## 2026-06-01 Twelfth Follow-up: Lower Apex And Recovery Roll Candidate
+
+Question rechecked:
+
+- The user suspected the bounce height may be wrong and asked whether the controller should target a repeatable height instead of applying a fixed force.
+- The user also suspected pitch/roll may still be necessary when the ball drifts away.
+
+Code kept:
+
+- `contact_frame_candidate` now uses:
+
+```text
+target_ball_height = 0.20
+contact_frame_trajectory_tilt_gain = 1.0
+contact_frame_trajectory_tilt_limit = (0.0, 0.03)
+post_contact_return_z_offset = -0.01
+```
+
+- This keeps the target as a repeatable apex, not a fixed force.
+- The lower apex is deliberate: it reduces outgoing vertical speed and produced better repeat keep-up than `0.25` or `0.30` in the strict gate.
+- Recovery-phase trajectory roll remains active so follow-up hits can bias the ball back toward the next useful intercept.
+
+Independent strict comparisons on `seed=12602`, `episodes=100`:
+
+```text
+old best model + roll/retract + target_ball_height=0.25:
+  mean_useful_bounces=2.10
+  max_useful_bounces=7
+  one_or_more_rate=0.78
+  two_or_more_rate=0.64
+  failure_counts={robot_body_contact:31, ball_out_of_bounds:60, floor_contact:6, ball_speed_limit:3}
+
+old best model + roll/retract + target_ball_height=0.30:
+  mean_useful_bounces=1.43
+  max_useful_bounces=5
+  one_or_more_rate=0.66
+  two_or_more_rate=0.51
+  failure_counts={robot_body_contact:30, ball_out_of_bounds:54, ball_speed_limit:6, floor_contact:10}
+
+old best model + roll/retract + target_ball_height=0.20:
+  mean_useful_bounces=2.88
+  max_useful_bounces=9
+  one_or_more_rate=0.84
+  two_or_more_rate=0.75
+  failure_counts={robot_body_contact:40, ball_out_of_bounds:44, ball_speed_limit:10, floor_contact:6}
+```
+
+New bootstrap candidate:
+
+```bash
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_recovery_roll_retract_bootstrap_candidate \
+  --run-name pmk_cf_recovery_roll_retract_bootstrap \
+  --run-version h020_zero_eval \
+  --reset-model \
+  --total-timesteps 0
+```
+
+Training-script evaluation:
+
+```text
+mean_useful_bounces=2.380
+max_useful_bounces=8
+two_or_more_rate=0.720
+three_or_more_rate=0.470
+```
+
+Independent strict evaluation:
+
+```text
+model=artifacts/ppo_runs/pmk_cf_recovery_roll_retract_bootstrap_h020_zero_eval/pmk_cf_recovery_roll_retract_bootstrap_h020_zero_eval_model.zip
+seed=12602, episodes=100
+
+mean_useful_bounces=2.730
+max_useful_bounces=6
+one_or_more_rate=0.900
+two_or_more_rate=0.770
+failure_counts={robot_body_contact:43, ball_speed_limit:8, ball_out_of_bounds:46, floor_contact:3}
+robot_body_contact_counts={link5:43}
+```
+
+Conclusion:
+
+- Lowering the target apex to `0.20` is a real improvement in the current controller.
+- Raising the target apex is not the fix; it makes timing and lateral control worse before the extra flight time helps.
+- The new best candidate by strict repeat-rate is:
+
+```text
+artifacts/ppo_runs/pmk_cf_recovery_roll_retract_bootstrap_h020_zero_eval/pmk_cf_recovery_roll_retract_bootstrap_h020_zero_eval_model.zip
+```
+
+- The main remaining blocker is not "ball too low" anymore. It is `link5` body contact after otherwise useful multi-bounce sequences.
+
+## 2026-06-01 Thirteenth Follow-up: Body-safe Target Offset Probe
+
+New diagnosis:
+
+- Robot body failures are almost entirely `link5`.
+- In the strict replay of the h020 candidate, robot-body-contact episodes averaged `3.51` useful bounces before failure.
+- The failure position was near the racket corridor, not far away:
+
+```text
+robot_body_contact_count=43
+phase_counts={recovery:31, return_shaping:12}
+mean_ball_link5_xy=0.135
+mean_ball_link5_z=0.010
+mean_ball_racket_xy=0.073
+mean_ball_racket_z=0.214
+mean_ball_anchor_xy=0.127
+```
+
+Interpretation:
+
+- The task is now failing after several good hits because the desired keep-up corridor is close to the Franka `link5` collision mesh.
+- "Send it closer to the arm" is not precise enough anymore. The useful target should be the racket-side sweet spot that remains reachable while avoiding the arm body.
+
+Code kept:
+
+- Added optional `keepup_target_xy_offset`.
+- This shifts the repeat keep-up target used by desired outgoing velocity, next-intercept reachability, return-target reward, contact-frame radial basis, centering tilt, follow-up strike offset, and post-contact return target.
+- Exposed it through:
+
+```text
+scripts/run_ppo_learning.py
+scripts/run_heuristic_keepup_diagnostic.py
+scripts/run_ppo_rebound_analysis.py
+scripts/run_viewer.py
+```
+
+Runtime probes on the h020 candidate:
+
+```text
+offset=(0.0, 0.00):
+  mean_useful_bounces=2.73
+  one_or_more_rate=0.90
+  two_or_more_rate=0.77
+  failure_counts={robot_body_contact:43, ball_speed_limit:8, ball_out_of_bounds:46, floor_contact:3}
+
+offset=(0.0, 0.01):
+  mean_useful_bounces=2.07
+  one_or_more_rate=0.71
+  two_or_more_rate=0.48
+  failure_counts={ball_out_of_bounds:65, robot_body_contact:22, ball_speed_limit:9, floor_contact:4}
+
+offset=(0.0, 0.03):
+  mean_useful_bounces=2.19
+  one_or_more_rate=0.88
+  two_or_more_rate=0.59
+  failure_counts={ball_out_of_bounds:69, floor_contact:11, robot_body_contact:9, ball_speed_limit:11}
+
+offset=(0.0, 0.06):
+  mean_useful_bounces=1.77
+  one_or_more_rate=0.83
+  two_or_more_rate=0.63
+  failure_counts={ball_out_of_bounds:80, ball_speed_limit:11, floor_contact:9}
+
+offset=(0.03, 0.0):
+  mean_useful_bounces=2.39
+  one_or_more_rate=0.85
+  two_or_more_rate=0.62
+  failure_counts={robot_body_contact:19, ball_out_of_bounds:69, floor_contact:5, ball_speed_limit:7}
+```
+
+Conclusion:
+
+- Target offset is useful diagnostically and clearly reduces `link5` contact, but applying it at runtime to a model trained without the offset reduces keep-up performance.
+- Do not enable `keepup_target_xy_offset` in the default preset yet.
+- If the next step targets body-contact reduction, train/bootstrap a dedicated offset branch instead of overriding an already-trained zero-offset model at evaluation time.
+
+Dedicated offset branch check:
+
+```bash
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_body_safe_offset_bootstrap_candidate \
+  --run-name pmk_cf_body_safe_offset_bootstrap \
+  --run-version y03_zero_eval \
+  --reset-model \
+  --total-timesteps 0
+```
+
+Training-script evaluation:
+
+```text
+mean_useful_bounces=2.270
+max_useful_bounces=11
+two_or_more_rate=0.550
+three_or_more_rate=0.430
+```
+
+Independent strict evaluation:
+
+```text
+model=artifacts/ppo_runs/pmk_cf_body_safe_offset_bootstrap_y03_zero_eval/pmk_cf_body_safe_offset_bootstrap_y03_zero_eval_model.zip
+seed=12602, episodes=100
+
+mean_useful_bounces=1.770
+max_useful_bounces=6
+one_or_more_rate=0.650
+two_or_more_rate=0.480
+failure_counts={ball_out_of_bounds:74, floor_contact:13, ball_speed_limit:7, robot_body_contact:6}
+robot_body_contact_counts={link5:6}
+```
+
+Final branch decision:
+
+- The dedicated offset branch strongly reduces body contact, but it does not preserve keep-up performance.
+- Do not replace the h020 zero-offset candidate with this branch.
+- The next body-contact solution likely needs either a better reachable sweet-spot curriculum or a controller/IK posture term that moves `link5` away while keeping the racket center on the current h020 trajectory, instead of moving the ball target alone.

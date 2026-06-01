@@ -56,6 +56,13 @@ def parse_args() -> argparse.Namespace:
         metavar=("LOW", "HIGH"),
         default=None,
     )
+    parser.add_argument(
+        "--keepup-target-xy-offset",
+        type=float,
+        nargs=2,
+        metavar=("X", "Y"),
+        default=None,
+    )
     parser.add_argument("--post-contact-return-z-offset", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
@@ -99,6 +106,8 @@ def main() -> None:
         reset_velocity_xy_range=args.reset_velocity_xy_range,
         reset_velocity_z_range=args.reset_velocity_z_range,
     )
+    if args.keepup_target_xy_offset is not None:
+        env_kwargs["keepup_target_xy_offset"] = tuple(args.keepup_target_xy_offset)
     if args.post_contact_return_z_offset is not None:
         env_kwargs["post_contact_return_z_offset"] = args.post_contact_return_z_offset
     if args.contact_frame_velocity_target_gain is not None:

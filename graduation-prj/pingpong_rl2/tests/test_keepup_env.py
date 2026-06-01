@@ -620,6 +620,29 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertTrue(np.allclose(next_xy, anchor_position[:2], atol=1.0e-6))
         self.assertGreater(float(np.linalg.norm(desired_apex_xy - anchor_position[:2])), 1.0e-4)
 
+    def test_keepup_target_xy_offset_shifts_next_intercept_target(self) -> None:
+        env = PingPongKeepUpEnv(
+            target_ball_height=0.25,
+            keepup_target_xy_offset=(0.0, 0.04),
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        target_xy = env._keepup_target_xy()
+        contact_position = env._controller_anchor_position() + np.array(
+            [0.04, -0.02, env._tracking_strike_plane_offset()]
+        )
+
+        desired_velocity, _, desired_target_xy = env._desired_outgoing_velocity(contact_position)
+        _, next_xy = env._predicted_descending_intercept_from_velocity(
+            contact_position,
+            desired_velocity,
+            env._desired_outgoing_target_z(),
+        )
+
+        self.assertTrue(np.allclose(desired_target_xy, target_xy))
+        self.assertTrue(np.allclose(next_xy, target_xy, atol=1.0e-6))
+
     def test_apex_desired_outgoing_mode_keeps_legacy_apex_xy_target(self) -> None:
         env = PingPongKeepUpEnv(
             target_ball_height=0.25,
