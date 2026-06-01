@@ -146,7 +146,7 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
     },
     "contact_frame_candidate": {
         "action_mode": "position_contact_frame",
-        "target_ball_height": 0.25,
+        "target_ball_height": 0.20,
         "tilt_profile": "early",
         "strike_tilt_ramp_pitch": -0.06,
         "strike_tilt_ramp_xy_tolerance": 0.04,

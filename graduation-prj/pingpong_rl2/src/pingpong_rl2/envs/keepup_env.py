@@ -184,6 +184,7 @@ class PingPongKeepUpEnv:
         include_next_intercept_observation: bool = False,
         include_desired_outgoing_velocity_observation: bool = False,
         desired_outgoing_xy_mode: str = "next_intercept",
+        keepup_target_xy_offset: Sequence[float] = (0.0, 0.0),
         trajectory_match_reward_weight: float = 0.0,
         trajectory_error_penalty_weight: float = 0.0,
         contact_oracle_mode: str = "none",
@@ -307,6 +308,7 @@ class PingPongKeepUpEnv:
         self.include_next_intercept_observation = bool(include_next_intercept_observation)
         self.include_desired_outgoing_velocity_observation = bool(include_desired_outgoing_velocity_observation)
         self.desired_outgoing_xy_mode = str(desired_outgoing_xy_mode)
+        self.keepup_target_xy_offset = np.asarray(keepup_target_xy_offset, dtype=float)
         self.trajectory_match_reward_weight = float(trajectory_match_reward_weight)
         self.trajectory_error_penalty_weight = float(trajectory_error_penalty_weight)
         self.contact_oracle_mode = str(contact_oracle_mode)
@@ -364,6 +366,12 @@ class PingPongKeepUpEnv:
                 "desired_outgoing_xy_mode must be one of "
                 f"{_DESIRED_OUTGOING_XY_MODES}, got {self.desired_outgoing_xy_mode!r}."
             )
+        if self.keepup_target_xy_offset.shape != (2,):
+            raise ValueError(
+                f"keepup_target_xy_offset must have shape (2,), got {self.keepup_target_xy_offset.shape}."
+            )
+        if not np.isfinite(self.keepup_target_xy_offset).all():
+            raise ValueError(f"keepup_target_xy_offset must be finite, got {self.keepup_target_xy_offset}.")
         if not 0.0 <= self.contact_oracle_blend <= 1.0:
             raise ValueError(
                 f"contact_oracle_blend must be within [0, 1], got {self.contact_oracle_blend}."
@@ -1119,6 +1127,7 @@ class PingPongKeepUpEnv:
             "include_next_intercept_observation": self.include_next_intercept_observation,
             "include_desired_outgoing_velocity_observation": self.include_desired_outgoing_velocity_observation,
             "desired_outgoing_xy_mode": self.desired_outgoing_xy_mode,
+            "keepup_target_xy_offset": self.keepup_target_xy_offset.tolist(),
             "trajectory_match_reward_weight": self.trajectory_match_reward_weight,
             "trajectory_error_penalty_weight": self.trajectory_error_penalty_weight,
             "contact_oracle_mode": self.contact_oracle_mode,
@@ -1952,6 +1961,9 @@ class PingPongKeepUpEnv:
         if anchor_position is None:
             return np.asarray(self.sim.racket_position, dtype=float)
         return np.asarray(anchor_position, dtype=float)
+
+    def _keepup_target_xy(self) -> np.ndarray:
+        return np.asarray(self._controller_anchor_position()[:2], dtype=float) + self.keepup_target_xy_offset
 
     def _pre_contact_readiness(self) -> float:
         if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
