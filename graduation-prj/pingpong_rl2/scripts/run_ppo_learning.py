@@ -298,7 +298,7 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "early_stop_patience_evals": 0,
     "target_ball_height": 0.30,
     "lateral_action_limit": 0.02,
-    "vertical_action_limit": 0.025,
+    "vertical_action_limit": 0.030,
     "tilt_action_limit": 0.006,
     "target_tilt_limit": (0.16, 0.16),
     "strike_tilt_ramp_pitch": None,
@@ -322,11 +322,11 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_strike_hold_time": 0.05,
     "contact_frame_strike_hold_min_readiness": 0.60,
     "contact_frame_apex_lift_gain": 0.05,
-    "contact_frame_apex_lift_max": 0.040,
+    "contact_frame_apex_lift_max": 0.055,
     "contact_frame_velocity_lead_gain": 0.04,
     "contact_frame_velocity_lead_max": 0.025,
-    "contact_frame_velocity_target_gain": 0.90,
-    "contact_frame_velocity_target_max": 1.8,
+    "contact_frame_velocity_target_gain": 1.00,
+    "contact_frame_velocity_target_max": 2.0,
     "contact_frame_trajectory_tilt_gain": 1.0,
     "contact_frame_trajectory_tilt_limit": (0.08, 0.08),
     "contact_frame_tilt_ramp_time": 0.35,
@@ -344,6 +344,7 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_racket_lateral_velocity_tolerance": 0.18,
     "max_contact_racket_lateral_speed_for_success": 0.45,
     "nonuseful_contact_penalty_weight": 0.75,
+    "contact_apex_under_target_penalty_weight": 0.60,
     "trajectory_match_reward_weight": 0.50,
     "trajectory_error_penalty_weight": 0.50,
     "reward_contact_quality_on_any_upward_contact": True,
@@ -518,6 +519,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_racket_lateral_velocity_tolerance": None,
     "max_contact_racket_lateral_speed_for_success": None,
     "nonuseful_contact_penalty_weight": None,
+    "contact_apex_under_target_penalty_weight": None,
     "log_std_init": None,
     "zero_init_action_mean": False,
 }
@@ -875,6 +877,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-racket-lateral-velocity-tolerance", type=float, default=None)
     parser.add_argument("--max-contact-racket-lateral-speed-for-success", type=float, default=None)
     parser.add_argument("--nonuseful-contact-penalty-weight", type=float, default=None)
+    parser.add_argument(
+        "--contact-apex-under-target-penalty-weight",
+        type=float,
+        default=None,
+        help="Penalty scale for upward contacts whose projected apex stays below the target keep-up height.",
+    )
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
     parser.add_argument(
@@ -1281,6 +1289,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         )
     if args.nonuseful_contact_penalty_weight is not None:
         env_kwargs["nonuseful_contact_penalty_weight"] = args.nonuseful_contact_penalty_weight
+    if args.contact_apex_under_target_penalty_weight is not None:
+        env_kwargs["contact_apex_under_target_penalty_weight"] = (
+            args.contact_apex_under_target_penalty_weight
+        )
     if args.post_contact_return_assist_weight is not None:
         env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
     if args.post_contact_return_max_intercept_time is not None:

@@ -1279,6 +1279,9 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
             post_contact_lateral_velocity_penalty_weight=0.5,
             contact_xy_error_penalty_weight=0.5,
             nonuseful_contact_penalty_weight=1.0,
+            contact_apex_under_target_penalty_weight=0.5,
+            target_ball_height=0.30,
+            height_tolerance=0.10,
         )
         env.reset(ball_height=env.ball_height)
         ball_position = env.sim.racket_position + np.array([0.08, 0.0, 0.03])
@@ -1312,6 +1315,7 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertLess(reward_terms["post_contact_lateral_velocity_penalty"], 0.0)
         self.assertLess(reward_terms["contact_xy_error_penalty"], 0.0)
         self.assertEqual(reward_terms["nonuseful_contact_penalty"], -1.0)
+        self.assertLess(reward_terms["contact_apex_under_target_penalty"], 0.0)
 
     def test_nonuseful_contact_penalty_applies_to_weak_contact(self) -> None:
         env = PingPongKeepUpEnv(

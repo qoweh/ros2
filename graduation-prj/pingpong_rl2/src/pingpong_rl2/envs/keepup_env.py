@@ -252,6 +252,7 @@ class PingPongKeepUpEnv:
         contact_racket_lateral_velocity_tolerance: float = 0.20,
         max_contact_racket_lateral_speed_for_success: float | None = None,
         nonuseful_contact_penalty_weight: float = 0.0,
+        contact_apex_under_target_penalty_weight: float = 0.0,
     ) -> None:
         if sim is not None and scene_path is not None:
             raise ValueError("scene_path can only be provided when sim is None.")
@@ -438,6 +439,7 @@ class PingPongKeepUpEnv:
             else float(max_contact_racket_lateral_speed_for_success)
         )
         self.nonuseful_contact_penalty_weight = float(nonuseful_contact_penalty_weight)
+        self.contact_apex_under_target_penalty_weight = float(contact_apex_under_target_penalty_weight)
         if self.action_mode not in _ACTION_MODES:
             raise ValueError(f"action_mode must be one of {_ACTION_MODES}, got {self.action_mode!r}.")
         if self.contact_oracle_mode not in _CONTACT_ORACLE_MODES:
@@ -883,6 +885,11 @@ class PingPongKeepUpEnv:
         if self.nonuseful_contact_penalty_weight < 0.0:
             raise ValueError(
                 f"nonuseful_contact_penalty_weight must be non-negative, got {self.nonuseful_contact_penalty_weight}."
+            )
+        if self.contact_apex_under_target_penalty_weight < 0.0:
+            raise ValueError(
+                "contact_apex_under_target_penalty_weight must be non-negative, got "
+                f"{self.contact_apex_under_target_penalty_weight}."
             )
         if self.strike_tilt_ramp_xy_tolerance < 0.0:
             raise ValueError(
@@ -1465,6 +1472,7 @@ class PingPongKeepUpEnv:
             "contact_racket_lateral_velocity_tolerance": self.contact_racket_lateral_velocity_tolerance,
             "max_contact_racket_lateral_speed_for_success": self.max_contact_racket_lateral_speed_for_success,
             "nonuseful_contact_penalty_weight": self.nonuseful_contact_penalty_weight,
+            "contact_apex_under_target_penalty_weight": self.contact_apex_under_target_penalty_weight,
         }
 
     def close(self) -> None:
@@ -2195,6 +2203,15 @@ class PingPongKeepUpEnv:
         height_match = max(1.0 - height_error / self.height_tolerance, 0.0)
         return float(self.apex_match_reward_weight * height_match)
 
+    def _contact_apex_under_target_penalty_term(self, contact_trace: dict[str, object] | None) -> float:
+        if self.contact_apex_under_target_penalty_weight <= 0.0:
+            return 0.0
+        projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
+        target_apex = self._target_ball_height_above_racket()
+        under_target_gap = max(target_apex - projected_apex, 0.0)
+        normalized_gap = min(under_target_gap / max(self.height_tolerance, 1.0e-6), 4.0)
+        return float(-self.contact_apex_under_target_penalty_weight * normalized_gap)
+
     def _normalized_tilt_magnitude(self) -> float:
         if self.action_mode not in ("position_tilt", "position_strike", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"):
             return 0.0
@@ -2302,6 +2319,7 @@ class PingPongKeepUpEnv:
             "contact_xy_error_penalty": 0.0,
             "contact_racket_lateral_velocity_penalty": 0.0,
             "nonuseful_contact_penalty": 0.0,
+            "contact_apex_under_target_penalty": 0.0,
             "outgoing_x_term": 0.0,
             "failure_penalty": 0.0,
             "contact_frame_action_penalty": 0.0,
@@ -2396,6 +2414,9 @@ class PingPongKeepUpEnv:
                     reward_terms["contact_racket_lateral_velocity_penalty"] = (
                         -self.contact_racket_lateral_velocity_penalty_weight * normalized_lateral_speed
                     )
+                reward_terms["contact_apex_under_target_penalty"] = (
+                    self._contact_apex_under_target_penalty_term(contact_trace)
+                )
         if contact_event and success_reason is None and self.nonuseful_contact_penalty_weight > 0.0:
             reward_terms["nonuseful_contact_penalty"] = -self.nonuseful_contact_penalty_weight
         if contact_event and self.useful_contact_outgoing_x_penalty_weight > 0.0:

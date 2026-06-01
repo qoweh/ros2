@@ -62,3 +62,5 @@
   - 라켓을 손에서 더 바깥쪽으로 뺀 scene variant, `scene_path` 저장/복원, 고정 pitch 제거와 상태 기반 tilt 중심 self-rally preset 변경을 정리한 보고서
 - `29_v4_tilt_timing_and_contact_quality_fix.md`
   - `pmk_cf_self_rally_v4`가 useful bounce 0에 머문 원인을 contact 분석으로 분리하고, tilt ramp/자세 추종/z 타격/strict success 전 shaping reward 보강을 정리한 보고서
+- `30_v5_low_apex_and_height_reward_fix.md`
+  - `pmk_cf_self_rally_v5`가 개선됐지만 낮은 apex contact가 useful 판정의 주 병목임을 분석하고, 낮은 upward contact penalty와 vertical primitive 보강을 정리한 보고서
