@@ -44,3 +44,9 @@
   - phase-aware non-tilt residual, explicit lift scaffold, strike x sweep까지 포함한 최신 scripted primitive 결과를 정리한 보고서
 - `20_state_dependent_contact_point_and_timing_report.md`
   - state-dependent strike XY correction gain과 late strike z pulse 실험, 그리고 왜 다음 branch가 더 직접적인 contact-point / impact-time primitive여야 하는지 정리한 보고서
+- `21_contact_frame_primitive_report.md`
+  - `position_contact_frame` primitive, desired outgoing velocity, trajectory tilt, follow-through, bootstrap/strict success 변화를 길게 누적 정리한 보고서
+- `22_sweet_spot_start_range_and_next_work.md`
+  - sweet spot-only reset 범위 계산, `reset_xy_range=0.028` 근거, 그리고 값 sweep을 멈추기 위한 다음 작업 순서를 정리한 보고서
+- `23_sweet_spot_completion_status_report.md`
+  - 최신 모델/strict sweet spot 평가, pitch-roll/no-rise-chase/nullspace 실험 해석, 최종 목표를 위해 필요한 planned contact-time strike primitive 방향을 정리한 보고서
