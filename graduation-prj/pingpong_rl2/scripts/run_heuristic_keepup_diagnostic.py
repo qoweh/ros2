@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
         "--action-mode",
         type=str,
         default="position_strike",
-        choices=("position_strike", "position_strike_tilt"),
+        choices=("position_strike", "position_strike_tilt", "position_strike_tilt_lift"),
     )
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=211)
@@ -46,6 +46,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recovery-blend", type=float, default=0.52)
     parser.add_argument("--strike-z-boost", type=float, default=0.018)
     parser.add_argument("--strike-time-horizon", type=float, default=0.14)
+    parser.add_argument(
+        "--fixed-position-residual",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+        default=(0.0, 0.0, 0.0),
+    )
+    parser.add_argument(
+        "--strike-position-residual",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+        default=None,
+    )
+    parser.add_argument(
+        "--recovery-position-residual",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+        default=None,
+    )
     parser.add_argument(
         "--fixed-tilt-residual",
         type=float,
@@ -67,6 +88,9 @@ def parse_args() -> argparse.Namespace:
         metavar=("PITCH", "ROLL"),
         default=None,
     )
+    parser.add_argument("--fixed-followup-lift-residual", type=float, default=0.0)
+    parser.add_argument("--strike-followup-lift-residual", type=float, default=None)
+    parser.add_argument("--recovery-followup-lift-residual", type=float, default=None)
     parser.add_argument("--strike-tilt-ramp-pitch", type=float, default=-0.03)
     parser.add_argument("--strike-tilt-ramp-xy-tolerance", type=float, default=0.04)
     parser.add_argument(
@@ -79,6 +103,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--followup-strike-contact-offset-ratio", type=float, default=0.0)
     parser.add_argument("--followup-strike-contact-offset-max", type=float, default=0.0)
     parser.add_argument("--followup-strike-lift-boost", type=float, default=0.0)
+    parser.add_argument("--followup-lift-action-limit", type=float, default=0.02)
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=0.5)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=0.6)
     parser.add_argument(
@@ -133,6 +158,7 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "followup_strike_contact_offset_ratio": args.followup_strike_contact_offset_ratio,
         "followup_strike_contact_offset_max": args.followup_strike_contact_offset_max,
         "followup_strike_lift_boost": args.followup_strike_lift_boost,
+        "followup_lift_action_limit": args.followup_lift_action_limit,
         "post_contact_return_assist_weight": args.post_contact_return_assist_weight,
         "post_contact_return_max_intercept_time": args.post_contact_return_max_intercept_time,
         "contact_oracle_mode": args.contact_oracle_mode,
@@ -162,6 +188,15 @@ def main() -> None:
         recovery_blend=args.recovery_blend,
         strike_z_boost=args.strike_z_boost,
         strike_time_horizon=args.strike_time_horizon,
+        fixed_position_residual=tuple(float(value) for value in args.fixed_position_residual),
+        strike_position_residual=(
+            None if args.strike_position_residual is None else tuple(float(value) for value in args.strike_position_residual)
+        ),
+        recovery_position_residual=(
+            None
+            if args.recovery_position_residual is None
+            else tuple(float(value) for value in args.recovery_position_residual)
+        ),
         fixed_tilt_residual_pitch=float(args.fixed_tilt_residual[0]),
         fixed_tilt_residual_roll=float(args.fixed_tilt_residual[1]),
         strike_tilt_residual_pitch=(None if args.strike_tilt_residual is None else float(args.strike_tilt_residual[0])),
@@ -171,6 +206,13 @@ def main() -> None:
         ),
         recovery_tilt_residual_roll=(
             None if args.recovery_tilt_residual is None else float(args.recovery_tilt_residual[1])
+        ),
+        fixed_followup_lift_residual=float(args.fixed_followup_lift_residual),
+        strike_followup_lift_residual=(
+            None if args.strike_followup_lift_residual is None else float(args.strike_followup_lift_residual)
+        ),
+        recovery_followup_lift_residual=(
+            None if args.recovery_followup_lift_residual is None else float(args.recovery_followup_lift_residual)
         ),
     )
 
@@ -424,6 +466,17 @@ def main() -> None:
             "recovery_blend": args.recovery_blend,
             "strike_z_boost": args.strike_z_boost,
             "strike_time_horizon": args.strike_time_horizon,
+            "fixed_position_residual": [float(value) for value in args.fixed_position_residual],
+            "strike_position_residual": (
+                None
+                if args.strike_position_residual is None
+                else [float(value) for value in args.strike_position_residual]
+            ),
+            "recovery_position_residual": (
+                None
+                if args.recovery_position_residual is None
+                else [float(value) for value in args.recovery_position_residual]
+            ),
             "fixed_tilt_residual": [
                 float(args.fixed_tilt_residual[0]),
                 float(args.fixed_tilt_residual[1]),
@@ -437,6 +490,13 @@ def main() -> None:
                 None
                 if args.recovery_tilt_residual is None
                 else [float(args.recovery_tilt_residual[0]), float(args.recovery_tilt_residual[1])]
+            ),
+            "fixed_followup_lift_residual": float(args.fixed_followup_lift_residual),
+            "strike_followup_lift_residual": (
+                None if args.strike_followup_lift_residual is None else float(args.strike_followup_lift_residual)
+            ),
+            "recovery_followup_lift_residual": (
+                None if args.recovery_followup_lift_residual is None else float(args.recovery_followup_lift_residual)
             ),
         },
         "mean_return": float(np.mean(returns)) if returns else 0.0,

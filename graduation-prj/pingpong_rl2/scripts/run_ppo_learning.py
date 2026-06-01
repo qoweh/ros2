@@ -130,11 +130,26 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "include_contact_context_observation": True,
         "include_next_intercept_observation": True,
     },
+    "contact_lift_candidate": {
+        "action_mode": "position_strike_tilt_lift",
+        "tilt_profile": "early",
+        "strike_tilt_ramp_pitch": -0.06,
+        "strike_tilt_ramp_xy_tolerance": 0.04,
+        "followup_strike_target_tilt": (-0.06, 0.0),
+        "followup_strike_lift_boost": 0.02,
+        "followup_lift_action_limit": 0.02,
+        "post_contact_return_assist_weight": 0.5,
+        "post_contact_return_max_intercept_time": 0.6,
+        "include_task_phase_observation": True,
+        "include_contact_context_observation": True,
+        "include_next_intercept_observation": True,
+    },
 }
 
 _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "action_mode": "position",
     "tilt_profile": "auto",
+    "followup_lift_action_limit": None,
     "strike_tilt_ramp_pitch": None,
     "strike_tilt_ramp_xy_tolerance": None,
     "post_contact_return_assist_weight": None,
@@ -264,7 +279,7 @@ def parse_args() -> argparse.Namespace:
         "--action-mode",
         type=str,
         default="position",
-        choices=("position", "position_strike", "position_tilt", "position_strike_tilt"),
+        choices=("position", "position_strike", "position_tilt", "position_strike_tilt", "position_strike_tilt_lift"),
     )
     parser.add_argument(
         "--tilt-profile",
@@ -292,6 +307,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lateral-action-limit", type=float, default=None)
     parser.add_argument("--vertical-action-limit", type=float, default=None)
     parser.add_argument("--tilt-action-limit", type=float, default=None)
+    parser.add_argument("--followup-lift-action-limit", type=float, default=None)
     parser.add_argument("--tracking-during-contact-scale", type=float, default=None)
     parser.add_argument("--useful-contact-outgoing-x-penalty-weight", type=float, default=None)
     parser.add_argument("--desired-outgoing-ball-velocity-x", type=float, default=None)
@@ -505,7 +521,7 @@ def build_checkpoint_dir(run_dir: Path) -> Path:
 
 
 def resolve_tilt_profile(args: argparse.Namespace) -> str:
-    if args.action_mode not in ("position_tilt", "position_strike_tilt"):
+    if args.action_mode not in ("position_tilt", "position_strike_tilt", "position_strike_tilt_lift"):
         if args.tracking_during_contact_scale is None:
             args.tracking_during_contact_scale = 0.0
         return "disabled"
@@ -531,7 +547,7 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
 
 
 def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
-    if args.action_mode not in ("position_tilt", "position_strike_tilt") or args.tilt_action_limit is None or args.target_tilt_limit is None:
+    if args.action_mode not in ("position_tilt", "position_strike_tilt", "position_strike_tilt_lift") or args.tilt_action_limit is None or args.target_tilt_limit is None:
         return None
     return float(args.tilt_action_limit / max(min(args.target_tilt_limit), 1.0e-6))
 
@@ -553,6 +569,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["vertical_action_limit"] = args.vertical_action_limit
     if args.tilt_action_limit is not None:
         env_kwargs["tilt_action_limit"] = args.tilt_action_limit
+    if args.followup_lift_action_limit is not None:
+        env_kwargs["followup_lift_action_limit"] = args.followup_lift_action_limit
     if args.tracking_during_contact_scale is not None:
         env_kwargs["tracking_during_contact_scale"] = args.tracking_during_contact_scale
     if args.useful_contact_outgoing_x_penalty_weight is not None:
@@ -691,9 +709,9 @@ def collect_heuristic_bootstrap_dataset(
             "observations": np.empty((0, 0), dtype=np.float32),
             "actions": np.empty((0, 0), dtype=np.float32),
         }
-    if env_kwargs.get("action_mode") not in {"position_strike", "position_strike_tilt"}:
+    if env_kwargs.get("action_mode") not in {"position_strike", "position_strike_tilt", "position_strike_tilt_lift"}:
         raise ValueError(
-            "Heuristic bootstrap currently requires action_mode='position_strike' or 'position_strike_tilt'."
+            "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', or 'position_strike_tilt_lift'."
         )
     if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
         raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")

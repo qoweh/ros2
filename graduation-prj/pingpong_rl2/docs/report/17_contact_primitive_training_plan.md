@@ -114,17 +114,20 @@ primitive branch는 아래를 만족해야 다음 단계로 넘어간다.
 - zero-residual heuristic smoke 통과
 - `contact_primitive_candidate` preset resolve + env construction 통과 (`action_size=5`, `observation_size=52`)
 - `position_strike_tilt` heuristic bootstrap collection도 통과 (`obs_shape=(32, 52)`, `act_shape=(32, 5)`)
+- 새 `contact_lift_candidate` preset resolve + env construction 통과 (`action_size=6`, `observation_size=52`)
 
 추가 scripted finding:
 
 - constant tilt residual sweep 실패: `2+`를 전혀 열지 못함
 - strike-phase-only tilt residual sweep도 실패: best candidate도 `max_useful_bounces = 1`
-- 따라서 현재 tilt-only primitive는 upper-bound gap을 메우기에 불충분함
+- phase-aware non-tilt residual은 의미 있음: `strike z = +0.01` + `strike roll = -0.02` candidate가 `max_useful_bounces = 2`, `two_plus_rate = 0.11`까지 올림
+- 하지만 100-episode confirmation에서도 `three_or_more_useful_bounce_rate = 0.0`이라 현재 abstraction은 여전히 `max=2` ceiling에 걸려 있음
+- explicit `followup lift residual` scaffold는 추가했지만 첫 sweep에서는 gain이 없었음
 
 남은 구현 체크리스트는 아래다.
 
 1. `keepup_env.py`
-   - `position_strike_tilt` base 위에서 residual semantics를 tilt-only에서 non-tilt contact residual까지 확장하기
+   - current `position_strike_tilt(_lift)` base 위에서 state-dependent contact-point / impact-time residual semantics를 추가하기
 2. `run_heuristic_keepup_diagnostic.py`
    - 다음 primitive semantics용 scripted tuning sweep 추가
 3. `scripts/run_ppo_learning.py`
