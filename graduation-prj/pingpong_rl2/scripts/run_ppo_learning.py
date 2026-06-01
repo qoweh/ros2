@@ -312,6 +312,9 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_xy_error_penalty_weight": 0.25,
     "nonuseful_contact_penalty_weight": 1.0,
     "trajectory_error_penalty_weight": 0.25,
+    "bootstrap_heuristic_episodes": 0,
+    "bootstrap_epochs": 0,
+    "bootstrap_followup_epochs": 0,
 }
 
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {

@@ -41,6 +41,7 @@
 
 - 새 preset `contact_frame_self_rally_candidate`를 추가했다.
 - 이 preset은 `position_contact_frame` action을 작은 residual로 제한한다.
+- 기존 heuristic warm-start는 이 새 contract와 맞지 않을 수 있어 preset 기본에서는 끈다. zero action이 planner/primitive 기본 타격을 뜻하고, PPO는 그 주변 residual을 탐색한다.
 - 기본값:
   - `lateral_action_limit=0.02`
   - `vertical_action_limit=0.025`

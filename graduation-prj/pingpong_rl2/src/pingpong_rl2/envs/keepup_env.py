@@ -1153,15 +1153,21 @@ class PingPongKeepUpEnv:
             "contact_frame_velocity_target": self.controller.target_velocity,
             "contact_frame_intercept_velocity_target": contact_frame_intercept_velocity_target,
             "contact_frame_planner_active": self._contact_frame_plan_active,
-            "contact_frame_planner_contact_position": self._contact_frame_plan_contact_position.copy(),
+            "contact_frame_planner_contact_position": (
+                self._contact_frame_plan_contact_position.copy() if self._contact_frame_plan_active else None
+            ),
             "contact_frame_planner_intercept_time": (
                 self._contact_frame_plan_intercept_time if self._contact_frame_plan_active else None
             ),
-            "contact_frame_planner_target_xy": self._contact_frame_plan_target_xy.copy(),
+            "contact_frame_planner_target_xy": (
+                self._contact_frame_plan_target_xy.copy() if self._contact_frame_plan_active else None
+            ),
             "contact_frame_planner_target_apex_z": (
                 self._contact_frame_plan_target_apex_z if self._contact_frame_plan_active else None
             ),
-            "contact_frame_planner_desired_velocity": self._contact_frame_plan_desired_velocity.copy(),
+            "contact_frame_planner_desired_velocity": (
+                self._contact_frame_plan_desired_velocity.copy() if self._contact_frame_plan_active else None
+            ),
             "contact_frame_followthrough_offset": self._contact_frame_followthrough_offset(),
             "contact_frame_trajectory_tilt": self._contact_frame_trajectory_tilt(),
             "contact_frame_centering_tilt": self._contact_frame_centering_tilt(),
