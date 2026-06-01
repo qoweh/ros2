@@ -134,6 +134,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-apex-lift-restitution", type=float, default=0.8)
     parser.add_argument("--contact-frame-velocity-lead-gain", type=float, default=0.0)
     parser.add_argument("--contact-frame-velocity-lead-max", type=float, default=0.0)
+    parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=0.0)
+    parser.add_argument("--contact-frame-velocity-target-max", type=float, default=0.0)
+    parser.add_argument("--contact-frame-followthrough-gain", type=float, default=0.0)
+    parser.add_argument("--contact-frame-followthrough-time", type=float, default=0.06)
+    parser.add_argument("--contact-frame-followthrough-max", type=float, default=0.0)
+    parser.add_argument("--contact-frame-trajectory-tilt-gain", type=float, default=0.0)
+    parser.add_argument(
+        "--contact-frame-trajectory-tilt-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
+    parser.add_argument("--contact-frame-trajectory-tilt-deadband", type=float, default=0.0)
+    parser.add_argument("--controller-velocity-gain", type=float, default=1.0)
+    parser.add_argument("--controller-velocity-feedback-gain", type=float, default=0.0)
+    parser.add_argument("--controller-max-velocity-step", type=float, default=0.02)
     parser.add_argument(
         "--contact-frame-centering-tilt-limit",
         type=float,
@@ -204,6 +221,16 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "contact_frame_apex_lift_restitution": args.contact_frame_apex_lift_restitution,
         "contact_frame_velocity_lead_gain": args.contact_frame_velocity_lead_gain,
         "contact_frame_velocity_lead_max": args.contact_frame_velocity_lead_max,
+        "contact_frame_velocity_target_gain": args.contact_frame_velocity_target_gain,
+        "contact_frame_velocity_target_max": args.contact_frame_velocity_target_max,
+        "contact_frame_followthrough_gain": args.contact_frame_followthrough_gain,
+        "contact_frame_followthrough_time": args.contact_frame_followthrough_time,
+        "contact_frame_followthrough_max": args.contact_frame_followthrough_max,
+        "contact_frame_trajectory_tilt_gain": args.contact_frame_trajectory_tilt_gain,
+        "contact_frame_trajectory_tilt_deadband": args.contact_frame_trajectory_tilt_deadband,
+        "controller_velocity_gain": args.controller_velocity_gain,
+        "controller_velocity_feedback_gain": args.controller_velocity_feedback_gain,
+        "controller_max_velocity_step": args.controller_max_velocity_step,
         "contact_frame_centering_tilt_deadband": args.contact_frame_centering_tilt_deadband,
         "post_contact_return_assist_weight": args.post_contact_return_assist_weight,
         "post_contact_return_max_intercept_time": args.post_contact_return_max_intercept_time,
@@ -225,6 +252,8 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["strike_tilt_ramp_xy_tolerance"] = args.strike_tilt_ramp_xy_tolerance
     if args.contact_frame_centering_tilt_limit is not None:
         env_kwargs["contact_frame_centering_tilt_limit"] = tuple(args.contact_frame_centering_tilt_limit)
+    if args.contact_frame_trajectory_tilt_limit is not None:
+        env_kwargs["contact_frame_trajectory_tilt_limit"] = tuple(args.contact_frame_trajectory_tilt_limit)
     if args.contact_frame_centering_tilt_radius is not None:
         env_kwargs["contact_frame_centering_tilt_radius"] = args.contact_frame_centering_tilt_radius
     return env_kwargs
@@ -440,6 +469,15 @@ def main() -> None:
                             "contact_racket_velocity_x": info.get("contact_racket_velocity_x"),
                             "contact_racket_velocity_y": info.get("contact_racket_velocity_y"),
                             "contact_racket_velocity_z": info.get("contact_racket_velocity_z"),
+                            "target_velocity_x": (
+                                None if info.get("target_velocity") is None else float(info["target_velocity"][0])
+                            ),
+                            "target_velocity_y": (
+                                None if info.get("target_velocity") is None else float(info["target_velocity"][1])
+                            ),
+                            "target_velocity_z": (
+                                None if info.get("target_velocity") is None else float(info["target_velocity"][2])
+                            ),
                             "contact_racket_face_normal_x": info.get("contact_racket_face_normal_x"),
                             "contact_racket_face_normal_y": info.get("contact_racket_face_normal_y"),
                             "contact_racket_face_normal_z": info.get("contact_racket_face_normal_z"),

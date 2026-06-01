@@ -728,3 +728,205 @@ Interpretation:
 
 - The existing `0.25 / 0.02` follow-up contact offset is still the best of this sweep.
 - Stronger center bias reduces out-of-bounds somewhat, but increases robot-body/contact-quality failures and does not improve multi-bounce survival.
+
+## 2026-06-01 Sixth Follow-up: Controller Velocity Target And Tilt Headroom Probe
+
+User question addressed:
+
+- If the ball is sometimes hit too low, should the primitive target a repeatable apex height instead of a fixed force?
+- If the ball drifts away, should pitch/roll be used more deliberately?
+
+Implementation changes:
+
+- Added an optional Cartesian controller velocity target:
+  - `controller_velocity_gain`
+  - `controller_max_velocity_step`
+  - `RacketCartesianController.set_target_velocity(...)`
+- Added optional contact-frame impact velocity targeting:
+  - `contact_frame_velocity_target_gain`
+  - `contact_frame_velocity_target_max`
+  - This computes the required racket velocity from desired outgoing ball velocity and incoming ball velocity, then feeds it into the Cartesian controller rather than only changing z position.
+- Added optional trajectory-derived pitch/roll:
+  - `contact_frame_trajectory_tilt_gain`
+  - `contact_frame_trajectory_tilt_limit`
+  - `contact_frame_trajectory_tilt_deadband`
+  - This estimates the desired impulse direction from `desired_outgoing_velocity - incoming_ball_velocity` and converts it into small pitch/roll offsets.
+- Added experimental presets:
+  - `contact_frame_tilt_headroom_candidate`
+  - `contact_frame_tilt_headroom_bootstrap_candidate`
+
+Key diagnostics:
+
+```text
+80 episodes, seed=12000
+
+baseline:
+  mean_useful=1.575, max=4, two_or_more=0.438, three_or_more=0.288
+
+velocity target gain=1.0 max=1.5:
+  mean_useful=1.450, max=4, two_or_more=0.438, three_or_more=0.225
+
+velocity target gain=1.5 max=1.8:
+  mean_useful=1.513, max=4, two_or_more=0.475, three_or_more=0.213
+```
+
+```text
+150 episodes, seed=12300
+
+baseline:
+  mean_useful=1.327, max=5, two_or_more=0.373, three_or_more=0.213
+  failure_counts={ball_out_of_bounds:100, robot_body_contact:34, ball_speed_limit:10, floor_contact:6}
+
+trajectory/headroom tilt:
+  mean_useful=1.407, max=6, two_or_more=0.407, three_or_more=0.207
+  failure_counts={ball_out_of_bounds:109, robot_body_contact:19, ball_speed_limit:11, floor_contact:11}
+
+trajectory/headroom tilt + velocity target:
+  mean_useful=1.433, max=7, two_or_more=0.453, three_or_more=0.193
+  failure_counts={ball_out_of_bounds:107, robot_body_contact:13, ball_speed_limit:13, floor_contact:17}
+```
+
+Bootstrap model check:
+
+```text
+contact_frame_tilt_headroom_bootstrap_candidate, total_timesteps=0
+
+bootstrap:
+  accepted_episodes=34
+  accepted_samples=4000
+
+evaluation:
+  mean_useful_bounces=1.590
+  max_useful_bounces=4
+  two_or_more_rate=0.500
+  three_or_more_rate=0.170
+```
+
+Interpretation:
+
+- The user's pitch/roll intuition is correct, but the current best preset was saturating the early tilt limit, so dynamic pitch/roll had little room to help.
+- Opening tilt headroom and deriving tilt from the desired impulse direction reduces robot-body contacts and improves `max`/`two_or_more` in scripted diagnostics, but it does not yet improve the main `three_or_more` survival metric.
+- Controller-level velocity targeting reduces outgoing velocity error in some runs, but it still trades away long survival and increases unsafe failure modes when combined with the current position primitive.
+- Therefore these options should remain available for experiments, but they should not replace `contact_frame_bootstrap_candidate` as the main recommended route yet.
+
+Current recommendation:
+
+- For the best available model path, keep using `contact_frame_bootstrap_candidate` and `*_best_model.zip`.
+- Use `contact_frame_tilt_headroom_bootstrap_candidate` only as an experimental branch when testing pitch/roll headroom.
+- The next high-value structural step is still a true low-level impact skill: predict/contact at a chosen point, solve the required outgoing ball velocity, and train or hand-code the racket motion to match that impact state without letting PPO overwrite the skill.
+
+## 2026-06-01 Seventh Follow-up: Follow-Through Impact Primitive
+
+New change:
+
+- Added an optional follow-through offset for `position_contact_frame`:
+  - `contact_frame_followthrough_gain`
+  - `contact_frame_followthrough_time`
+  - `contact_frame_followthrough_max`
+- The offset is computed from the required racket impact velocity:
+
+```text
+followthrough_offset =
+  gain * strike_readiness * required_racket_velocity * followthrough_time
+```
+
+- It is applied to the descending strike target, so the Cartesian position controller aims through the contact instead of only aiming at a static contact point.
+- `contact_frame_candidate` and therefore `contact_frame_bootstrap_candidate` now enable:
+
+```text
+contact_frame_followthrough_gain = 1.0
+contact_frame_followthrough_time = 0.06
+contact_frame_followthrough_max = 0.04
+```
+
+Scripted diagnostics:
+
+```text
+120 episodes, seed=12400
+
+baseline:
+  mean_useful=1.500, max=5, two_or_more=0.442, three_or_more=0.242
+  useful_contact_mean_outgoing_velocity_error=1.084
+
+followthrough max=0.04:
+  mean_useful=1.733, max=5, two_or_more=0.533, three_or_more=0.350
+  useful_contact_mean_outgoing_velocity_error=0.774
+```
+
+```text
+150 episodes, seed=12500
+
+baseline:
+  mean_useful=1.420, max=4, two_or_more=0.440, three_or_more=0.173
+  useful_contact_mean_outgoing_velocity_error=1.166
+
+followthrough max=0.04:
+  mean_useful=1.827, max=5, two_or_more=0.600, three_or_more=0.320
+  useful_contact_mean_outgoing_velocity_error=0.770
+```
+
+Model-path check:
+
+```text
+contact_frame_followthrough_bootstrap_candidate, total_timesteps=0
+
+evaluation:
+  mean_useful_bounces=2.280
+  max_useful_bounces=6
+  two_or_more_rate=0.620
+  three_or_more_rate=0.390
+```
+
+PPO continuation check:
+
+```text
+contact_frame_followthrough_bootstrap_candidate, total_timesteps=50000
+
+checkpoint 40000, 50 episode checkpoint eval:
+  mean_useful=1.780
+  max=4
+  two_or_more=0.520
+  three_or_more=0.420
+
+final 100 episode evaluation:
+  mean_useful=1.630
+  max=5
+  two_or_more=0.510
+  three_or_more=0.280
+```
+
+Same-seed comparison showed the zero-timestep bootstrapped model was still more reliable than the 50k PPO continuation:
+
+```text
+seed=12600, 100 episodes
+
+zero-timestep bootstrap:
+  mean_useful=1.860
+  max=6
+  failure_counts={ball_out_of_bounds:78, robot_body_contact:3, ball_speed_limit:10, floor_contact:9}
+
+50k best model:
+  mean_useful=1.480
+  max=5
+  failure_counts={ball_out_of_bounds:55, robot_body_contact:34, floor_contact:7, ball_speed_limit:4}
+```
+
+Interpretation:
+
+- Follow-through is the first non-oracle structural change in this branch that improves both multi-bounce scripted diagnostics and outgoing velocity error across multiple seeds.
+- The remaining failure is still not solved: the ball often leaves bounds, and long keep-up is not stable to time limit.
+- PPO continuation still tends to damage the bootstrap skill or trade ball-out-of-bounds for robot-body contact. The safest current model workflow is to generate and inspect the bootstrapped model first, then continue PPO only as an experiment.
+
+Current recommended command:
+
+```bash
+conda activate mujoco_env
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_bootstrap_candidate \
+  --run-name pmk_cf_followthrough_bootstrap \
+  --run-version v1 \
+  --reset-model \
+  --total-timesteps 0
+```
+
+Use the generated model from the zero-timestep bootstrap as the current best candidate unless a later PPO run beats it on an independent 100+ episode evaluation.

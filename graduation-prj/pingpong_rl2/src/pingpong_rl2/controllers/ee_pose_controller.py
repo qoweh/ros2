@@ -17,6 +17,9 @@ class RacketCartesianController:
         orientation_gain: float = 0.35,
         max_position_step: float = 0.05,
         max_orientation_step: float = 0.12,
+        velocity_gain: float = 1.0,
+        velocity_feedback_gain: float = 0.0,
+        max_velocity_step: float = 0.02,
         target_offset_low: Sequence[float] | None = None,
         target_offset_high: Sequence[float] | None = None,
         target_tilt_limit: Sequence[float] | None = None,
@@ -27,6 +30,9 @@ class RacketCartesianController:
         self._orientation_gain = float(orientation_gain)
         self._max_position_step = float(max_position_step)
         self._max_orientation_step = float(max_orientation_step)
+        self._velocity_gain = float(velocity_gain)
+        self._velocity_feedback_gain = float(velocity_feedback_gain)
+        self._max_velocity_step = float(max_velocity_step)
         self._target_offset_low = None if target_offset_low is None else np.asarray(target_offset_low, dtype=float)
         self._target_offset_high = None if target_offset_high is None else np.asarray(target_offset_high, dtype=float)
         self._target_tilt_limit = (
@@ -49,6 +55,12 @@ class RacketCartesianController:
             )
         if np.any(self._target_tilt_limit < 0.0):
             raise ValueError(f"target_tilt_limit must be non-negative, got {self._target_tilt_limit}.")
+        if self._velocity_gain < 0.0:
+            raise ValueError(f"velocity_gain must be non-negative, got {self._velocity_gain}.")
+        if self._velocity_feedback_gain < 0.0:
+            raise ValueError(f"velocity_feedback_gain must be non-negative, got {self._velocity_feedback_gain}.")
+        if self._max_velocity_step < 0.0:
+            raise ValueError(f"max_velocity_step must be non-negative, got {self._max_velocity_step}.")
 
         self._joint_ids = [sim.model.joint(f"joint{index}").id for index in range(1, 8)]
         self._joint_qpos_indices = np.array([sim.model.jnt_qposadr[joint_id] for joint_id in self._joint_ids], dtype=int)
@@ -60,6 +72,8 @@ class RacketCartesianController:
         self._target_position = sim.racket_position.copy()
         self._anchor_position = sim.racket_position.copy()
         self._target_tilt = np.zeros(2, dtype=float)
+        self._target_velocity = np.zeros(3, dtype=float)
+        self._target_velocity_enabled = False
 
     @property
     def target_position(self) -> np.ndarray:
@@ -70,6 +84,10 @@ class RacketCartesianController:
         return self._target_tilt.copy()
 
     @property
+    def target_velocity(self) -> np.ndarray:
+        return self._target_velocity.copy()
+
+    @property
     def target_face_normal(self) -> np.ndarray:
         return self._target_face_normal_from_tilt(self._target_tilt)
 
@@ -78,6 +96,8 @@ class RacketCartesianController:
         self._anchor_position = self._sim.racket_position.copy()
         self._target_position = self._sim.racket_position.copy()
         self._target_tilt = np.zeros(2, dtype=float)
+        self._target_velocity = np.zeros(3, dtype=float)
+        self._target_velocity_enabled = False
         return self.targets.copy()
 
     def _clip_target_position(self, position: np.ndarray) -> np.ndarray:
@@ -106,6 +126,18 @@ class RacketCartesianController:
             raise ValueError(f"Target tilt must have shape (2,), got {tilt_array.shape}.")
         self._target_tilt = np.clip(tilt_array, -self._target_tilt_limit, self._target_tilt_limit)
         return self.target_tilt
+
+    def set_target_velocity(self, velocity: Sequence[float] | None) -> np.ndarray:
+        if velocity is None:
+            self._target_velocity = np.zeros(3, dtype=float)
+            self._target_velocity_enabled = False
+            return self.target_velocity
+        velocity_array = np.asarray(velocity, dtype=float)
+        if velocity_array.shape != (3,):
+            raise ValueError(f"Target velocity must have shape (3,), got {velocity_array.shape}.")
+        self._target_velocity = velocity_array
+        self._target_velocity_enabled = True
+        return self.target_velocity
 
     @staticmethod
     def _target_face_normal_from_tilt(tilt: np.ndarray) -> np.ndarray:
@@ -136,6 +168,17 @@ class RacketCartesianController:
         error_norm = np.linalg.norm(position_error)
         if error_norm > self._max_position_step:
             position_error = position_error * (self._max_position_step / error_norm)
+        velocity_step = np.zeros(3, dtype=float)
+        if self._target_velocity_enabled:
+            velocity_command = self._velocity_gain * self._target_velocity
+            if self._velocity_feedback_gain > 0.0:
+                velocity_command = velocity_command + self._velocity_feedback_gain * (
+                    self._target_velocity - self._sim.racket_velocity
+                )
+            velocity_step = velocity_command * self._sim.control_dt
+        velocity_step_norm = np.linalg.norm(velocity_step)
+        if self._max_velocity_step > 0.0 and velocity_step_norm > self._max_velocity_step:
+            velocity_step = velocity_step * (self._max_velocity_step / velocity_step_norm)
 
         current_face_normal = self._sim.racket_face_normal
         target_face_normal = self.target_face_normal
@@ -159,7 +202,7 @@ class RacketCartesianController:
         )
         task_error = np.concatenate(
             [
-                self._position_gain * position_error,
+                self._position_gain * position_error + velocity_step,
                 self._orientation_gain * orientation_error,
             ]
         )

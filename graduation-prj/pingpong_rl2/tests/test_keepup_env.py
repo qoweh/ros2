@@ -741,6 +741,69 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertGreater(slow_descent_lead, 0.0)
         self.assertLess(fast_descent_lead, slow_descent_lead)
 
+    def test_cartesian_controller_velocity_target_changes_joint_targets(self) -> None:
+        env = PingPongKeepUpEnv(
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            controller_velocity_gain=1.0,
+            controller_max_velocity_step=0.05,
+        )
+        env.reset(ball_height=env.ball_height)
+        current_position = env.sim.racket_position.copy()
+        env.controller.set_target_position(current_position)
+        env.controller.set_target_velocity((0.0, 0.0, 0.0))
+        baseline_targets = env.controller.compute_joint_targets()
+
+        env.controller.set_target_position(current_position)
+        env.controller.set_target_velocity((0.0, 0.0, 1.0))
+        velocity_targets = env.controller.compute_joint_targets()
+
+        self.assertTrue(np.allclose(env.controller.target_velocity, np.array([0.0, 0.0, 1.0])))
+        self.assertGreater(float(np.linalg.norm(velocity_targets - baseline_targets)), 1.0e-6)
+
+    def test_contact_frame_velocity_target_tracks_required_impact_velocity(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            target_ball_height=0.25,
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_velocity_target_gain=1.0,
+            contact_frame_velocity_target_max=2.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -0.2))
+        env.controller.set_target_tilt((0.0, 0.0))
+        slow_descent_target = env._contact_frame_velocity_target()
+
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -2.0))
+        env.controller.set_target_tilt((0.0, 0.0))
+        fast_descent_target = env._contact_frame_velocity_target()
+
+        self.assertGreater(float(slow_descent_target[2]), 0.0)
+        self.assertLess(float(fast_descent_target[2]), float(slow_descent_target[2]))
+
+    def test_contact_frame_followthrough_offset_tracks_required_impact_velocity(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            target_ball_height=0.25,
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_followthrough_gain=1.0,
+            contact_frame_followthrough_time=0.06,
+            contact_frame_followthrough_max=0.04,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -0.2))
+        slow_descent_offset = env._contact_frame_followthrough_offset()
+
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -2.0))
+        fast_descent_offset = env._contact_frame_followthrough_offset()
+
+        self.assertGreater(float(slow_descent_offset[2]), 0.0)
+        self.assertLess(float(fast_descent_offset[2]), float(slow_descent_offset[2]))
+
     def test_contact_frame_centering_tilt_uses_pitch_and_roll_toward_anchor(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",
@@ -754,6 +817,25 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         ball_position = env.sim.racket_position + np.array([0.03, -0.03, env._preparation_target_height_above_racket()])
         env.sim.spawn_ball(ball_position, velocity=(0.2, 0.0, -1.0))
         target_tilt = env._contact_frame_centering_tilt()
+        self.assertLess(float(target_tilt[0]), -0.01)
+        self.assertLess(float(target_tilt[1]), -0.01)
+
+    def test_contact_frame_trajectory_tilt_uses_desired_impulse_direction(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            target_ball_height=0.25,
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_tilt_limit=(0.09, 0.09),
+            contact_frame_trajectory_tilt_gain=1.0,
+            contact_frame_trajectory_tilt_limit=(0.03, 0.03),
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.03, -0.03, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+
+        target_tilt = env._contact_frame_trajectory_tilt()
+
         self.assertLess(float(target_tilt[0]), -0.01)
         self.assertLess(float(target_tilt[1]), -0.01)
 

@@ -156,6 +156,9 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "contact_frame_base_strike_z_boost": 0.024,
         "contact_frame_base_strike_z_offset": 0.01,
         "contact_frame_base_tilt_residual": (-0.02, 0.0),
+        "contact_frame_followthrough_gain": 1.0,
+        "contact_frame_followthrough_time": 0.06,
+        "contact_frame_followthrough_max": 0.04,
         "contact_frame_action_penalty_weight": 0.2,
         "trajectory_match_reward_weight": 0.4,
         "useful_contact_return_target_xy_reward_weight": 0.25,
@@ -171,6 +174,22 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "include_next_intercept_observation": True,
         "include_desired_outgoing_velocity_observation": True,
     },
+}
+
+_ENV_PRESETS["contact_frame_tilt_headroom_candidate"] = {
+    **_ENV_PRESETS["contact_frame_candidate"],
+    "target_tilt_limit": (0.09, 0.09),
+    "strike_tilt_ramp_pitch": -0.04,
+    "followup_strike_target_tilt": (-0.04, 0.0),
+    "contact_frame_trajectory_tilt_gain": 1.0,
+    "contact_frame_trajectory_tilt_limit": (0.03, 0.03),
+}
+
+_ENV_PRESETS["contact_frame_followthrough_candidate"] = {
+    **_ENV_PRESETS["contact_frame_candidate"],
+    "contact_frame_followthrough_gain": 1.0,
+    "contact_frame_followthrough_time": 0.06,
+    "contact_frame_followthrough_max": 0.04,
 }
 
 _ENV_PRESETS["contact_frame_bootstrap_candidate"] = {
@@ -197,6 +216,55 @@ _ENV_PRESETS["contact_frame_bootstrap_candidate"] = {
     "bootstrap_sample_mode": "post_success",
 }
 
+_ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
+    **_ENV_PRESETS["contact_frame_followthrough_candidate"],
+    "n_envs": 1,
+    "n_steps": 512,
+    "batch_size": 256,
+    "learning_rate": 1.0e-5,
+    "n_epochs": 1,
+    "clip_range": 0.05,
+    "checkpoint_interval": 10_000,
+    "checkpoint_eval_episodes": 50,
+    "eval_episodes": 100,
+    "early_stop_patience_evals": 4,
+    "reset_xy_range": 0.0,
+    "reset_velocity_xy_range": 0.0,
+    "reset_velocity_z_range": (-0.01, 0.01),
+    "bootstrap_heuristic_episodes": 120,
+    "bootstrap_min_useful_bounces": 2,
+    "bootstrap_max_samples": 4_000,
+    "bootstrap_epochs": 50,
+    "bootstrap_batch_size": 256,
+    "bootstrap_learning_rate": 1.0e-4,
+    "bootstrap_sample_mode": "post_success",
+}
+
+_ENV_PRESETS["contact_frame_tilt_headroom_bootstrap_candidate"] = {
+    **_ENV_PRESETS["contact_frame_tilt_headroom_candidate"],
+    "n_envs": 1,
+    "n_steps": 512,
+    "batch_size": 256,
+    "learning_rate": 1.0e-5,
+    "n_epochs": 1,
+    "clip_range": 0.05,
+    "checkpoint_interval": 10_000,
+    "checkpoint_eval_episodes": 50,
+    "eval_episodes": 100,
+    "early_stop_patience_evals": 4,
+    "reset_xy_range": 0.0,
+    "reset_velocity_xy_range": 0.0,
+    "reset_velocity_z_range": (-0.01, 0.01),
+    "bootstrap_heuristic_episodes": 120,
+    "bootstrap_min_useful_bounces": 2,
+    "bootstrap_max_samples": 4_000,
+    "bootstrap_epochs": 50,
+    "bootstrap_batch_size": 256,
+    "bootstrap_learning_rate": 1.0e-4,
+    "bootstrap_sample_mode": "post_success",
+}
+
+
 _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "n_envs": 4,
     "n_steps": DEFAULT_PPO_N_STEPS,
@@ -222,6 +290,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "tilt_profile": "auto",
     "target_ball_height": None,
     "followup_lift_action_limit": None,
+    "target_tilt_limit": None,
     "strike_tilt_ramp_pitch": None,
     "strike_tilt_ramp_xy_tolerance": None,
     "post_contact_return_assist_weight": None,
@@ -251,6 +320,17 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_apex_lift_restitution": None,
     "contact_frame_velocity_lead_gain": None,
     "contact_frame_velocity_lead_max": None,
+    "contact_frame_velocity_target_gain": None,
+    "contact_frame_velocity_target_max": None,
+    "contact_frame_followthrough_gain": None,
+    "contact_frame_followthrough_time": None,
+    "contact_frame_followthrough_max": None,
+    "contact_frame_trajectory_tilt_gain": None,
+    "contact_frame_trajectory_tilt_limit": None,
+    "contact_frame_trajectory_tilt_deadband": None,
+    "controller_velocity_gain": None,
+    "controller_velocity_feedback_gain": None,
+    "controller_max_velocity_step": None,
     "contact_frame_centering_tilt_limit": None,
     "contact_frame_centering_tilt_radius": None,
     "contact_frame_centering_tilt_deadband": None,
@@ -521,6 +601,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-apex-lift-restitution", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-lead-gain", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-lead-max", type=float, default=None)
+    parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
+    parser.add_argument("--contact-frame-followthrough-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-followthrough-time", type=float, default=None)
+    parser.add_argument("--contact-frame-followthrough-max", type=float, default=None)
+    parser.add_argument("--contact-frame-trajectory-tilt-gain", type=float, default=None)
+    parser.add_argument(
+        "--contact-frame-trajectory-tilt-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
+    parser.add_argument("--contact-frame-trajectory-tilt-deadband", type=float, default=None)
+    parser.add_argument("--controller-velocity-gain", type=float, default=None)
+    parser.add_argument("--controller-velocity-feedback-gain", type=float, default=None)
+    parser.add_argument("--controller-max-velocity-step", type=float, default=None)
     parser.add_argument(
         "--contact-frame-centering-tilt-limit",
         type=float,
@@ -783,6 +880,28 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_velocity_lead_gain"] = args.contact_frame_velocity_lead_gain
     if args.contact_frame_velocity_lead_max is not None:
         env_kwargs["contact_frame_velocity_lead_max"] = args.contact_frame_velocity_lead_max
+    if args.contact_frame_velocity_target_gain is not None:
+        env_kwargs["contact_frame_velocity_target_gain"] = args.contact_frame_velocity_target_gain
+    if args.contact_frame_velocity_target_max is not None:
+        env_kwargs["contact_frame_velocity_target_max"] = args.contact_frame_velocity_target_max
+    if args.contact_frame_followthrough_gain is not None:
+        env_kwargs["contact_frame_followthrough_gain"] = args.contact_frame_followthrough_gain
+    if args.contact_frame_followthrough_time is not None:
+        env_kwargs["contact_frame_followthrough_time"] = args.contact_frame_followthrough_time
+    if args.contact_frame_followthrough_max is not None:
+        env_kwargs["contact_frame_followthrough_max"] = args.contact_frame_followthrough_max
+    if args.contact_frame_trajectory_tilt_gain is not None:
+        env_kwargs["contact_frame_trajectory_tilt_gain"] = args.contact_frame_trajectory_tilt_gain
+    if args.contact_frame_trajectory_tilt_limit is not None:
+        env_kwargs["contact_frame_trajectory_tilt_limit"] = tuple(args.contact_frame_trajectory_tilt_limit)
+    if args.contact_frame_trajectory_tilt_deadband is not None:
+        env_kwargs["contact_frame_trajectory_tilt_deadband"] = args.contact_frame_trajectory_tilt_deadband
+    if args.controller_velocity_gain is not None:
+        env_kwargs["controller_velocity_gain"] = args.controller_velocity_gain
+    if args.controller_velocity_feedback_gain is not None:
+        env_kwargs["controller_velocity_feedback_gain"] = args.controller_velocity_feedback_gain
+    if args.controller_max_velocity_step is not None:
+        env_kwargs["controller_max_velocity_step"] = args.controller_max_velocity_step
     if args.contact_frame_centering_tilt_limit is not None:
         env_kwargs["contact_frame_centering_tilt_limit"] = tuple(args.contact_frame_centering_tilt_limit)
     if args.contact_frame_centering_tilt_radius is not None:
