@@ -23,6 +23,14 @@ class RacketCartesianController:
         target_offset_low: Sequence[float] | None = None,
         target_offset_high: Sequence[float] | None = None,
         target_tilt_limit: Sequence[float] | None = None,
+        nullspace_posture_gain: float = 0.0,
+        nullspace_posture_max_step: float = 0.0,
+        nullspace_posture_target: Sequence[float] | None = None,
+        body_clearance_gain: float = 0.0,
+        body_clearance_margin: float = 0.0,
+        body_clearance_vertical_margin: float = 0.30,
+        body_clearance_max_step: float = 0.0,
+        body_clearance_body_names: Sequence[str] = ("link5",),
     ) -> None:
         self._sim = sim
         self._damping = float(damping)
@@ -33,12 +41,23 @@ class RacketCartesianController:
         self._velocity_gain = float(velocity_gain)
         self._velocity_feedback_gain = float(velocity_feedback_gain)
         self._max_velocity_step = float(max_velocity_step)
+        self._nullspace_posture_gain = float(nullspace_posture_gain)
+        self._nullspace_posture_max_step = float(nullspace_posture_max_step)
+        self._body_clearance_gain = float(body_clearance_gain)
+        self._body_clearance_margin = float(body_clearance_margin)
+        self._body_clearance_vertical_margin = float(body_clearance_vertical_margin)
+        self._body_clearance_max_step = float(body_clearance_max_step)
         self._target_offset_low = None if target_offset_low is None else np.asarray(target_offset_low, dtype=float)
         self._target_offset_high = None if target_offset_high is None else np.asarray(target_offset_high, dtype=float)
         self._target_tilt_limit = (
             np.asarray(target_tilt_limit, dtype=float)
             if target_tilt_limit is not None
             else np.array([0.35, 0.35], dtype=float)
+        )
+        self._nullspace_posture_target = (
+            sim.home_joint_targets.copy()
+            if nullspace_posture_target is None
+            else np.asarray(nullspace_posture_target, dtype=float)
         )
         if self._target_offset_low is not None and self._target_offset_low.shape != (3,):
             raise ValueError(f"target_offset_low must have shape (3,), got {self._target_offset_low.shape}.")
@@ -61,6 +80,29 @@ class RacketCartesianController:
             raise ValueError(f"velocity_feedback_gain must be non-negative, got {self._velocity_feedback_gain}.")
         if self._max_velocity_step < 0.0:
             raise ValueError(f"max_velocity_step must be non-negative, got {self._max_velocity_step}.")
+        if self._nullspace_posture_gain < 0.0:
+            raise ValueError(
+                f"nullspace_posture_gain must be non-negative, got {self._nullspace_posture_gain}."
+            )
+        if self._nullspace_posture_max_step < 0.0:
+            raise ValueError(
+                f"nullspace_posture_max_step must be non-negative, got {self._nullspace_posture_max_step}."
+            )
+        if self._nullspace_posture_target.shape != (7,):
+            raise ValueError(
+                f"nullspace_posture_target must have shape (7,), got {self._nullspace_posture_target.shape}."
+            )
+        if self._body_clearance_gain < 0.0:
+            raise ValueError(f"body_clearance_gain must be non-negative, got {self._body_clearance_gain}.")
+        if self._body_clearance_margin < 0.0:
+            raise ValueError(f"body_clearance_margin must be non-negative, got {self._body_clearance_margin}.")
+        if self._body_clearance_vertical_margin < 0.0:
+            raise ValueError(
+                "body_clearance_vertical_margin must be non-negative, got "
+                f"{self._body_clearance_vertical_margin}."
+            )
+        if self._body_clearance_max_step < 0.0:
+            raise ValueError(f"body_clearance_max_step must be non-negative, got {self._body_clearance_max_step}.")
 
         self._joint_ids = [sim.model.joint(f"joint{index}").id for index in range(1, 8)]
         self._joint_qpos_indices = np.array([sim.model.jnt_qposadr[joint_id] for joint_id in self._joint_ids], dtype=int)
@@ -68,6 +110,15 @@ class RacketCartesianController:
         self._joint_limits = sim.model.jnt_range[self._joint_ids].copy()
         self._position_jacobian = np.zeros((3, sim.model.nv), dtype=float)
         self._rotation_jacobian = np.zeros((3, sim.model.nv), dtype=float)
+        self._body_position_jacobian = np.zeros((3, sim.model.nv), dtype=float)
+        self._body_rotation_jacobian = np.zeros((3, sim.model.nv), dtype=float)
+        self._body_clearance_body_ids = []
+        for body_name in body_clearance_body_names:
+            body_id = mujoco.mj_name2id(sim.model, mujoco.mjtObj.mjOBJ_BODY, str(body_name))
+            if body_id >= 0:
+                self._body_clearance_body_ids.append(body_id)
+        self._clearance_reference_position = np.zeros(3, dtype=float)
+        self._clearance_reference_active = False
         self.targets = sim.home_joint_targets.copy()
         self._target_position = sim.racket_position.copy()
         self._anchor_position = sim.racket_position.copy()
@@ -139,6 +190,22 @@ class RacketCartesianController:
         self._target_velocity_enabled = True
         return self.target_velocity
 
+    def set_body_clearance_reference(
+        self,
+        position: Sequence[float] | None,
+        *,
+        active: bool,
+    ) -> None:
+        if position is None:
+            self._clearance_reference_position[:] = 0.0
+            self._clearance_reference_active = False
+            return
+        position_array = np.asarray(position, dtype=float)
+        if position_array.shape != (3,):
+            raise ValueError(f"Body clearance reference must have shape (3,), got {position_array.shape}.")
+        self._clearance_reference_position[:] = position_array
+        self._clearance_reference_active = bool(active)
+
     @staticmethod
     def _target_face_normal_from_tilt(tilt: np.ndarray) -> np.ndarray:
         pitch = float(tilt[0])
@@ -161,6 +228,86 @@ class RacketCartesianController:
         )
         normal = rotation_y @ rotation_x @ np.array([0.0, 0.0, -1.0], dtype=float)
         return normal / max(np.linalg.norm(normal), 1.0e-9)
+
+    @staticmethod
+    def _clip_vector_norm(vector: np.ndarray, max_norm: float) -> np.ndarray:
+        if max_norm <= 0.0:
+            return vector
+        vector_norm = float(np.linalg.norm(vector))
+        if vector_norm > max_norm:
+            return vector * (max_norm / vector_norm)
+        return vector
+
+    def _posture_nullspace_delta(self, nullspace_projector: np.ndarray) -> np.ndarray:
+        if self._nullspace_posture_gain <= 0.0 or self._nullspace_posture_max_step <= 0.0:
+            return np.zeros(7, dtype=float)
+        current_joint_positions = self._sim.data.qpos[self._joint_qpos_indices]
+        posture_step = self._nullspace_posture_gain * (self._nullspace_posture_target - current_joint_positions)
+        posture_step = self._clip_vector_norm(posture_step, self._nullspace_posture_max_step)
+        return nullspace_projector @ posture_step
+
+    def _body_clearance_nullspace_delta(self, nullspace_projector: np.ndarray) -> np.ndarray:
+        if (
+            not self._clearance_reference_active
+            or self._body_clearance_gain <= 0.0
+            or self._body_clearance_margin <= 0.0
+            or self._body_clearance_max_step <= 0.0
+            or not self._body_clearance_body_ids
+        ):
+            return np.zeros(7, dtype=float)
+
+        reference_position = self._clearance_reference_position
+        clearance_delta = np.zeros(7, dtype=float)
+        for body_id in self._body_clearance_body_ids:
+            body_position = np.asarray(self._sim.data.xpos[body_id], dtype=float)
+            vertical_distance = abs(float(body_position[2] - reference_position[2]))
+            if vertical_distance >= self._body_clearance_vertical_margin:
+                continue
+            vertical_weight = 1.0 - vertical_distance / max(self._body_clearance_vertical_margin, 1.0e-6)
+
+            body_to_reference_xy = body_position[:2] - reference_position[:2]
+            distance_xy = float(np.linalg.norm(body_to_reference_xy))
+            if distance_xy >= self._body_clearance_margin:
+                continue
+            if distance_xy <= 1.0e-9:
+                fallback_direction = body_position[:2] - self._sim.racket_position[:2]
+                fallback_norm = float(np.linalg.norm(fallback_direction))
+                clearance_direction = (
+                    np.array([1.0, 0.0], dtype=float)
+                    if fallback_norm <= 1.0e-9
+                    else fallback_direction / fallback_norm
+                )
+            else:
+                clearance_direction = body_to_reference_xy / distance_xy
+
+            desired_body_xy_step = (
+                self._body_clearance_gain
+                * vertical_weight
+                * (self._body_clearance_margin - distance_xy)
+                * clearance_direction
+            )
+            desired_body_xy_step = self._clip_vector_norm(desired_body_xy_step, self._body_clearance_max_step)
+            mujoco.mj_jacBody(
+                self._sim.model,
+                self._sim.data,
+                self._body_position_jacobian,
+                self._body_rotation_jacobian,
+                body_id,
+            )
+            body_jacobian = self._body_position_jacobian[:2, self._joint_dof_indices]
+            projected_body_jacobian = body_jacobian @ nullspace_projector
+            body_metric = (
+                projected_body_jacobian @ projected_body_jacobian.T
+                + self._damping * np.eye(2)
+            )
+            body_delta = (
+                nullspace_projector
+                @ projected_body_jacobian.T
+                @ np.linalg.solve(body_metric, desired_body_xy_step)
+            )
+            clearance_delta += body_delta
+
+        return self._clip_vector_norm(clearance_delta, self._body_clearance_max_step)
 
     def compute_joint_targets(self) -> np.ndarray:
         current_position = self._sim.racket_position
@@ -207,7 +354,14 @@ class RacketCartesianController:
             ]
         )
         task_metric = task_jacobian @ task_jacobian.T + self._damping * np.eye(6)
+        task_inverse_left = np.linalg.solve(task_metric, task_jacobian)
         delta_q = task_jacobian.T @ np.linalg.solve(task_metric, task_error)
+        nullspace_projector = np.eye(7) - task_jacobian.T @ task_inverse_left
+        delta_q = (
+            delta_q
+            + self._posture_nullspace_delta(nullspace_projector)
+            + self._body_clearance_nullspace_delta(nullspace_projector)
+        )
 
         current_joint_positions = self._sim.data.qpos[self._joint_qpos_indices]
         next_targets = current_joint_positions + delta_q

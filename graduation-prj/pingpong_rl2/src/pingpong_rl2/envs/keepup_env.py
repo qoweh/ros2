@@ -173,6 +173,7 @@ class PingPongKeepUpEnv:
         post_contact_return_assist_weight: float = 0.0,
         post_contact_return_max_intercept_time: float = 0.6,
         post_contact_return_z_offset: float = 0.0,
+        post_contact_return_predict_during_rise: bool = True,
         next_intercept_reachable_bonus_weight: float = 0.0,
         easy_next_ball_reward_weight: float = 0.0,
         require_reachable_next_intercept_for_success: bool = False,
@@ -190,6 +191,8 @@ class PingPongKeepUpEnv:
         contact_oracle_mode: str = "none",
         contact_oracle_blend: float = 1.0,
         next_intercept_max_time: float = 1.25,
+        next_intercept_success_radius: float | None = None,
+        easy_next_ball_xy_radius: float | None = None,
         controller_position_gain: float = 1.6,
         controller_orientation_gain: float = 0.45,
         controller_max_position_step: float = 0.06,
@@ -197,6 +200,14 @@ class PingPongKeepUpEnv:
         controller_velocity_gain: float = 1.0,
         controller_velocity_feedback_gain: float = 0.0,
         controller_max_velocity_step: float = 0.02,
+        controller_nullspace_posture_gain: float = 0.0,
+        controller_nullspace_posture_max_step: float = 0.0,
+        controller_nullspace_posture_target: Sequence[float] | None = None,
+        controller_body_clearance_gain: float = 0.0,
+        controller_body_clearance_margin: float = 0.0,
+        controller_body_clearance_vertical_margin: float = 0.30,
+        controller_body_clearance_max_step: float = 0.0,
+        controller_body_clearance_body_names: Sequence[str] = ("link5",),
         contact_frame_base_strike_z_boost: float = 0.0,
         contact_frame_base_strike_z_offset: float = 0.0,
         contact_frame_base_strike_time_horizon: float = 0.14,
@@ -295,6 +306,7 @@ class PingPongKeepUpEnv:
         self.post_contact_return_assist_weight = float(post_contact_return_assist_weight)
         self.post_contact_return_max_intercept_time = float(post_contact_return_max_intercept_time)
         self.post_contact_return_z_offset = float(post_contact_return_z_offset)
+        self.post_contact_return_predict_during_rise = bool(post_contact_return_predict_during_rise)
         self.next_intercept_reachable_bonus_weight = float(next_intercept_reachable_bonus_weight)
         self.easy_next_ball_reward_weight = float(easy_next_ball_reward_weight)
         self.require_reachable_next_intercept_for_success = bool(require_reachable_next_intercept_for_success)
@@ -314,6 +326,16 @@ class PingPongKeepUpEnv:
         self.contact_oracle_mode = str(contact_oracle_mode)
         self.contact_oracle_blend = float(contact_oracle_blend)
         self.next_intercept_max_time = float(next_intercept_max_time)
+        self.next_intercept_success_radius = (
+            self.strike_zone_xy_radius
+            if next_intercept_success_radius is None
+            else float(next_intercept_success_radius)
+        )
+        self.easy_next_ball_xy_radius = (
+            self.next_intercept_success_radius
+            if easy_next_ball_xy_radius is None
+            else float(easy_next_ball_xy_radius)
+        )
         self.controller_position_gain = float(controller_position_gain)
         self.controller_orientation_gain = float(controller_orientation_gain)
         self.controller_max_position_step = float(controller_max_position_step)
@@ -321,6 +343,18 @@ class PingPongKeepUpEnv:
         self.controller_velocity_gain = float(controller_velocity_gain)
         self.controller_velocity_feedback_gain = float(controller_velocity_feedback_gain)
         self.controller_max_velocity_step = float(controller_max_velocity_step)
+        self.controller_nullspace_posture_gain = float(controller_nullspace_posture_gain)
+        self.controller_nullspace_posture_max_step = float(controller_nullspace_posture_max_step)
+        self.controller_nullspace_posture_target = (
+            None
+            if controller_nullspace_posture_target is None
+            else np.asarray(controller_nullspace_posture_target, dtype=float)
+        )
+        self.controller_body_clearance_gain = float(controller_body_clearance_gain)
+        self.controller_body_clearance_margin = float(controller_body_clearance_margin)
+        self.controller_body_clearance_vertical_margin = float(controller_body_clearance_vertical_margin)
+        self.controller_body_clearance_max_step = float(controller_body_clearance_max_step)
+        self.controller_body_clearance_body_names = tuple(str(name) for name in controller_body_clearance_body_names)
         self.contact_frame_base_strike_z_boost = float(contact_frame_base_strike_z_boost)
         self.contact_frame_base_strike_z_offset = float(contact_frame_base_strike_z_offset)
         self.contact_frame_base_strike_time_horizon = float(contact_frame_base_strike_time_horizon)
@@ -529,6 +563,15 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 f"next_intercept_max_time must be positive, got {self.next_intercept_max_time}."
             )
+        if self.next_intercept_success_radius <= 0.0:
+            raise ValueError(
+                "next_intercept_success_radius must be positive, got "
+                f"{self.next_intercept_success_radius}."
+            )
+        if self.easy_next_ball_xy_radius <= 0.0:
+            raise ValueError(
+                f"easy_next_ball_xy_radius must be positive, got {self.easy_next_ball_xy_radius}."
+            )
         if self.contact_frame_base_strike_z_boost < 0.0:
             raise ValueError(
                 "contact_frame_base_strike_z_boost must be non-negative, got "
@@ -577,6 +620,47 @@ class PingPongKeepUpEnv:
         if self.controller_max_velocity_step < 0.0:
             raise ValueError(
                 f"controller_max_velocity_step must be non-negative, got {self.controller_max_velocity_step}."
+            )
+        if self.controller_nullspace_posture_gain < 0.0:
+            raise ValueError(
+                "controller_nullspace_posture_gain must be non-negative, got "
+                f"{self.controller_nullspace_posture_gain}."
+            )
+        if self.controller_nullspace_posture_max_step < 0.0:
+            raise ValueError(
+                "controller_nullspace_posture_max_step must be non-negative, got "
+                f"{self.controller_nullspace_posture_max_step}."
+            )
+        if self.controller_nullspace_posture_target is not None:
+            if self.controller_nullspace_posture_target.shape != (7,):
+                raise ValueError(
+                    "controller_nullspace_posture_target must have shape (7,), got "
+                    f"{self.controller_nullspace_posture_target.shape}."
+                )
+            if not np.isfinite(self.controller_nullspace_posture_target).all():
+                raise ValueError(
+                    "controller_nullspace_posture_target must be finite, got "
+                    f"{self.controller_nullspace_posture_target}."
+                )
+        if self.controller_body_clearance_gain < 0.0:
+            raise ValueError(
+                "controller_body_clearance_gain must be non-negative, got "
+                f"{self.controller_body_clearance_gain}."
+            )
+        if self.controller_body_clearance_margin < 0.0:
+            raise ValueError(
+                "controller_body_clearance_margin must be non-negative, got "
+                f"{self.controller_body_clearance_margin}."
+            )
+        if self.controller_body_clearance_vertical_margin < 0.0:
+            raise ValueError(
+                "controller_body_clearance_vertical_margin must be non-negative, got "
+                f"{self.controller_body_clearance_vertical_margin}."
+            )
+        if self.controller_body_clearance_max_step < 0.0:
+            raise ValueError(
+                "controller_body_clearance_max_step must be non-negative, got "
+                f"{self.controller_body_clearance_max_step}."
             )
         if self.contact_frame_velocity_target_gain < 0.0:
             raise ValueError(
@@ -726,6 +810,14 @@ class PingPongKeepUpEnv:
             target_offset_low=self.target_offset_low,
             target_offset_high=self.target_offset_high,
             target_tilt_limit=self.target_tilt_limit,
+            nullspace_posture_gain=self.controller_nullspace_posture_gain,
+            nullspace_posture_max_step=self.controller_nullspace_posture_max_step,
+            nullspace_posture_target=self.controller_nullspace_posture_target,
+            body_clearance_gain=self.controller_body_clearance_gain,
+            body_clearance_margin=self.controller_body_clearance_margin,
+            body_clearance_vertical_margin=self.controller_body_clearance_vertical_margin,
+            body_clearance_max_step=self.controller_body_clearance_max_step,
+            body_clearance_body_names=self.controller_body_clearance_body_names,
         )
         position_action_limit = np.array(
             [self.lateral_action_limit, self.lateral_action_limit, self.vertical_action_limit],
@@ -896,6 +988,10 @@ class PingPongKeepUpEnv:
         self.controller.set_target_velocity(target_velocity if np.any(target_velocity) else None)
         safe_target_position = self._guarded_target_position(requested_target_position)
         self.controller.set_target_position(safe_target_position)
+        self.controller.set_body_clearance_reference(
+            self.sim.ball_position,
+            active=self._controller_body_clearance_active(),
+        )
         joint_targets = self.controller.compute_joint_targets()
         contact_trace = self.sim.step_with_contact_trace(joint_targets=joint_targets, n_substeps=self.sim.n_substeps)
         oracle_info = self._apply_contact_oracle(contact_trace)
@@ -968,6 +1064,8 @@ class PingPongKeepUpEnv:
             "next_intercept_recovery_distance": next_intercept_metrics["info_recovery_distance"],
             "next_intercept_recovery_readiness": next_intercept_metrics["info_recovery_readiness"],
             "easy_next_ball_score": next_intercept_metrics["info_easy_next_ball_score"],
+            "next_intercept_success_radius": self.next_intercept_success_radius,
+            "easy_next_ball_xy_radius": self.easy_next_ball_xy_radius,
             "strike_lift_feedforward": self._strike_lift_feedforward(),
             "contact_frame_apex_lift": self._contact_frame_apex_lift(),
             "contact_frame_velocity_lead": self._contact_frame_velocity_lead(),
@@ -1117,6 +1215,7 @@ class PingPongKeepUpEnv:
             "post_contact_return_assist_weight": self.post_contact_return_assist_weight,
             "post_contact_return_max_intercept_time": self.post_contact_return_max_intercept_time,
             "post_contact_return_z_offset": self.post_contact_return_z_offset,
+            "post_contact_return_predict_during_rise": self.post_contact_return_predict_during_rise,
             "next_intercept_reachable_bonus_weight": self.next_intercept_reachable_bonus_weight,
             "easy_next_ball_reward_weight": self.easy_next_ball_reward_weight,
             "require_reachable_next_intercept_for_success": self.require_reachable_next_intercept_for_success,
@@ -1134,6 +1233,20 @@ class PingPongKeepUpEnv:
             "contact_oracle_mode": self.contact_oracle_mode,
             "contact_oracle_blend": self.contact_oracle_blend,
             "next_intercept_max_time": self.next_intercept_max_time,
+            "next_intercept_success_radius": self.next_intercept_success_radius,
+            "easy_next_ball_xy_radius": self.easy_next_ball_xy_radius,
+            "controller_nullspace_posture_gain": self.controller_nullspace_posture_gain,
+            "controller_nullspace_posture_max_step": self.controller_nullspace_posture_max_step,
+            "controller_nullspace_posture_target": (
+                None
+                if self.controller_nullspace_posture_target is None
+                else self.controller_nullspace_posture_target.tolist()
+            ),
+            "controller_body_clearance_gain": self.controller_body_clearance_gain,
+            "controller_body_clearance_margin": self.controller_body_clearance_margin,
+            "controller_body_clearance_vertical_margin": self.controller_body_clearance_vertical_margin,
+            "controller_body_clearance_max_step": self.controller_body_clearance_max_step,
+            "controller_body_clearance_body_names": list(self.controller_body_clearance_body_names),
             "controller_velocity_gain": self.controller_velocity_gain,
             "controller_velocity_feedback_gain": self.controller_velocity_feedback_gain,
             "controller_max_velocity_step": self.controller_max_velocity_step,
@@ -1466,11 +1579,15 @@ class PingPongKeepUpEnv:
         )
         anchor_xy_error = float(np.linalg.norm(next_intercept_xy - target_xy))
         recovery_distance = float(np.linalg.norm(next_intercept_xy - self.sim.racket_position[:2]))
-        reachable = anchor_xy_error <= self.strike_zone_xy_radius
+        reachable = anchor_xy_error <= self.next_intercept_success_radius
         recovery_speed_limit = max(self.controller_max_position_step / max(self.sim.control_dt, 1.0e-6), 1.0e-6)
         required_recovery_speed = recovery_distance / max(next_intercept_time, self.sim.control_dt)
         speed_readiness = 1.0 - np.clip(required_recovery_speed / recovery_speed_limit, 0.0, 1.0)
-        zone_readiness = 1.0 - np.clip(anchor_xy_error / max(self.strike_zone_xy_radius, 1.0e-6), 0.0, 1.0)
+        zone_readiness = 1.0 - np.clip(
+            anchor_xy_error / max(self.next_intercept_success_radius, 1.0e-6),
+            0.0,
+            1.0,
+        )
         recovery_readiness = float(np.clip(0.5 * speed_readiness + 0.5 * zone_readiness, 0.0, 1.0))
         next_intercept_vertical_speed = float(self.sim.ball_velocity[2] + self._gravity_z() * next_intercept_time)
         next_intercept_speed_norm = float(
@@ -1482,7 +1599,7 @@ class PingPongKeepUpEnv:
             )
         )
         lateral_speed = float(np.linalg.norm(self.sim.ball_velocity[:2]))
-        xy_score = max(1.0 - anchor_xy_error / max(self.strike_zone_xy_radius, 1.0e-6), 0.0)
+        xy_score = max(1.0 - anchor_xy_error / max(self.easy_next_ball_xy_radius, 1.0e-6), 0.0)
         time_score = max(
             1.0 - abs(next_intercept_time - _EASY_NEXT_BALL_TARGET_TIME) / _EASY_NEXT_BALL_TIME_TOLERANCE,
             0.0,
@@ -1503,7 +1620,7 @@ class PingPongKeepUpEnv:
             )
         )
         recovery_distance_penalty = float(
-            np.clip(recovery_distance / max(1.5 * self.strike_zone_xy_radius, 1.0e-6), 0.0, 1.0)
+            np.clip(recovery_distance / max(1.5 * self.next_intercept_success_radius, 1.0e-6), 0.0, 1.0)
         )
         easy_next_ball_score = float(
             xy_score
@@ -2117,6 +2234,8 @@ class PingPongKeepUpEnv:
             return anchor_xy
         if float(self.sim.ball_velocity[2]) <= 0.0:
             return anchor_xy
+        if not self.post_contact_return_predict_during_rise:
+            return anchor_xy
         predicted_return_xy = self._predicted_intercept_xy(
             max_intercept_time=self.post_contact_return_max_intercept_time
         )
@@ -2438,6 +2557,21 @@ class PingPongKeepUpEnv:
         target_position[2] = anchor_position[2] + lift_target + action_array[2]
         target_position = target_position + self._contact_frame_followthrough_offset()
         return target_position
+
+    def _controller_body_clearance_active(self) -> bool:
+        if (
+            self.controller_body_clearance_gain <= 0.0
+            or self.controller_body_clearance_margin <= 0.0
+            or self.controller_body_clearance_max_step <= 0.0
+        ):
+            return False
+        if self._ball_height_above_racket() < -0.05:
+            return False
+        if float(self.sim.ball_velocity[2]) < self.descending_ball_velocity_threshold:
+            return True
+        if self.successful_bounce_count <= 0:
+            return False
+        return self._ball_height_above_racket() <= self._target_ball_height_above_racket()
 
     def _body_safe_target_position(self, target_position: Sequence[float]) -> np.ndarray:
         safe_target = np.asarray(target_position, dtype=float).copy()

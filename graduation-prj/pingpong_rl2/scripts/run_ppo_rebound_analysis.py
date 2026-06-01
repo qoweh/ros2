@@ -73,11 +73,25 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override the env post-contact vertical racket return offset.",
     )
+    parser.add_argument(
+        "--disable-post-contact-return-predict-during-rise",
+        action="store_false",
+        dest="post_contact_return_predict_during_rise",
+        default=True,
+        help="Return to the anchor while the ball rises instead of chasing a predicted future intercept.",
+    )
     parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
     parser.add_argument("--controller-velocity-gain", type=float, default=None)
     parser.add_argument("--controller-velocity-feedback-gain", type=float, default=None)
     parser.add_argument("--controller-max-velocity-step", type=float, default=None)
+    parser.add_argument("--controller-nullspace-posture-gain", type=float, default=None)
+    parser.add_argument("--controller-nullspace-posture-max-step", type=float, default=None)
+    parser.add_argument("--controller-body-clearance-gain", type=float, default=None)
+    parser.add_argument("--controller-body-clearance-margin", type=float, default=None)
+    parser.add_argument("--controller-body-clearance-vertical-margin", type=float, default=None)
+    parser.add_argument("--controller-body-clearance-max-step", type=float, default=None)
+    parser.add_argument("--controller-body-clearance-body-names", type=str, nargs="+", default=None)
     parser.add_argument("--contact-frame-trajectory-tilt-gain", type=float, default=None)
     parser.add_argument(
         "--contact-frame-trajectory-tilt-limit",
@@ -87,6 +101,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
     )
     parser.add_argument("--contact-frame-trajectory-tilt-deadband", type=float, default=None)
+    parser.add_argument(
+        "--contact-frame-centering-tilt-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
+    parser.add_argument("--contact-frame-centering-tilt-radius", type=float, default=None)
+    parser.add_argument("--contact-frame-centering-tilt-deadband", type=float, default=None)
+    parser.add_argument("--next-intercept-success-radius", type=float, default=None)
+    parser.add_argument("--easy-next-ball-xy-radius", type=float, default=None)
     parser.add_argument(
         "--require-reachable-next-intercept-for-success",
         action="store_true",
@@ -784,6 +809,8 @@ def main() -> None:
         env_kwargs["keepup_target_xy_offset"] = tuple(args.keepup_target_xy_offset)
     if args.post_contact_return_z_offset is not None:
         env_kwargs["post_contact_return_z_offset"] = args.post_contact_return_z_offset
+    if not args.post_contact_return_predict_during_rise:
+        env_kwargs["post_contact_return_predict_during_rise"] = False
     if args.contact_frame_velocity_target_gain is not None:
         env_kwargs["contact_frame_velocity_target_gain"] = args.contact_frame_velocity_target_gain
     if args.contact_frame_velocity_target_max is not None:
@@ -794,12 +821,36 @@ def main() -> None:
         env_kwargs["controller_velocity_feedback_gain"] = args.controller_velocity_feedback_gain
     if args.controller_max_velocity_step is not None:
         env_kwargs["controller_max_velocity_step"] = args.controller_max_velocity_step
+    if args.controller_nullspace_posture_gain is not None:
+        env_kwargs["controller_nullspace_posture_gain"] = args.controller_nullspace_posture_gain
+    if args.controller_nullspace_posture_max_step is not None:
+        env_kwargs["controller_nullspace_posture_max_step"] = args.controller_nullspace_posture_max_step
+    if args.controller_body_clearance_gain is not None:
+        env_kwargs["controller_body_clearance_gain"] = args.controller_body_clearance_gain
+    if args.controller_body_clearance_margin is not None:
+        env_kwargs["controller_body_clearance_margin"] = args.controller_body_clearance_margin
+    if args.controller_body_clearance_vertical_margin is not None:
+        env_kwargs["controller_body_clearance_vertical_margin"] = args.controller_body_clearance_vertical_margin
+    if args.controller_body_clearance_max_step is not None:
+        env_kwargs["controller_body_clearance_max_step"] = args.controller_body_clearance_max_step
+    if args.controller_body_clearance_body_names is not None:
+        env_kwargs["controller_body_clearance_body_names"] = tuple(args.controller_body_clearance_body_names)
     if args.contact_frame_trajectory_tilt_gain is not None:
         env_kwargs["contact_frame_trajectory_tilt_gain"] = args.contact_frame_trajectory_tilt_gain
     if args.contact_frame_trajectory_tilt_limit is not None:
         env_kwargs["contact_frame_trajectory_tilt_limit"] = tuple(args.contact_frame_trajectory_tilt_limit)
     if args.contact_frame_trajectory_tilt_deadband is not None:
         env_kwargs["contact_frame_trajectory_tilt_deadband"] = args.contact_frame_trajectory_tilt_deadband
+    if args.contact_frame_centering_tilt_limit is not None:
+        env_kwargs["contact_frame_centering_tilt_limit"] = tuple(args.contact_frame_centering_tilt_limit)
+    if args.contact_frame_centering_tilt_radius is not None:
+        env_kwargs["contact_frame_centering_tilt_radius"] = args.contact_frame_centering_tilt_radius
+    if args.contact_frame_centering_tilt_deadband is not None:
+        env_kwargs["contact_frame_centering_tilt_deadband"] = args.contact_frame_centering_tilt_deadband
+    if args.next_intercept_success_radius is not None:
+        env_kwargs["next_intercept_success_radius"] = args.next_intercept_success_radius
+    if args.easy_next_ball_xy_radius is not None:
+        env_kwargs["easy_next_ball_xy_radius"] = args.easy_next_ball_xy_radius
     if args.terminate_on_nonuseful_contact:
         env_kwargs["terminate_on_nonuseful_contact"] = True
     env = PingPongKeepUpGymEnv(**env_kwargs)
@@ -808,7 +859,7 @@ def main() -> None:
     gravity_z = float(env.base_env.sim.model.opt.gravity[2])
     gravity_magnitude = max(abs(gravity_z), 1.0e-6)
     strike_plane_offset = float(env.base_env._tracking_strike_plane_offset())
-    strike_zone_xy_radius = float(env.base_env.strike_zone_xy_radius)
+    strike_zone_xy_radius = float(env.base_env.next_intercept_success_radius)
     output_dir = (model_path.parent / "analysis") if args.output_dir is None else args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     analysis_name = args.analysis_name or f"{run_name}_rebound_{args.episodes}ep"

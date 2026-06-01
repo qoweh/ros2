@@ -795,6 +795,57 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
 
         self.assertAlmostEqual(float(target[2]), float(anchor_position[2] - 0.03))
 
+    def test_post_contact_return_can_avoid_chasing_ball_during_rise(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            post_contact_return_assist_weight=0.8,
+            post_contact_return_predict_during_rise=False,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        env.successful_bounce_count = 1
+        env.sim.spawn_ball(anchor_position + np.array([0.08, 0.0, 0.08]), velocity=(0.5, 0.0, 1.0))
+
+        target = env._contact_frame_action_target_position(np.zeros(3, dtype=float))
+
+        self.assertAlmostEqual(float(target[0]), float(anchor_position[0]))
+        self.assertAlmostEqual(float(target[1]), float(anchor_position[1]))
+
+    def test_next_intercept_success_radius_can_be_sweet_spot_strict(self) -> None:
+        env = PingPongKeepUpEnv(
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            next_intercept_success_radius=0.04,
+            easy_next_ball_xy_radius=0.04,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        env.sim.spawn_ball(anchor_position + np.array([0.05, 0.0, 0.10]), velocity=(0.0, 0.0, -1.0))
+
+        metrics = env._next_intercept_metrics()
+
+        self.assertFalse(metrics["reachable"])
+        self.assertGreater(float(metrics["info_xy_error"]), env.next_intercept_success_radius)
+
+    def test_controller_nullspace_options_are_recorded(self) -> None:
+        env = PingPongKeepUpEnv(
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            controller_nullspace_posture_gain=0.2,
+            controller_nullspace_posture_max_step=0.01,
+            controller_body_clearance_gain=0.5,
+            controller_body_clearance_margin=0.14,
+            controller_body_clearance_max_step=0.01,
+            controller_body_clearance_body_names=("link5", "link6"),
+        )
+
+        config = env.training_config()
+
+        self.assertAlmostEqual(config["controller_nullspace_posture_gain"], 0.2)
+        self.assertEqual(config["controller_body_clearance_body_names"], ["link5", "link6"])
+
     def test_contact_frame_base_tilt_residual_applies_during_strike(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",

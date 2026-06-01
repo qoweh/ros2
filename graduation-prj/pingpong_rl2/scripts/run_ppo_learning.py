@@ -256,6 +256,30 @@ _ENV_PRESETS["contact_frame_body_safe_offset_bootstrap_candidate"] = {
     "keepup_target_xy_offset": (0.0, 0.03),
 }
 
+_ENV_PRESETS["contact_frame_sweet_spot_bootstrap_candidate"] = {
+    **_ENV_PRESETS["contact_frame_recovery_roll_retract_bootstrap_candidate"],
+    "reset_xy_range": 0.028,
+    "reset_velocity_xy_range": 0.0,
+    "reset_velocity_z_range": (-0.01, 0.01),
+    "next_intercept_success_radius": 0.04,
+    "easy_next_ball_xy_radius": 0.04,
+}
+
+_ENV_PRESETS["contact_frame_sweet_spot_nullspace_candidate"] = {
+    **_ENV_PRESETS["contact_frame_sweet_spot_bootstrap_candidate"],
+    "post_contact_return_predict_during_rise": False,
+    "controller_nullspace_posture_gain": 0.20,
+    "controller_nullspace_posture_max_step": 0.010,
+    "controller_body_clearance_gain": 0.75,
+    "controller_body_clearance_margin": 0.14,
+    "controller_body_clearance_vertical_margin": 0.32,
+    "controller_body_clearance_max_step": 0.018,
+    "controller_body_clearance_body_names": ("link5", "link6"),
+    "contact_frame_centering_tilt_limit": (0.02, 0.03),
+    "contact_frame_centering_tilt_radius": 0.08,
+    "contact_frame_centering_tilt_deadband": 0.01,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -340,6 +364,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "post_contact_return_assist_weight": None,
     "post_contact_return_max_intercept_time": None,
     "post_contact_return_z_offset": None,
+    "post_contact_return_predict_during_rise": True,
     "include_velocity_domain_observation": False,
     "include_task_phase_observation": False,
     "include_contact_context_observation": False,
@@ -381,6 +406,16 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "controller_velocity_gain": None,
     "controller_velocity_feedback_gain": None,
     "controller_max_velocity_step": None,
+    "next_intercept_success_radius": None,
+    "easy_next_ball_xy_radius": None,
+    "controller_nullspace_posture_gain": None,
+    "controller_nullspace_posture_max_step": None,
+    "controller_nullspace_posture_target": None,
+    "controller_body_clearance_gain": None,
+    "controller_body_clearance_margin": None,
+    "controller_body_clearance_vertical_margin": None,
+    "controller_body_clearance_max_step": None,
+    "controller_body_clearance_body_names": None,
     "contact_frame_centering_tilt_limit": None,
     "contact_frame_centering_tilt_radius": None,
     "contact_frame_centering_tilt_deadband": None,
@@ -676,6 +711,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--controller-velocity-gain", type=float, default=None)
     parser.add_argument("--controller-velocity-feedback-gain", type=float, default=None)
     parser.add_argument("--controller-max-velocity-step", type=float, default=None)
+    parser.add_argument("--controller-nullspace-posture-gain", type=float, default=None)
+    parser.add_argument("--controller-nullspace-posture-max-step", type=float, default=None)
+    parser.add_argument(
+        "--controller-nullspace-posture-target",
+        type=float,
+        nargs=7,
+        metavar=("J1", "J2", "J3", "J4", "J5", "J6", "J7"),
+        default=None,
+    )
+    parser.add_argument("--controller-body-clearance-gain", type=float, default=None)
+    parser.add_argument("--controller-body-clearance-margin", type=float, default=None)
+    parser.add_argument("--controller-body-clearance-vertical-margin", type=float, default=None)
+    parser.add_argument("--controller-body-clearance-max-step", type=float, default=None)
+    parser.add_argument(
+        "--controller-body-clearance-body-names",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Robot body names that the nullspace clearance controller should keep away from the ball.",
+    )
     parser.add_argument(
         "--contact-frame-centering-tilt-limit",
         type=float,
@@ -694,8 +749,27 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Vertical offset applied to the racket target while the ball is rising after contact.",
     )
+    parser.add_argument(
+        "--disable-post-contact-return-predict-during-rise",
+        action="store_false",
+        dest="post_contact_return_predict_during_rise",
+        default=True,
+        help="Return to the anchor while the ball rises instead of chasing a predicted future intercept.",
+    )
     parser.add_argument("--next-intercept-reachable-bonus-weight", type=float, default=None)
     parser.add_argument("--easy-next-ball-reward-weight", type=float, default=None)
+    parser.add_argument(
+        "--next-intercept-success-radius",
+        type=float,
+        default=None,
+        help="XY radius used to decide whether the next descending intercept is easy enough to count as useful.",
+    )
+    parser.add_argument(
+        "--easy-next-ball-xy-radius",
+        type=float,
+        default=None,
+        help="XY radius used inside the dense easy-next-ball score.",
+    )
     parser.add_argument(
         "--require-reachable-next-intercept-for-success",
         action="store_true",
@@ -991,6 +1065,22 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["controller_velocity_feedback_gain"] = args.controller_velocity_feedback_gain
     if args.controller_max_velocity_step is not None:
         env_kwargs["controller_max_velocity_step"] = args.controller_max_velocity_step
+    if args.controller_nullspace_posture_gain is not None:
+        env_kwargs["controller_nullspace_posture_gain"] = args.controller_nullspace_posture_gain
+    if args.controller_nullspace_posture_max_step is not None:
+        env_kwargs["controller_nullspace_posture_max_step"] = args.controller_nullspace_posture_max_step
+    if args.controller_nullspace_posture_target is not None:
+        env_kwargs["controller_nullspace_posture_target"] = tuple(args.controller_nullspace_posture_target)
+    if args.controller_body_clearance_gain is not None:
+        env_kwargs["controller_body_clearance_gain"] = args.controller_body_clearance_gain
+    if args.controller_body_clearance_margin is not None:
+        env_kwargs["controller_body_clearance_margin"] = args.controller_body_clearance_margin
+    if args.controller_body_clearance_vertical_margin is not None:
+        env_kwargs["controller_body_clearance_vertical_margin"] = args.controller_body_clearance_vertical_margin
+    if args.controller_body_clearance_max_step is not None:
+        env_kwargs["controller_body_clearance_max_step"] = args.controller_body_clearance_max_step
+    if args.controller_body_clearance_body_names is not None:
+        env_kwargs["controller_body_clearance_body_names"] = tuple(args.controller_body_clearance_body_names)
     if args.contact_frame_centering_tilt_limit is not None:
         env_kwargs["contact_frame_centering_tilt_limit"] = tuple(args.contact_frame_centering_tilt_limit)
     if args.contact_frame_centering_tilt_radius is not None:
@@ -1005,10 +1095,16 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["post_contact_return_max_intercept_time"] = args.post_contact_return_max_intercept_time
     if args.post_contact_return_z_offset is not None:
         env_kwargs["post_contact_return_z_offset"] = args.post_contact_return_z_offset
+    if not args.post_contact_return_predict_during_rise:
+        env_kwargs["post_contact_return_predict_during_rise"] = False
     if args.next_intercept_reachable_bonus_weight is not None:
         env_kwargs["next_intercept_reachable_bonus_weight"] = args.next_intercept_reachable_bonus_weight
     if args.easy_next_ball_reward_weight is not None:
         env_kwargs["easy_next_ball_reward_weight"] = args.easy_next_ball_reward_weight
+    if args.next_intercept_success_radius is not None:
+        env_kwargs["next_intercept_success_radius"] = args.next_intercept_success_radius
+    if args.easy_next_ball_xy_radius is not None:
+        env_kwargs["easy_next_ball_xy_radius"] = args.easy_next_ball_xy_radius
     if args.require_reachable_next_intercept_for_success:
         env_kwargs["require_reachable_next_intercept_for_success"] = True
     if args.min_easy_next_ball_score_for_success is not None:
