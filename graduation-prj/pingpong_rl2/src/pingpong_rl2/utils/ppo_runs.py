@@ -158,6 +158,7 @@ def load_env_config_for_model(model_path: Path) -> dict[str, object] | None:
 def resolve_env_kwargs_for_model(
     model_path: Path | None = None,
     *,
+    scene_path: Path | str | None = None,
     ball_height: float | None = None,
     target_ball_height: float | None = None,
     max_episode_steps: int | None = None,
@@ -181,6 +182,8 @@ def resolve_env_kwargs_for_model(
         if summary_env_config is not None:
             env_kwargs.update(summary_env_config)
 
+    if scene_path is not None:
+        env_kwargs["scene_path"] = str(resolve_input_path(Path(scene_path)))
     if ball_height is not None:
         env_kwargs["ball_height"] = float(ball_height)
         if target_ball_height is None:

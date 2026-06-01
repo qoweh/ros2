@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Sequence
 
 import numpy as np
@@ -123,6 +124,7 @@ class PingPongKeepUpEnv:
     def __init__(
         self,
         sim: PingPongSim | None = None,
+        scene_path: Path | str | None = None,
         action_mode: str = "position",
         action_limit: float = DEFAULT_ACTION_LIMIT,
         lateral_action_limit: float | None = None,
@@ -249,7 +251,10 @@ class PingPongKeepUpEnv:
         max_contact_racket_lateral_speed_for_success: float | None = None,
         nonuseful_contact_penalty_weight: float = 0.0,
     ) -> None:
-        self.sim = PingPongSim() if sim is None else sim
+        if sim is not None and scene_path is not None:
+            raise ValueError("scene_path can only be provided when sim is None.")
+        self.sim = PingPongSim(scene_path=scene_path) if sim is None else sim
+        self.scene_path = str(self.sim.scene_path)
         self.action_mode = str(action_mode)
         self.action_limit = float(action_limit)
         self.lateral_action_limit = (
@@ -1308,6 +1313,7 @@ class PingPongKeepUpEnv:
 
     def training_config(self) -> dict[str, object]:
         return {
+            "scene_path": self.scene_path,
             "action_mode": self.action_mode,
             "action_limit": self.action_limit,
             "lateral_action_limit": self.lateral_action_limit,
@@ -2368,8 +2374,8 @@ class PingPongKeepUpEnv:
                     reward_terms["contact_racket_lateral_velocity_penalty"] = (
                         -self.contact_racket_lateral_velocity_penalty_weight * normalized_lateral_speed
                     )
-                if success_reason is None and self.nonuseful_contact_penalty_weight > 0.0:
-                    reward_terms["nonuseful_contact_penalty"] = -self.nonuseful_contact_penalty_weight
+        if contact_event and success_reason is None and self.nonuseful_contact_penalty_weight > 0.0:
+            reward_terms["nonuseful_contact_penalty"] = -self.nonuseful_contact_penalty_weight
         if contact_event and self.useful_contact_outgoing_x_penalty_weight > 0.0:
             actual_outgoing_velocity_z = outgoing_trajectory_metrics.get("actual_outgoing_velocity_z")
             if actual_outgoing_velocity_z is None:

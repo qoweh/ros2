@@ -290,16 +290,20 @@ _ENV_PRESETS["contact_frame_planned_intercept_candidate"] = {
 
 _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     **_ENV_PRESETS["contact_frame_planned_intercept_candidate"],
+    "scene_path": "assets/scene_racket_outward.xml",
     "n_envs": 4,
     "batch_size": 512,
     "checkpoint_interval": 0,
     "checkpoint_eval_episodes": 20,
     "early_stop_patience_evals": 0,
-    "target_ball_height": 0.25,
+    "target_ball_height": 0.30,
     "lateral_action_limit": 0.02,
     "vertical_action_limit": 0.025,
-    "tilt_action_limit": 0.01,
-    "target_tilt_limit": (0.09, 0.09),
+    "tilt_action_limit": 0.008,
+    "target_tilt_limit": (0.12, 0.12),
+    "strike_tilt_ramp_pitch": None,
+    "followup_strike_target_tilt": None,
+    "contact_frame_base_tilt_residual": None,
     "controller_velocity_feedback_gain": 0.25,
     "controller_max_velocity_step": 0.03,
     "controller_nullspace_posture_gain": 0.20,
@@ -322,8 +326,8 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_velocity_target_gain": 0.65,
     "contact_frame_velocity_target_max": 1.6,
     "contact_frame_trajectory_tilt_gain": 1.0,
-    "contact_frame_trajectory_tilt_limit": (0.05, 0.05),
-    "contact_frame_centering_tilt_limit": (0.035, 0.045),
+    "contact_frame_trajectory_tilt_limit": (0.06, 0.06),
+    "contact_frame_centering_tilt_limit": (0.04, 0.05),
     "contact_frame_centering_tilt_radius": 0.08,
     "contact_frame_centering_tilt_deadband": 0.008,
     "require_reachable_next_intercept_for_success": True,
@@ -336,8 +340,9 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_racket_lateral_velocity_penalty_weight": 0.25,
     "contact_racket_lateral_velocity_tolerance": 0.18,
     "max_contact_racket_lateral_speed_for_success": 0.45,
-    "nonuseful_contact_penalty_weight": 1.0,
-    "trajectory_error_penalty_weight": 0.25,
+    "nonuseful_contact_penalty_weight": 1.25,
+    "trajectory_match_reward_weight": 0.35,
+    "trajectory_error_penalty_weight": 0.50,
     "bootstrap_heuristic_episodes": 0,
     "bootstrap_epochs": 0,
     "bootstrap_followup_epochs": 0,
@@ -393,6 +398,7 @@ _ENV_PRESETS["contact_frame_tilt_headroom_bootstrap_candidate"] = {
 
 
 _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
+    "scene_path": None,
     "n_envs": 4,
     "n_steps": DEFAULT_PPO_N_STEPS,
     "batch_size": DEFAULT_PPO_BATCH_SIZE,
@@ -549,6 +555,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vf-coef", type=float, default=0.5)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument(
+        "--scene-path",
+        type=Path,
+        default=None,
+        help="Optional MuJoCo scene XML. Presets may use this for geometry A/B variants.",
+    )
     parser.add_argument(
         "--bootstrap-heuristic-episodes",
         type=int,
@@ -1089,6 +1101,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         "reset_velocity_z_range": tuple(args.reset_velocity_z_range),
         "success_velocity_threshold": args.success_velocity_threshold,
     }
+    if args.scene_path is not None:
+        env_kwargs["scene_path"] = str(resolve_input_path(Path(args.scene_path)))
     if args.lateral_action_limit is not None:
         env_kwargs["lateral_action_limit"] = args.lateral_action_limit
     if args.vertical_action_limit is not None:

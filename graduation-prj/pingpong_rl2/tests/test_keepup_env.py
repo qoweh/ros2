@@ -16,6 +16,26 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertEqual(info["contact_count"], 0)
         self.assertEqual(info["successful_bounce_count"], 0)
 
+    def test_scene_path_variant_moves_racket_center_farther_from_hand(self) -> None:
+        default_env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        outward_env = PingPongKeepUpEnv(
+            scene_path="assets/scene_racket_outward.xml",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+        )
+
+        default_hand_id = default_env.sim.model.body("hand").id
+        outward_hand_id = outward_env.sim.model.body("hand").id
+        default_hand_distance = np.linalg.norm(
+            default_env.sim.racket_position[:2] - default_env.sim.data.xpos[default_hand_id][:2]
+        )
+        outward_hand_distance = np.linalg.norm(
+            outward_env.sim.racket_position[:2] - outward_env.sim.data.xpos[outward_hand_id][:2]
+        )
+
+        self.assertGreater(outward_hand_distance, default_hand_distance + 0.04)
+        self.assertTrue(outward_env.training_config()["scene_path"].endswith("scene_racket_outward.xml"))
+
     def test_step_info_exposes_controller_anchor_position(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
         env.reset(ball_height=env.ball_height)
@@ -1291,6 +1311,26 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertLess(reward_terms["next_intercept_xy_error_penalty"], 0.0)
         self.assertLess(reward_terms["post_contact_lateral_velocity_penalty"], 0.0)
         self.assertLess(reward_terms["contact_xy_error_penalty"], 0.0)
+        self.assertEqual(reward_terms["nonuseful_contact_penalty"], -1.0)
+
+    def test_nonuseful_contact_penalty_applies_to_weak_contact(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            nonuseful_contact_penalty_weight=1.0,
+        )
+        env.reset(ball_height=env.ball_height)
+
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=False,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={"contact_ball_velocity_z": 0.1},
+        )
+
         self.assertEqual(reward_terms["nonuseful_contact_penalty"], -1.0)
 
     def test_gym_wrapper_exposes_position_contact_frame_spaces(self) -> None:

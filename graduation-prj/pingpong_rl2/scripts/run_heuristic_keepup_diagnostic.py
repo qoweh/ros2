@@ -17,6 +17,7 @@ if str(SRC_ROOT) not in sys.path:
 from pingpong_rl2.controllers import HeuristicKeepUpPolicy
 from pingpong_rl2.defaults import DEFAULT_BALL_HEIGHT, DEFAULT_MAX_EPISODE_STEPS
 from pingpong_rl2.envs import PingPongKeepUpGymEnv
+from pingpong_rl2.utils import resolve_input_path
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,6 +32,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=211)
+    parser.add_argument(
+        "--scene-path",
+        type=Path,
+        default=None,
+        help="Optional MuJoCo scene XML for geometry A/B diagnostics.",
+    )
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
     parser.add_argument(
         "--target-ball-height",
@@ -292,6 +299,8 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "include_contact_context_observation": True,
         "include_next_intercept_observation": True,
     }
+    if args.scene_path is not None:
+        env_kwargs["scene_path"] = str(resolve_input_path(args.scene_path))
     if args.followup_strike_target_tilt is not None:
         env_kwargs["followup_strike_target_tilt"] = tuple(args.followup_strike_target_tilt)
     if args.initial_target_tilt is not None:

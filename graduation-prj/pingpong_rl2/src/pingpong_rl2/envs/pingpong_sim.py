@@ -7,12 +7,12 @@ import mujoco
 import numpy as np
 
 from pingpong_rl2.defaults import DEFAULT_BALL_HEIGHT, DEFAULT_CONTROL_DT
-from pingpong_rl2.utils.paths import SCENE_XML_PATH
+from pingpong_rl2.utils.paths import SCENE_XML_PATH, resolve_input_path
 
 
 class PingPongSim:
     def __init__(self, scene_path: Path | str | None = None, control_dt: float = DEFAULT_CONTROL_DT) -> None:
-        scene_file = Path(scene_path) if scene_path is not None else SCENE_XML_PATH
+        scene_file = resolve_input_path(Path(scene_path)) if scene_path is not None else SCENE_XML_PATH
         self.scene_path = scene_file.resolve()
         self.model = mujoco.MjModel.from_xml_path(str(self.scene_path))
         self.data = mujoco.MjData(self.model)

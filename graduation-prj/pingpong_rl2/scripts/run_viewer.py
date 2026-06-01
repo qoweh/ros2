@@ -39,6 +39,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=101)
+    parser.add_argument(
+        "--scene-path",
+        type=Path,
+        default=None,
+        help="Optional MuJoCo scene XML override. Saved model env_config scene_path is used when this is omitted.",
+    )
     parser.add_argument("--ball-height", type=float, default=None)
     parser.add_argument(
         "--target-ball-height",
@@ -113,6 +119,7 @@ def main() -> None:
 
     env_kwargs = resolve_env_kwargs_for_model(
         configured_model_path,
+        scene_path=args.scene_path,
         ball_height=args.ball_height,
         target_ball_height=args.target_ball_height,
         max_episode_steps=args.max_episode_steps,
