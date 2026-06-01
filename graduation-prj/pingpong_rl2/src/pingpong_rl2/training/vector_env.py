@@ -43,7 +43,7 @@ def make_gym_vector_env(
 
 
 class SB3AsyncVectorEnvAdapter(VecEnv):
-    def __init__(self, vector_env: AsyncVectorEnv):
+    def __init__(self, vector_env: AsyncVectorEnv | SyncVectorEnv):
         if vector_env.metadata.get("autoreset_mode") != AutoresetMode.DISABLED:
             raise ValueError("SB3AsyncVectorEnvAdapter requires AsyncVectorEnv with autoreset disabled.")
         self.vector_env = vector_env
@@ -53,6 +53,7 @@ class SB3AsyncVectorEnvAdapter(VecEnv):
             action_space=vector_env.single_action_space,
         )
         self.metadata = dict(vector_env.metadata)
+        self._pending_actions: np.ndarray | None = None
 
     @staticmethod
     def _split_infos(vector_infos: dict[str, Any], num_envs: int) -> list[dict[str, Any]]:
@@ -98,10 +99,19 @@ class SB3AsyncVectorEnvAdapter(VecEnv):
         return np.asarray(observations)
 
     def step_async(self, actions: np.ndarray) -> None:
-        self.vector_env.step_async(actions)
+        if hasattr(self.vector_env, "step_async"):
+            self.vector_env.step_async(actions)
+            return
+        self._pending_actions = np.asarray(actions)
 
     def step_wait(self) -> VecEnvStepReturn:
-        observations, rewards, terminations, truncations, vector_infos = self.vector_env.step_wait()
+        if hasattr(self.vector_env, "step_wait"):
+            observations, rewards, terminations, truncations, vector_infos = self.vector_env.step_wait()
+        else:
+            if self._pending_actions is None:
+                raise RuntimeError("step_wait called before step_async.")
+            observations, rewards, terminations, truncations, vector_infos = self.vector_env.step(self._pending_actions)
+            self._pending_actions = None
         dones = np.asarray(np.logical_or(terminations, truncations), dtype=bool)
         info_list = self._split_infos(vector_infos, self.num_envs)
         observations = np.asarray(observations)
@@ -164,7 +174,13 @@ def make_sb3_async_vector_env(
     seed: int | None = None,
     context: str = "spawn",
 ) -> SB3AsyncVectorEnvAdapter:
-    vector_env = make_gym_vector_env(num_envs=num_envs, env_kwargs=env_kwargs, vector_mode="async", context=context)
+    vector_mode: VectorMode = "sync" if num_envs == 1 else "async"
+    vector_env = make_gym_vector_env(
+        num_envs=num_envs,
+        env_kwargs=env_kwargs,
+        vector_mode=vector_mode,
+        context=context,
+    )
     adapter = SB3AsyncVectorEnvAdapter(vector_env)
     if seed is not None:
         adapter.seed(seed)

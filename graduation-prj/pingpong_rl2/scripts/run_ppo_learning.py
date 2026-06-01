@@ -150,7 +150,12 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "strike_tilt_ramp_pitch": -0.06,
         "strike_tilt_ramp_xy_tolerance": 0.04,
         "followup_strike_target_tilt": (-0.06, 0.0),
-        "post_contact_return_assist_weight": 0.5,
+        "contact_frame_base_strike_z_boost": 0.024,
+        "contact_frame_base_strike_z_offset": 0.01,
+        "contact_frame_base_tilt_residual": (-0.02, 0.0),
+        "contact_frame_action_penalty_weight": 0.05,
+        "log_std_init": -3.0,
+        "post_contact_return_assist_weight": 0.8,
         "post_contact_return_max_intercept_time": 0.6,
         "include_task_phase_observation": True,
         "include_contact_context_observation": True,
@@ -177,6 +182,12 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "followup_strike_contact_offset_ratio": None,
     "followup_strike_contact_offset_max": None,
     "followup_strike_lift_boost": None,
+    "contact_frame_base_strike_z_boost": None,
+    "contact_frame_base_strike_z_offset": None,
+    "contact_frame_base_strike_time_horizon": None,
+    "contact_frame_base_tilt_residual": None,
+    "contact_frame_action_penalty_weight": None,
+    "log_std_init": None,
 }
 
 
@@ -415,6 +426,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional extra follow-up lift boost applied only after the first useful bounce.",
     )
+    parser.add_argument("--contact-frame-base-strike-z-boost", type=float, default=None)
+    parser.add_argument("--contact-frame-base-strike-z-offset", type=float, default=None)
+    parser.add_argument("--contact-frame-base-strike-time-horizon", type=float, default=None)
+    parser.add_argument(
+        "--contact-frame-base-tilt-residual",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
+    parser.add_argument("--contact-frame-action-penalty-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
     parser.add_argument("--next-intercept-reachable-bonus-weight", type=float, default=None)
@@ -469,6 +491,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="Optional number of consecutive non-improving checkpoint evaluations before training stops early. Set 0 to disable.",
+    )
+    parser.add_argument(
+        "--log-std-init",
+        type=float,
+        default=None,
+        help="Optional initial log std for PPO Gaussian actions. Useful for small residual action spaces.",
     )
     parser.add_argument("--smoke", action="store_true")
     return parser.parse_args()
@@ -630,6 +658,16 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["followup_strike_contact_offset_max"] = args.followup_strike_contact_offset_max
     if args.followup_strike_lift_boost is not None:
         env_kwargs["followup_strike_lift_boost"] = args.followup_strike_lift_boost
+    if args.contact_frame_base_strike_z_boost is not None:
+        env_kwargs["contact_frame_base_strike_z_boost"] = args.contact_frame_base_strike_z_boost
+    if args.contact_frame_base_strike_z_offset is not None:
+        env_kwargs["contact_frame_base_strike_z_offset"] = args.contact_frame_base_strike_z_offset
+    if args.contact_frame_base_strike_time_horizon is not None:
+        env_kwargs["contact_frame_base_strike_time_horizon"] = args.contact_frame_base_strike_time_horizon
+    if args.contact_frame_base_tilt_residual is not None:
+        env_kwargs["contact_frame_base_tilt_residual"] = tuple(args.contact_frame_base_tilt_residual)
+    if args.contact_frame_action_penalty_weight is not None:
+        env_kwargs["contact_frame_action_penalty_weight"] = args.contact_frame_action_penalty_weight
     if args.post_contact_return_assist_weight is not None:
         env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
     if args.post_contact_return_max_intercept_time is not None:
@@ -987,6 +1025,7 @@ def main() -> None:
     monitored_env = VecMonitor(venv=vec_env, filename=str(monitor_path))
 
     if starting_checkpoint is None:
+        policy_kwargs = None if args.log_std_init is None else {"log_std_init": float(args.log_std_init)}
         model = PPO(
             "MlpPolicy",
             monitored_env,
@@ -998,6 +1037,7 @@ def main() -> None:
             tensorboard_log=str(run_dir / "tb"),
             seed=args.seed,
             device=args.device,
+            policy_kwargs=policy_kwargs,
         )
     else:
         model = PPO.load(
@@ -1119,6 +1159,7 @@ def main() -> None:
             "gamma": args.gamma,
             "seed": args.seed,
             "device": args.device,
+            "log_std_init": args.log_std_init,
             "checkpoint_interval": args.checkpoint_interval,
             "checkpoint_eval_episodes": args.checkpoint_eval_episodes,
             "early_stop_patience_evals": args.early_stop_patience_evals,

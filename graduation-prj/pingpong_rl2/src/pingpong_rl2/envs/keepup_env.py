@@ -186,6 +186,11 @@ class PingPongKeepUpEnv:
         controller_orientation_gain: float = 0.45,
         controller_max_position_step: float = 0.06,
         controller_max_orientation_step: float = 0.12,
+        contact_frame_base_strike_z_boost: float = 0.0,
+        contact_frame_base_strike_z_offset: float = 0.0,
+        contact_frame_base_strike_time_horizon: float = 0.14,
+        contact_frame_base_tilt_residual: Sequence[float] | None = None,
+        contact_frame_action_penalty_weight: float = 0.0,
     ) -> None:
         self.sim = PingPongSim() if sim is None else sim
         self.action_mode = str(action_mode)
@@ -276,6 +281,13 @@ class PingPongKeepUpEnv:
         self.controller_orientation_gain = float(controller_orientation_gain)
         self.controller_max_position_step = float(controller_max_position_step)
         self.controller_max_orientation_step = float(controller_max_orientation_step)
+        self.contact_frame_base_strike_z_boost = float(contact_frame_base_strike_z_boost)
+        self.contact_frame_base_strike_z_offset = float(contact_frame_base_strike_z_offset)
+        self.contact_frame_base_strike_time_horizon = float(contact_frame_base_strike_time_horizon)
+        self.contact_frame_base_tilt_residual = (
+            None if contact_frame_base_tilt_residual is None else np.asarray(contact_frame_base_tilt_residual, dtype=float)
+        )
+        self.contact_frame_action_penalty_weight = float(contact_frame_action_penalty_weight)
         if self.action_mode not in _ACTION_MODES:
             raise ValueError(f"action_mode must be one of {_ACTION_MODES}, got {self.action_mode!r}.")
         if self.contact_oracle_mode not in _CONTACT_ORACLE_MODES:
@@ -424,6 +436,32 @@ class PingPongKeepUpEnv:
         if self.next_intercept_max_time <= 0.0:
             raise ValueError(
                 f"next_intercept_max_time must be positive, got {self.next_intercept_max_time}."
+            )
+        if self.contact_frame_base_strike_z_boost < 0.0:
+            raise ValueError(
+                "contact_frame_base_strike_z_boost must be non-negative, got "
+                f"{self.contact_frame_base_strike_z_boost}."
+            )
+        if self.contact_frame_base_strike_time_horizon <= 0.0:
+            raise ValueError(
+                "contact_frame_base_strike_time_horizon must be positive, got "
+                f"{self.contact_frame_base_strike_time_horizon}."
+            )
+        if self.contact_frame_base_tilt_residual is not None:
+            if self.contact_frame_base_tilt_residual.shape != (2,):
+                raise ValueError(
+                    "contact_frame_base_tilt_residual must have shape (2,), got "
+                    f"{self.contact_frame_base_tilt_residual.shape}."
+                )
+            if np.any(np.abs(self.contact_frame_base_tilt_residual) > self.target_tilt_limit + 1.0e-9):
+                raise ValueError(
+                    "contact_frame_base_tilt_residual must stay within target_tilt_limit, got "
+                    f"{self.contact_frame_base_tilt_residual} with target_tilt_limit={self.target_tilt_limit}."
+                )
+        if self.contact_frame_action_penalty_weight < 0.0:
+            raise ValueError(
+                "contact_frame_action_penalty_weight must be non-negative, got "
+                f"{self.contact_frame_action_penalty_weight}."
             )
         if self.strike_tilt_ramp_xy_tolerance < 0.0:
             raise ValueError(
@@ -641,7 +679,11 @@ class PingPongKeepUpEnv:
             next_target_tilt = self._constrained_target_tilt(self._position_strike_target_tilt() + applied_action[3:5])
             self.controller.set_target_tilt(next_target_tilt)
         elif self.action_mode == "position_contact_frame":
-            next_target_tilt = self._constrained_target_tilt(self._position_strike_target_tilt() + applied_action[3:5])
+            next_target_tilt = self._constrained_target_tilt(
+                self._position_strike_target_tilt()
+                + self._contact_frame_base_strike_tilt()
+                + applied_action[3:5]
+            )
             self.controller.set_target_tilt(next_target_tilt)
         safe_target_position = self._guarded_target_position(requested_target_position)
         self.controller.set_target_position(safe_target_position)
@@ -845,6 +887,13 @@ class PingPongKeepUpEnv:
             "contact_oracle_mode": self.contact_oracle_mode,
             "contact_oracle_blend": self.contact_oracle_blend,
             "next_intercept_max_time": self.next_intercept_max_time,
+            "contact_frame_base_strike_z_boost": self.contact_frame_base_strike_z_boost,
+            "contact_frame_base_strike_z_offset": self.contact_frame_base_strike_z_offset,
+            "contact_frame_base_strike_time_horizon": self.contact_frame_base_strike_time_horizon,
+            "contact_frame_base_tilt_residual": (
+                None if self.contact_frame_base_tilt_residual is None else self.contact_frame_base_tilt_residual.tolist()
+            ),
+            "contact_frame_action_penalty_weight": self.contact_frame_action_penalty_weight,
         }
 
     def close(self) -> None:
@@ -1428,6 +1477,7 @@ class PingPongKeepUpEnv:
             "trajectory_match_term": 0.0,
             "outgoing_x_term": 0.0,
             "failure_penalty": 0.0,
+            "contact_frame_action_penalty": 0.0,
             "tilt_angle_penalty": 0.0,
             "tilt_action_delta_penalty": 0.0,
         }
@@ -1435,6 +1485,11 @@ class PingPongKeepUpEnv:
             reward_terms["tilt_angle_penalty"] = -self.tilt_angle_penalty_weight * self._normalized_tilt_magnitude()
             reward_terms["tilt_action_delta_penalty"] = (
                 -self.tilt_action_delta_penalty_weight * self._normalized_tilt_action_delta(applied_action)
+            )
+        if self.action_mode == "position_contact_frame" and self.contact_frame_action_penalty_weight > 0.0:
+            normalized_action = applied_action / np.maximum(self.action_high, 1.0e-6)
+            reward_terms["contact_frame_action_penalty"] = -self.contact_frame_action_penalty_weight * float(
+                np.linalg.norm(normalized_action) / np.sqrt(float(self.action_size))
             )
         if contact_event and success_reason is not None:
             next_intercept_metrics = self._next_intercept_metrics()
@@ -1714,6 +1769,30 @@ class PingPongKeepUpEnv:
         tangent = np.array([-radial[1], radial[0]], dtype=float)
         return radial, tangent, frame_source
 
+    def _contact_frame_base_strike_lift(self) -> float:
+        if self.action_mode != "position_contact_frame":
+            return 0.0
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return 0.0
+        intercept_time = self._predicted_intercept_time()
+        urgency = 1.0 - np.clip(
+            intercept_time / max(self.contact_frame_base_strike_time_horizon, 1.0e-6),
+            0.0,
+            1.0,
+        )
+        strike_readiness = max(self._pre_contact_height_readiness(), urgency)
+        return float(
+            self.contact_frame_base_strike_z_offset
+            + self.contact_frame_base_strike_z_boost * np.clip(strike_readiness, 0.0, 1.0)
+        )
+
+    def _contact_frame_base_strike_tilt(self) -> np.ndarray:
+        if self.action_mode != "position_contact_frame" or self.contact_frame_base_tilt_residual is None:
+            return np.zeros(2, dtype=float)
+        if self._phase_name() not in {"prepare", "strike"}:
+            return np.zeros(2, dtype=float)
+        return np.asarray(self.contact_frame_base_tilt_residual, dtype=float)
+
     def _contact_frame_action_target_position(self, action: Sequence[float]) -> np.ndarray:
         action_array = np.asarray(action, dtype=float)
         if action_array.shape != (3,):
@@ -1727,7 +1806,7 @@ class PingPongKeepUpEnv:
             target_position[2] = anchor_position[2] + action_array[2]
             return target_position
         target_position[:2] = self._strike_contact_target_xy() + contact_offset_xy
-        lift_target = self._strike_lift_feedforward()
+        lift_target = self._strike_lift_feedforward() + self._contact_frame_base_strike_lift()
         target_position[2] = anchor_position[2] + lift_target + action_array[2]
         return target_position
 

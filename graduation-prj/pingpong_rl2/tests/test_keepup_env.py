@@ -613,6 +613,59 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertTrue(np.all(action <= env.action_high + 1.0e-9))
         self.assertTrue(np.all(action >= env.action_low - 1.0e-9))
 
+    def test_contact_frame_base_strike_lift_makes_zero_action_nonempty(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_base_strike_z_boost=0.024,
+            contact_frame_base_strike_z_offset=0.01,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        base_target = env._contact_frame_action_target_position(np.zeros(3, dtype=float))
+        no_base_env = PingPongKeepUpEnv(action_mode="position_contact_frame", reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+        no_base_env.reset(ball_height=no_base_env.ball_height)
+        no_base_env.sim.spawn_ball(
+            no_base_env.sim.racket_position + np.array([0.0, 0.0, no_base_env._preparation_target_height_above_racket()]),
+            velocity=(0.0, 0.0, -1.0),
+        )
+        no_base_target = no_base_env._contact_frame_action_target_position(np.zeros(3, dtype=float))
+        self.assertGreater(float(base_target[2]), float(no_base_target[2]))
+
+    def test_contact_frame_base_tilt_residual_applies_during_strike(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_tilt_limit=(0.06, 0.06),
+            contact_frame_base_tilt_residual=(-0.02, 0.0),
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        _, _, _, _, info = env.step(np.zeros(env.action_size, dtype=float))
+        self.assertLess(float(info["target_tilt"][0]), -0.01)
+
+    def test_contact_frame_action_penalty_is_negative_for_nonzero_action(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_action_penalty_weight=0.05,
+        )
+        env.reset(ball_height=env.ball_height)
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=False,
+            contact_active=False,
+            applied_action=env.action_high.copy(),
+            contact_trace={},
+        )
+        self.assertLess(reward_terms["contact_frame_action_penalty"], 0.0)
+
     def test_gym_wrapper_exposes_position_contact_frame_spaces(self) -> None:
         env = PingPongKeepUpGymEnv(action_mode="position_contact_frame", reset_xy_range=0.0)
         observation, _ = env.reset(seed=7)
