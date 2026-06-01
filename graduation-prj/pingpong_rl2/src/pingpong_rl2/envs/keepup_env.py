@@ -33,6 +33,7 @@ _ACTION_MODES = (
 )
 _CONTACT_ORACLE_MODES = ("none", "desired_outgoing_velocity")
 _RETURN_TARGET_XY_SOURCES = ("controller_anchor", "racket_home", "racket_position", "target_position")
+_DESIRED_OUTGOING_XY_MODES = ("next_intercept", "apex")
 
 _EASY_NEXT_BALL_TARGET_TIME = 0.45
 _EASY_NEXT_BALL_TIME_TOLERANCE = 0.30
@@ -178,6 +179,7 @@ class PingPongKeepUpEnv:
         include_contact_context_observation: bool = False,
         include_next_intercept_observation: bool = False,
         include_desired_outgoing_velocity_observation: bool = False,
+        desired_outgoing_xy_mode: str = "next_intercept",
         trajectory_match_reward_weight: float = 0.0,
         trajectory_error_penalty_weight: float = 0.0,
         contact_oracle_mode: str = "none",
@@ -294,6 +296,7 @@ class PingPongKeepUpEnv:
         self.include_contact_context_observation = bool(include_contact_context_observation)
         self.include_next_intercept_observation = bool(include_next_intercept_observation)
         self.include_desired_outgoing_velocity_observation = bool(include_desired_outgoing_velocity_observation)
+        self.desired_outgoing_xy_mode = str(desired_outgoing_xy_mode)
         self.trajectory_match_reward_weight = float(trajectory_match_reward_weight)
         self.trajectory_error_penalty_weight = float(trajectory_error_penalty_weight)
         self.contact_oracle_mode = str(contact_oracle_mode)
@@ -345,6 +348,11 @@ class PingPongKeepUpEnv:
         if self.contact_oracle_mode not in _CONTACT_ORACLE_MODES:
             raise ValueError(
                 f"contact_oracle_mode must be one of {_CONTACT_ORACLE_MODES}, got {self.contact_oracle_mode!r}."
+            )
+        if self.desired_outgoing_xy_mode not in _DESIRED_OUTGOING_XY_MODES:
+            raise ValueError(
+                "desired_outgoing_xy_mode must be one of "
+                f"{_DESIRED_OUTGOING_XY_MODES}, got {self.desired_outgoing_xy_mode!r}."
             )
         if not 0.0 <= self.contact_oracle_blend <= 1.0:
             raise ValueError(
@@ -964,9 +972,28 @@ class PingPongKeepUpEnv:
             "contact_substep_predicted_apex_xy_error": outgoing_trajectory_metrics[
                 "contact_substep_predicted_apex_xy_error"
             ],
+            "contact_substep_predicted_next_intercept_xy_error": outgoing_trajectory_metrics[
+                "contact_substep_predicted_next_intercept_xy_error"
+            ],
             "desired_time_to_apex": outgoing_trajectory_metrics["desired_time_to_apex"],
             "desired_outgoing_target_x": outgoing_trajectory_metrics["desired_outgoing_target_x"],
             "desired_outgoing_target_y": outgoing_trajectory_metrics["desired_outgoing_target_y"],
+            "desired_outgoing_target_z": outgoing_trajectory_metrics["desired_outgoing_target_z"],
+            "desired_outgoing_xy_mode": outgoing_trajectory_metrics["desired_outgoing_xy_mode"],
+            "desired_outgoing_apex_x": outgoing_trajectory_metrics["desired_outgoing_apex_x"],
+            "desired_outgoing_apex_y": outgoing_trajectory_metrics["desired_outgoing_apex_y"],
+            "predicted_next_intercept_x_from_actual_velocity": outgoing_trajectory_metrics[
+                "predicted_next_intercept_x_from_actual_velocity"
+            ],
+            "predicted_next_intercept_y_from_actual_velocity": outgoing_trajectory_metrics[
+                "predicted_next_intercept_y_from_actual_velocity"
+            ],
+            "predicted_next_intercept_time_from_actual_velocity": outgoing_trajectory_metrics[
+                "predicted_next_intercept_time_from_actual_velocity"
+            ],
+            "predicted_next_intercept_xy_error": outgoing_trajectory_metrics[
+                "predicted_next_intercept_xy_error"
+            ],
             "predicted_apex_x_from_actual_velocity": outgoing_trajectory_metrics[
                 "predicted_apex_x_from_actual_velocity"
             ],
@@ -1061,6 +1088,7 @@ class PingPongKeepUpEnv:
             "include_contact_context_observation": self.include_contact_context_observation,
             "include_next_intercept_observation": self.include_next_intercept_observation,
             "include_desired_outgoing_velocity_observation": self.include_desired_outgoing_velocity_observation,
+            "desired_outgoing_xy_mode": self.desired_outgoing_xy_mode,
             "trajectory_match_reward_weight": self.trajectory_match_reward_weight,
             "trajectory_error_penalty_weight": self.trajectory_error_penalty_weight,
             "contact_oracle_mode": self.contact_oracle_mode,
@@ -1190,24 +1218,84 @@ class PingPongKeepUpEnv:
         oracle_info["oracle_contact_base_source"] = base_source
         return oracle_info
 
+    def _predicted_descending_intercept_from_velocity(
+        self,
+        start_position: np.ndarray,
+        velocity: np.ndarray,
+        target_z: float,
+    ) -> tuple[float | None, np.ndarray | None]:
+        quadratic_a = 0.5 * self._gravity_z()
+        quadratic_b = float(velocity[2])
+        quadratic_c = float(start_position[2] - target_z)
+        candidate_times: list[float] = []
+        if abs(quadratic_a) < 1.0e-9:
+            if abs(quadratic_b) > 1.0e-9:
+                candidate_times.append(-quadratic_c / quadratic_b)
+        else:
+            discriminant = quadratic_b * quadratic_b - 4.0 * quadratic_a * quadratic_c
+            if discriminant >= 0.0:
+                sqrt_discriminant = float(np.sqrt(discriminant))
+                denominator = 2.0 * quadratic_a
+                candidate_times.extend(
+                    [
+                        (-quadratic_b - sqrt_discriminant) / denominator,
+                        (-quadratic_b + sqrt_discriminant) / denominator,
+                    ]
+                )
+        descending_times = [
+            time_value
+            for time_value in candidate_times
+            if time_value > 1.0e-6 and float(velocity[2] + self._gravity_z() * time_value) < 0.0
+        ]
+        if not descending_times:
+            return None, None
+        intercept_time = min(descending_times)
+        intercept_xy = np.asarray(start_position[:2] + velocity[:2] * intercept_time, dtype=float)
+        return float(intercept_time), intercept_xy
+
+    def _desired_outgoing_target_z(self) -> float:
+        return float(self._controller_anchor_position()[2] + self._tracking_strike_plane_offset())
+
     def _trajectory_metrics_from_velocity(
         self,
         contact_ball_position: np.ndarray,
         actual_velocity: np.ndarray,
         desired_velocity: np.ndarray,
+        desired_time_to_apex: float,
         desired_target_xy: np.ndarray,
+        desired_target_z: float,
     ) -> dict[str, float]:
         gravity_magnitude = max(abs(self._gravity_z()), 1.0e-6)
         velocity_error = actual_velocity - desired_velocity
         actual_time_to_apex = max(float(actual_velocity[2]), 0.0) / gravity_magnitude
         predicted_apex_xy = contact_ball_position[:2] + actual_velocity[:2] * actual_time_to_apex
+        desired_apex_xy = contact_ball_position[:2] + desired_velocity[:2] * desired_time_to_apex
+        predicted_next_time, predicted_next_xy = self._predicted_descending_intercept_from_velocity(
+            contact_ball_position,
+            actual_velocity,
+            desired_target_z,
+        )
+        if predicted_next_xy is None:
+            predicted_next_x = None
+            predicted_next_y = None
+            predicted_next_error = None
+        else:
+            predicted_next_x = float(predicted_next_xy[0])
+            predicted_next_y = float(predicted_next_xy[1])
+            predicted_next_error = float(np.linalg.norm(predicted_next_xy - desired_target_xy))
         return {
             "outgoing_velocity_error_norm": float(np.linalg.norm(velocity_error)),
             "outgoing_velocity_xy_error": float(np.linalg.norm(velocity_error[:2])),
             "outgoing_velocity_z_error": float(abs(velocity_error[2])),
             "predicted_apex_x": float(predicted_apex_xy[0]),
             "predicted_apex_y": float(predicted_apex_xy[1]),
-            "predicted_apex_xy_error": float(np.linalg.norm(predicted_apex_xy - desired_target_xy)),
+            "predicted_apex_xy_error": float(np.linalg.norm(predicted_apex_xy - desired_apex_xy)),
+            "desired_apex_x": float(desired_apex_xy[0]),
+            "desired_apex_y": float(desired_apex_xy[1]),
+            "predicted_next_intercept_x": predicted_next_x,
+            "predicted_next_intercept_y": predicted_next_y,
+            "predicted_next_intercept_time": predicted_next_time,
+            "predicted_next_intercept_xy_error": predicted_next_error,
         }
 
     def _ball_height_above_racket(self) -> float:
@@ -1481,7 +1569,12 @@ class PingPongKeepUpEnv:
         height_delta = max(target_apex_z - float(contact_ball_position[2]), _MIN_DESIRED_APEX_HEIGHT_DELTA)
         desired_velocity_z = float(np.sqrt(2.0 * gravity_magnitude * height_delta))
         desired_time_to_apex = desired_velocity_z / gravity_magnitude
-        desired_velocity_xy = (desired_target_xy - contact_ball_position[:2]) / max(desired_time_to_apex, 1.0e-6)
+        desired_xy_time = desired_time_to_apex
+        if self.desired_outgoing_xy_mode == "next_intercept":
+            target_z = self._desired_outgoing_target_z()
+            descent_height = max(target_apex_z - target_z, _MIN_DESIRED_APEX_HEIGHT_DELTA)
+            desired_xy_time += float(np.sqrt(2.0 * descent_height / gravity_magnitude))
+        desired_velocity_xy = (desired_target_xy - contact_ball_position[:2]) / max(desired_xy_time, 1.0e-6)
         desired_velocity = np.array(
             [float(desired_velocity_xy[0]), float(desired_velocity_xy[1]), desired_velocity_z],
             dtype=float,
@@ -1504,9 +1597,18 @@ class PingPongKeepUpEnv:
             "contact_substep_outgoing_velocity_xy_error": None,
             "contact_substep_outgoing_velocity_z_error": None,
             "contact_substep_predicted_apex_xy_error": None,
+            "contact_substep_predicted_next_intercept_xy_error": None,
             "desired_time_to_apex": None,
             "desired_outgoing_target_x": None,
             "desired_outgoing_target_y": None,
+            "desired_outgoing_target_z": None,
+            "desired_outgoing_xy_mode": self.desired_outgoing_xy_mode,
+            "desired_outgoing_apex_x": None,
+            "desired_outgoing_apex_y": None,
+            "predicted_next_intercept_x_from_actual_velocity": None,
+            "predicted_next_intercept_y_from_actual_velocity": None,
+            "predicted_next_intercept_time_from_actual_velocity": None,
+            "predicted_next_intercept_xy_error": None,
             "predicted_apex_x_from_actual_velocity": None,
             "predicted_apex_y_from_actual_velocity": None,
             "predicted_apex_xy_error": None,
@@ -1551,17 +1653,22 @@ class PingPongKeepUpEnv:
             actual_velocity = contact_substep_velocity
             actual_velocity_source = "contact_ball_velocity"
         desired_velocity, desired_time_to_apex, desired_target_xy = self._desired_outgoing_velocity(contact_ball_position)
+        desired_target_z = self._desired_outgoing_target_z()
         resolved_metrics = self._trajectory_metrics_from_velocity(
             contact_ball_position,
             actual_velocity,
             desired_velocity,
+            desired_time_to_apex,
             desired_target_xy,
+            desired_target_z,
         )
         contact_substep_metrics = self._trajectory_metrics_from_velocity(
             contact_ball_position,
             contact_substep_velocity,
             desired_velocity,
+            desired_time_to_apex,
             desired_target_xy,
+            desired_target_z,
         )
         return {
             "desired_outgoing_velocity_x": float(desired_velocity[0]),
@@ -1584,9 +1691,20 @@ class PingPongKeepUpEnv:
                 "outgoing_velocity_z_error"
             ],
             "contact_substep_predicted_apex_xy_error": contact_substep_metrics["predicted_apex_xy_error"],
+            "contact_substep_predicted_next_intercept_xy_error": contact_substep_metrics[
+                "predicted_next_intercept_xy_error"
+            ],
             "desired_time_to_apex": float(desired_time_to_apex),
             "desired_outgoing_target_x": float(desired_target_xy[0]),
             "desired_outgoing_target_y": float(desired_target_xy[1]),
+            "desired_outgoing_target_z": float(desired_target_z),
+            "desired_outgoing_xy_mode": self.desired_outgoing_xy_mode,
+            "desired_outgoing_apex_x": resolved_metrics["desired_apex_x"],
+            "desired_outgoing_apex_y": resolved_metrics["desired_apex_y"],
+            "predicted_next_intercept_x_from_actual_velocity": resolved_metrics["predicted_next_intercept_x"],
+            "predicted_next_intercept_y_from_actual_velocity": resolved_metrics["predicted_next_intercept_y"],
+            "predicted_next_intercept_time_from_actual_velocity": resolved_metrics["predicted_next_intercept_time"],
+            "predicted_next_intercept_xy_error": resolved_metrics["predicted_next_intercept_xy_error"],
             "predicted_apex_x_from_actual_velocity": resolved_metrics["predicted_apex_x"],
             "predicted_apex_y_from_actual_velocity": resolved_metrics["predicted_apex_y"],
             "predicted_apex_xy_error": resolved_metrics["predicted_apex_xy_error"],

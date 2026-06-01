@@ -173,6 +173,7 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "include_contact_context_observation": True,
         "include_next_intercept_observation": True,
         "include_desired_outgoing_velocity_observation": True,
+        "desired_outgoing_xy_mode": "next_intercept",
     },
 }
 
@@ -300,6 +301,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "include_contact_context_observation": False,
     "include_next_intercept_observation": False,
     "include_desired_outgoing_velocity_observation": False,
+    "desired_outgoing_xy_mode": "next_intercept",
     "trajectory_match_reward_weight": None,
     "trajectory_error_penalty_weight": None,
     "useful_contact_return_target_xy_reward_weight": None,
@@ -670,6 +672,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Add the desired outgoing ball velocity target to the observation for trajectory-matching experiments.",
     )
+    parser.add_argument(
+        "--desired-outgoing-xy-mode",
+        type=str,
+        choices=("next_intercept", "apex"),
+        default="next_intercept",
+        help="Whether desired outgoing XY velocity aims at the next descending intercept or at the apex.",
+    )
     parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument(
         "--checkpoint-interval",
@@ -934,6 +943,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["include_next_intercept_observation"] = True
     if args.include_desired_outgoing_velocity_observation:
         env_kwargs["include_desired_outgoing_velocity_observation"] = True
+    if args.desired_outgoing_xy_mode is not None:
+        env_kwargs["desired_outgoing_xy_mode"] = args.desired_outgoing_xy_mode
     return env_kwargs
 
 

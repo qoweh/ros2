@@ -184,6 +184,12 @@ def parse_args() -> argparse.Namespace:
         default="none",
     )
     parser.add_argument("--contact-oracle-blend", type=float, default=1.0)
+    parser.add_argument(
+        "--desired-outgoing-xy-mode",
+        type=str,
+        choices=("next_intercept", "apex"),
+        default="next_intercept",
+    )
     parser.add_argument("--print-episodes", action="store_true")
     return parser.parse_args()
 
@@ -236,6 +242,7 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "post_contact_return_max_intercept_time": args.post_contact_return_max_intercept_time,
         "contact_oracle_mode": args.contact_oracle_mode,
         "contact_oracle_blend": args.contact_oracle_blend,
+        "desired_outgoing_xy_mode": args.desired_outgoing_xy_mode,
         "include_task_phase_observation": True,
         "include_contact_context_observation": True,
         "include_next_intercept_observation": True,
@@ -320,10 +327,14 @@ def main() -> None:
     useful_outgoing_velocity_errors: list[float] = []
     all_predicted_apex_errors: list[float] = []
     useful_predicted_apex_errors: list[float] = []
+    all_predicted_next_intercept_errors: list[float] = []
+    useful_predicted_next_intercept_errors: list[float] = []
     two_or_more_episode_outgoing_velocity_errors: list[float] = []
     zero_episode_outgoing_velocity_errors: list[float] = []
     two_or_more_episode_predicted_apex_errors: list[float] = []
     zero_episode_predicted_apex_errors: list[float] = []
+    two_or_more_episode_predicted_next_intercept_errors: list[float] = []
+    zero_episode_predicted_next_intercept_errors: list[float] = []
     outgoing_velocity_source_counts: Counter[str] = Counter()
     resolved_minus_contact_velocity_z: list[float] = []
     resolved_minus_contact_error_norm: list[float] = []
@@ -340,6 +351,7 @@ def main() -> None:
             info: dict[str, object] = {}
             episode_outgoing_velocity_errors: list[float] = []
             episode_predicted_apex_errors: list[float] = []
+            episode_predicted_next_intercept_errors: list[float] = []
             while True:
                 action = policy.predict(env.base_env).astype(np.float32, copy=False)
                 _, reward, terminated, truncated, info = env.step(action)
@@ -369,6 +381,11 @@ def main() -> None:
                         predicted_apex_error_value = float(predicted_apex_error)
                         all_predicted_apex_errors.append(predicted_apex_error_value)
                         episode_predicted_apex_errors.append(predicted_apex_error_value)
+                    predicted_next_intercept_error = info.get("predicted_next_intercept_xy_error")
+                    if predicted_next_intercept_error is not None:
+                        predicted_next_intercept_error_value = float(predicted_next_intercept_error)
+                        all_predicted_next_intercept_errors.append(predicted_next_intercept_error_value)
+                        episode_predicted_next_intercept_errors.append(predicted_next_intercept_error_value)
                     actual_outgoing_velocity_z = info.get("actual_outgoing_velocity_z")
                     contact_ball_velocity_z = info.get("contact_ball_velocity_z")
                     if actual_outgoing_velocity_z is not None and contact_ball_velocity_z is not None:
@@ -466,6 +483,23 @@ def main() -> None:
                             ),
                             "predicted_apex_xy_error": info.get("predicted_apex_xy_error"),
                             "contact_substep_predicted_apex_xy_error": info.get("contact_substep_predicted_apex_xy_error"),
+                            "predicted_next_intercept_xy_error": info.get("predicted_next_intercept_xy_error"),
+                            "contact_substep_predicted_next_intercept_xy_error": info.get(
+                                "contact_substep_predicted_next_intercept_xy_error"
+                            ),
+                            "desired_outgoing_xy_mode": info.get("desired_outgoing_xy_mode"),
+                            "desired_outgoing_target_z": info.get("desired_outgoing_target_z"),
+                            "desired_outgoing_apex_x": info.get("desired_outgoing_apex_x"),
+                            "desired_outgoing_apex_y": info.get("desired_outgoing_apex_y"),
+                            "predicted_next_intercept_x_from_actual_velocity": info.get(
+                                "predicted_next_intercept_x_from_actual_velocity"
+                            ),
+                            "predicted_next_intercept_y_from_actual_velocity": info.get(
+                                "predicted_next_intercept_y_from_actual_velocity"
+                            ),
+                            "predicted_next_intercept_time_from_actual_velocity": info.get(
+                                "predicted_next_intercept_time_from_actual_velocity"
+                            ),
                             "contact_racket_velocity_x": info.get("contact_racket_velocity_x"),
                             "contact_racket_velocity_y": info.get("contact_racket_velocity_y"),
                             "contact_racket_velocity_z": info.get("contact_racket_velocity_z"),
@@ -514,6 +548,8 @@ def main() -> None:
                             useful_outgoing_velocity_errors.append(float(outgoing_velocity_error))
                         if predicted_apex_error is not None:
                             useful_predicted_apex_errors.append(float(predicted_apex_error))
+                        if predicted_next_intercept_error is not None:
+                            useful_predicted_next_intercept_errors.append(float(predicted_next_intercept_error))
                 if terminated or truncated:
                     break
 
@@ -527,9 +563,13 @@ def main() -> None:
             if useful_bounce_count >= 2:
                 two_or_more_episode_outgoing_velocity_errors.extend(episode_outgoing_velocity_errors)
                 two_or_more_episode_predicted_apex_errors.extend(episode_predicted_apex_errors)
+                two_or_more_episode_predicted_next_intercept_errors.extend(
+                    episode_predicted_next_intercept_errors
+                )
             if useful_bounce_count == 0:
                 zero_episode_outgoing_velocity_errors.extend(episode_outgoing_velocity_errors)
                 zero_episode_predicted_apex_errors.extend(episode_predicted_apex_errors)
+                zero_episode_predicted_next_intercept_errors.extend(episode_predicted_next_intercept_errors)
             episode_row = {
                 "episode": episode_index + 1,
                 "return": episode_return,
@@ -664,6 +704,26 @@ def main() -> None:
         ),
         "zero_useful_bounce_episode_contact_mean_predicted_apex_xy_error": (
             float(np.mean(zero_episode_predicted_apex_errors)) if zero_episode_predicted_apex_errors else None
+        ),
+        "all_contact_mean_predicted_next_intercept_xy_error": (
+            float(np.mean(all_predicted_next_intercept_errors))
+            if all_predicted_next_intercept_errors
+            else None
+        ),
+        "useful_contact_mean_predicted_next_intercept_xy_error": (
+            float(np.mean(useful_predicted_next_intercept_errors))
+            if useful_predicted_next_intercept_errors
+            else None
+        ),
+        "two_or_more_useful_bounce_episode_contact_mean_predicted_next_intercept_xy_error": (
+            float(np.mean(two_or_more_episode_predicted_next_intercept_errors))
+            if two_or_more_episode_predicted_next_intercept_errors
+            else None
+        ),
+        "zero_useful_bounce_episode_contact_mean_predicted_next_intercept_xy_error": (
+            float(np.mean(zero_episode_predicted_next_intercept_errors))
+            if zero_episode_predicted_next_intercept_errors
+            else None
         ),
         "mean_resolved_minus_contact_velocity_z": (
             float(np.mean(resolved_minus_contact_velocity_z)) if resolved_minus_contact_velocity_z else None

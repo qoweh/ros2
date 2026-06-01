@@ -597,6 +597,72 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
 
         self.assertAlmostEqual(projected_apex, env.target_ball_height)
 
+    def test_desired_outgoing_velocity_targets_next_descending_intercept_by_default(self) -> None:
+        env = PingPongKeepUpEnv(
+            target_ball_height=0.25,
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        contact_position = anchor_position + np.array([0.04, -0.02, env._tracking_strike_plane_offset()])
+
+        desired_velocity, desired_time_to_apex, desired_target_xy = env._desired_outgoing_velocity(contact_position)
+        next_time, next_xy = env._predicted_descending_intercept_from_velocity(
+            contact_position,
+            desired_velocity,
+            env._desired_outgoing_target_z(),
+        )
+        desired_apex_xy = contact_position[:2] + desired_velocity[:2] * desired_time_to_apex
+
+        self.assertIsNotNone(next_time)
+        self.assertTrue(np.allclose(desired_target_xy, anchor_position[:2]))
+        self.assertTrue(np.allclose(next_xy, anchor_position[:2], atol=1.0e-6))
+        self.assertGreater(float(np.linalg.norm(desired_apex_xy - anchor_position[:2])), 1.0e-4)
+
+    def test_apex_desired_outgoing_mode_keeps_legacy_apex_xy_target(self) -> None:
+        env = PingPongKeepUpEnv(
+            target_ball_height=0.25,
+            desired_outgoing_xy_mode="apex",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        contact_position = anchor_position + np.array([0.04, 0.0, env._tracking_strike_plane_offset()])
+
+        desired_velocity, desired_time_to_apex, _ = env._desired_outgoing_velocity(contact_position)
+        desired_apex_xy = contact_position[:2] + desired_velocity[:2] * desired_time_to_apex
+        _, next_xy = env._predicted_descending_intercept_from_velocity(
+            contact_position,
+            desired_velocity,
+            env._desired_outgoing_target_z(),
+        )
+
+        self.assertTrue(np.allclose(desired_apex_xy, anchor_position[:2], atol=1.0e-6))
+        self.assertGreater(float(np.linalg.norm(next_xy - anchor_position[:2])), 1.0e-3)
+
+    def test_trajectory_metrics_report_next_intercept_error(self) -> None:
+        env = PingPongKeepUpEnv(
+            target_ball_height=0.25,
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        contact_position = anchor_position + np.array([0.03, 0.02, env._tracking_strike_plane_offset()])
+        desired_velocity, desired_time_to_apex, desired_target_xy = env._desired_outgoing_velocity(contact_position)
+        metrics = env._trajectory_metrics_from_velocity(
+            contact_position,
+            desired_velocity,
+            desired_velocity,
+            desired_time_to_apex,
+            desired_target_xy,
+            env._desired_outgoing_target_z(),
+        )
+
+        self.assertAlmostEqual(metrics["predicted_apex_xy_error"], 0.0)
+        self.assertAlmostEqual(metrics["predicted_next_intercept_xy_error"], 0.0)
 
     def test_strike_guard_reapplies_after_first_contact(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0)
