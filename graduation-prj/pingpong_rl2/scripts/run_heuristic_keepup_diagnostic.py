@@ -32,6 +32,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=211)
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
+    parser.add_argument(
+        "--target-ball-height",
+        type=float,
+        default=None,
+        help="Desired post-contact apex height above the racket. Defaults to --ball-height.",
+    )
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--reset-xy-range", type=float, default=0.0)
     parser.add_argument("--reset-velocity-xy-range", type=float, default=0.0)
@@ -103,6 +109,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--strike-tilt-ramp-pitch", type=float, default=-0.03)
     parser.add_argument("--strike-tilt-ramp-xy-tolerance", type=float, default=0.04)
     parser.add_argument(
+        "--strike-tilt-assist-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+        help="Optional center-seeking pitch/roll assist. When set, the fixed strike ramp is omitted.",
+    )
+    parser.add_argument("--strike-tilt-assist-deadband", type=float, default=0.015)
+    parser.add_argument(
         "--followup-strike-target-tilt",
         type=float,
         nargs=2,
@@ -113,6 +128,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--followup-strike-contact-offset-max", type=float, default=0.0)
     parser.add_argument("--followup-strike-lift-boost", type=float, default=0.0)
     parser.add_argument("--followup-lift-action-limit", type=float, default=0.02)
+    parser.add_argument("--contact-frame-apex-lift-gain", type=float, default=0.0)
+    parser.add_argument("--contact-frame-apex-lift-max", type=float, default=0.0)
+    parser.add_argument("--contact-frame-apex-lift-reference-velocity-z", type=float, default=-1.0)
+    parser.add_argument("--contact-frame-apex-lift-restitution", type=float, default=0.8)
+    parser.add_argument(
+        "--contact-frame-centering-tilt-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
+    parser.add_argument("--contact-frame-centering-tilt-radius", type=float, default=None)
+    parser.add_argument("--contact-frame-centering-tilt-deadband", type=float, default=0.015)
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=0.5)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=0.6)
     parser.add_argument(
@@ -158,7 +186,7 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
     env_kwargs: dict[str, object] = {
         "action_mode": args.action_mode,
         "ball_height": args.ball_height,
-        "target_ball_height": args.ball_height,
+        "target_ball_height": args.ball_height if args.target_ball_height is None else args.target_ball_height,
         "max_episode_steps": args.max_episode_steps,
         "reset_xy_range": args.reset_xy_range,
         "reset_velocity_xy_range": args.reset_velocity_xy_range,
@@ -168,6 +196,11 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "followup_strike_contact_offset_max": args.followup_strike_contact_offset_max,
         "followup_strike_lift_boost": args.followup_strike_lift_boost,
         "followup_lift_action_limit": args.followup_lift_action_limit,
+        "contact_frame_apex_lift_gain": args.contact_frame_apex_lift_gain,
+        "contact_frame_apex_lift_max": args.contact_frame_apex_lift_max,
+        "contact_frame_apex_lift_reference_velocity_z": args.contact_frame_apex_lift_reference_velocity_z,
+        "contact_frame_apex_lift_restitution": args.contact_frame_apex_lift_restitution,
+        "contact_frame_centering_tilt_deadband": args.contact_frame_centering_tilt_deadband,
         "post_contact_return_assist_weight": args.post_contact_return_assist_weight,
         "post_contact_return_max_intercept_time": args.post_contact_return_max_intercept_time,
         "contact_oracle_mode": args.contact_oracle_mode,
@@ -180,9 +213,16 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["followup_strike_target_tilt"] = tuple(args.followup_strike_target_tilt)
     if args.initial_target_tilt is not None:
         env_kwargs["initial_target_tilt"] = tuple(args.initial_target_tilt)
+    if args.strike_tilt_assist_limit is not None:
+        env_kwargs["strike_tilt_assist_limit"] = tuple(args.strike_tilt_assist_limit)
+        env_kwargs["strike_tilt_assist_deadband"] = args.strike_tilt_assist_deadband
     else:
         env_kwargs["strike_tilt_ramp_pitch"] = args.strike_tilt_ramp_pitch
         env_kwargs["strike_tilt_ramp_xy_tolerance"] = args.strike_tilt_ramp_xy_tolerance
+    if args.contact_frame_centering_tilt_limit is not None:
+        env_kwargs["contact_frame_centering_tilt_limit"] = tuple(args.contact_frame_centering_tilt_limit)
+    if args.contact_frame_centering_tilt_radius is not None:
+        env_kwargs["contact_frame_centering_tilt_radius"] = args.contact_frame_centering_tilt_radius
     return env_kwargs
 
 

@@ -270,3 +270,205 @@ If `position_contact_frame` still plateaus at `max_useful_bounces <= 2`, the nex
 ```
 
 That primitive should tie upward racket velocity to predicted contact time or closest approach time.
+
+## 2026-06-01 Follow-up: Preserve The Primitive Before Longer PPO
+
+User observation:
+
+- `pmk_cf_zero_init_eval_v2` looks usable, but the ball still sometimes drifts away from the robot.
+- Some contacts look too low, which shortens the next strike period and makes follow-up hits harder.
+- It was unclear whether racket roll/pitch/yaw are being used.
+
+Code-level answer:
+
+- Pitch and roll are already part of the controller through `target_tilt = [pitch, roll]`.
+- The `position_contact_frame` action also exposes pitch/roll residuals as action dimensions 4 and 5.
+- Yaw is not currently controlled. The controller aims the racket face normal; yaw around that normal does not change the rebound normal for the current round/symmetric racket model, so it is not the first lever to add unless the racket/contact model becomes asymmetric or spin-aware.
+
+Changes made:
+
+- Added `--target-ball-height` to `scripts/run_ppo_learning.py` and `scripts/run_heuristic_keepup_diagnostic.py`.
+  - `--ball-height` remains the spawn/reset height.
+  - `--target-ball-height` is the desired post-contact apex height above the racket.
+  - Default behavior is unchanged: target height falls back to `--ball-height`.
+- Updated `contact_frame_candidate` so PPO sees the actual keep-up objective more directly:
+  - `trajectory_match_reward_weight = 0.4`
+  - `useful_contact_return_target_xy_reward_weight = 0.25`
+  - `return_target_xy_tolerance = 0.12`
+  - `next_intercept_reachable_bonus_weight = 0.25`
+  - `easy_next_ball_reward_weight = 0.3`
+  - `include_desired_outgoing_velocity_observation = True`
+- Increased the contact-frame base lift slightly:
+  - `contact_frame_base_strike_z_boost: 0.024 -> 0.032`
+- Increased residual action penalty:
+  - `contact_frame_action_penalty_weight: 0.05 -> 0.2`
+- Added initial checkpoint evaluation to PPO checkpoint selection.
+  - `*_best_model.zip` can now remain the zero-initialized primitive if PPO updates make the policy worse.
+  - This prevents a training run from silently replacing the best usable model with a degraded final checkpoint.
+- Added PPO stability options:
+  - `--n-epochs`
+  - `--clip-range`
+  - `--ent-coef`
+  - `--vf-coef`
+
+Short diagnostics:
+
+```text
+coarse zero-action primitive check, 120 episodes:
+current-like lift: mean_useful=0.692, max=4, two_or_more=0.183, three_or_more=0.075
+zboost=0.032:     mean_useful=0.733, max=4, two_or_more=0.192, three_or_more=0.092
+```
+
+```text
+rewarded PPO 50k:
+final model degraded badly: mean_useful=0.040, max=1
+conclusion: reward additions alone are not enough.
+```
+
+```text
+conservative PPO 10k:
+command used n_epochs=1, clip_range=0.05, lr=1e-5
+checkpoint history:
+  step 0:     mean_useful=0.567, max=3, two_or_more=0.167, three_or_more=0.100
+  step 5000:  mean_useful=0.700, max=2, two_or_more=0.100, three_or_more=0.000
+  step 10000: mean_useful=0.633, max=3, two_or_more=0.200, three_or_more=0.067
+
+best_model stayed at step 0 because 3+ survival is currently the priority.
+```
+
+Interpretation:
+
+The immediate problem is not that pitch/roll are absent. They are present. The problem is that the zero-residual primitive is still only marginally stable, and ordinary PPO updates quickly destroy the rare multi-bounce behavior. Raising height too aggressively also causes more speed-limit/out-of-bounds failures, so height should be increased through a small lift primitive plus conservative model selection, not by simply raising `target_ball_height` first.
+
+Recommended next command:
+
+```bash
+conda activate mujoco_env
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_candidate \
+  --run-name pmk_cf_conservative \
+  --run-version v1 \
+  --reset-model \
+  --total-timesteps 100000 \
+  --n-envs 1 \
+  --n-steps 512 \
+  --batch-size 256 \
+  --learning-rate 0.00001 \
+  --n-epochs 1 \
+  --clip-range 0.05 \
+  --checkpoint-interval 10000 \
+  --checkpoint-eval-episodes 50 \
+  --eval-episodes 100 \
+  --reset-xy-range 0.0 \
+  --reset-velocity-xy-range 0.0 \
+  --reset-velocity-z-range -0.01 0.01 \
+  --early-stop-patience-evals 4
+```
+
+Use `*_best_model.zip`, not `*_model.zip`, for viewer/evaluation unless the final model explicitly beats the best checkpoint.
+
+If this still cannot improve beyond the zero primitive, stop reward tuning and implement the impact-time primitive from the decision rule above.
+
+## 2026-06-01 Second Follow-up: Height Control And Center-Seeking Contact
+
+Question addressed:
+
+- Should the racket apply a fixed upward impulse, or should it strike so the ball reaches a consistent useful apex?
+- Can the arm fold inward / strike closer to the robot when the next ball comes close?
+- Was pitch/roll rejected too early?
+- Does `arXiv:2408.03906v3` suggest a better structure?
+
+Paper takeaway:
+
+`Achieving Human Level Competitive Robot Table Tennis` is not directly the same task, but it strongly supports a modular skill approach: a high-level controller chooses among frozen low-level skills, and the low-level skills have descriptors such as hit velocity, landing location, and success probability. The paper also explicitly notes that monolithic policies are harder to evaluate and can forget, while a good learned skill can be preserved and specialized later. This matches the current project failure mode: PPO updates keep damaging a useful primitive.
+
+Implementation changes:
+
+- Added optional apex-aware contact-frame lift:
+  - `contact_frame_apex_lift_gain`
+  - `contact_frame_apex_lift_max`
+  - `contact_frame_apex_lift_reference_velocity_z`
+  - `contact_frame_apex_lift_restitution`
+- Added optional continuous center-seeking contact-frame tilt:
+  - `contact_frame_centering_tilt_limit`
+  - `contact_frame_centering_tilt_radius`
+  - `contact_frame_centering_tilt_deadband`
+- Added CLI support for these options in:
+  - `scripts/run_ppo_learning.py`
+  - `scripts/run_heuristic_keepup_diagnostic.py`
+- Enabled the already-existing follow-up contact offset in `contact_frame_candidate`:
+  - `followup_strike_contact_offset_ratio = 0.25`
+  - `followup_strike_contact_offset_max = 0.02`
+
+Important diagnostic result:
+
+```text
+100 episode zero-action comparison:
+old preset:
+  mean_useful=0.65, max=4, two_or_more=0.16, three_or_more=0.04
+
+offset only:
+  mean_useful=0.79, max=5, two_or_more=0.19, three_or_more=0.10
+
+apex lift enabled:
+  mean_useful=0.54, max=2, two_or_more=0.11, three_or_more=0.00
+
+offset + apex + center tilt:
+  mean_useful=0.55, max=3, two_or_more=0.11, three_or_more=0.01
+```
+
+Interpretation:
+
+- The user's instinct is right in principle: a fixed force is not ideal, and the useful target is a repeatable next-ball apex.
+- However, the current controller is position-target based, not impact-velocity controlled. The simple apex-lift proxy makes the racket over-hit or mistime the contact, increasing speed-limit failures. It should stay available as an experiment but not be on by default yet.
+- The user's pitch/roll instinct is also right in principle. The problem is that the current primitive already uses a fixed pitch near the target tilt limit, leaving little headroom for dynamic pitch/roll to help. Reducing fixed pitch to make room for dynamic tilt degraded the current primitive in short tests.
+- The most reliable immediate improvement is not extra tilt. It is shifting the follow-up strike contact point slightly toward the robot center, which lets the arm intercept balls in a more repeatable region and improves multi-bounce survival.
+
+Current recommended command:
+
+```bash
+conda activate mujoco_env
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_candidate \
+  --run-name pmk_cf_offset \
+  --run-version v1 \
+  --reset-model \
+  --total-timesteps 100000 \
+  --n-envs 1 \
+  --n-steps 512 \
+  --batch-size 256 \
+  --learning-rate 0.00001 \
+  --n-epochs 1 \
+  --clip-range 0.05 \
+  --checkpoint-interval 10000 \
+  --checkpoint-eval-episodes 50 \
+  --eval-episodes 100 \
+  --reset-xy-range 0.0 \
+  --reset-velocity-xy-range 0.0 \
+  --reset-velocity-z-range -0.01 0.01 \
+  --early-stop-patience-evals 4
+```
+
+Short PPO confirmation:
+
+```text
+pmk_cf_offset_20k checkpoint history:
+  step 0:     mean_useful=0.64, max=4, two_or_more=0.18, three_or_more=0.08
+  step 10000: mean_useful=0.58, max=2, two_or_more=0.14, three_or_more=0.00
+  step 20000: mean_useful=0.48, max=4, two_or_more=0.14, three_or_more=0.04
+
+final 100 episode evaluation:
+  mean_useful=0.67, max=4, two_or_more=0.21, three_or_more=0.11
+```
+
+Use the best model first. The final model can be inspected too, but the project should keep selecting by `three_or_more` survival until long keep-up is stable.
+
+Next structural change if PPO still plateaus:
+
+Implement a true impact-time / impact-velocity primitive. The current apex-lift experiment shows that apex control is the correct objective but position offset is the wrong actuator abstraction. The primitive should explicitly choose:
+
+```text
+[radial_contact_offset, tangential_contact_offset, target_apex_height, target_apex_xy, impact_time_or_velocity_bias]
+```
+
+The controller then needs to convert target apex and incoming ball velocity into required racket velocity near contact, instead of only moving the racket target position upward.

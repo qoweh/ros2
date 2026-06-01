@@ -190,6 +190,13 @@ class PingPongKeepUpEnv:
         contact_frame_base_strike_z_offset: float = 0.0,
         contact_frame_base_strike_time_horizon: float = 0.14,
         contact_frame_base_tilt_residual: Sequence[float] | None = None,
+        contact_frame_apex_lift_gain: float = 0.0,
+        contact_frame_apex_lift_max: float = 0.0,
+        contact_frame_apex_lift_reference_velocity_z: float = -1.0,
+        contact_frame_apex_lift_restitution: float = 0.8,
+        contact_frame_centering_tilt_limit: Sequence[float] | None = None,
+        contact_frame_centering_tilt_radius: float | None = None,
+        contact_frame_centering_tilt_deadband: float = 0.015,
         contact_frame_action_penalty_weight: float = 0.0,
     ) -> None:
         self.sim = PingPongSim() if sim is None else sim
@@ -287,6 +294,19 @@ class PingPongKeepUpEnv:
         self.contact_frame_base_tilt_residual = (
             None if contact_frame_base_tilt_residual is None else np.asarray(contact_frame_base_tilt_residual, dtype=float)
         )
+        self.contact_frame_apex_lift_gain = float(contact_frame_apex_lift_gain)
+        self.contact_frame_apex_lift_max = float(contact_frame_apex_lift_max)
+        self.contact_frame_apex_lift_reference_velocity_z = float(contact_frame_apex_lift_reference_velocity_z)
+        self.contact_frame_apex_lift_restitution = float(contact_frame_apex_lift_restitution)
+        self.contact_frame_centering_tilt_limit = (
+            None
+            if contact_frame_centering_tilt_limit is None
+            else np.asarray(contact_frame_centering_tilt_limit, dtype=float)
+        )
+        self.contact_frame_centering_tilt_radius = (
+            None if contact_frame_centering_tilt_radius is None else float(contact_frame_centering_tilt_radius)
+        )
+        self.contact_frame_centering_tilt_deadband = float(contact_frame_centering_tilt_deadband)
         self.contact_frame_action_penalty_weight = float(contact_frame_action_penalty_weight)
         if self.action_mode not in _ACTION_MODES:
             raise ValueError(f"action_mode must be one of {_ACTION_MODES}, got {self.action_mode!r}.")
@@ -447,6 +467,19 @@ class PingPongKeepUpEnv:
                 "contact_frame_base_strike_time_horizon must be positive, got "
                 f"{self.contact_frame_base_strike_time_horizon}."
             )
+        if self.contact_frame_apex_lift_gain < 0.0:
+            raise ValueError(
+                f"contact_frame_apex_lift_gain must be non-negative, got {self.contact_frame_apex_lift_gain}."
+            )
+        if self.contact_frame_apex_lift_max < 0.0:
+            raise ValueError(
+                f"contact_frame_apex_lift_max must be non-negative, got {self.contact_frame_apex_lift_max}."
+            )
+        if self.contact_frame_apex_lift_restitution < 0.0:
+            raise ValueError(
+                "contact_frame_apex_lift_restitution must be non-negative, got "
+                f"{self.contact_frame_apex_lift_restitution}."
+            )
         if self.contact_frame_base_tilt_residual is not None:
             if self.contact_frame_base_tilt_residual.shape != (2,):
                 raise ValueError(
@@ -458,6 +491,32 @@ class PingPongKeepUpEnv:
                     "contact_frame_base_tilt_residual must stay within target_tilt_limit, got "
                     f"{self.contact_frame_base_tilt_residual} with target_tilt_limit={self.target_tilt_limit}."
                 )
+        if self.contact_frame_centering_tilt_limit is not None:
+            if self.contact_frame_centering_tilt_limit.shape != (2,):
+                raise ValueError(
+                    "contact_frame_centering_tilt_limit must have shape (2,), got "
+                    f"{self.contact_frame_centering_tilt_limit.shape}."
+                )
+            if np.any(self.contact_frame_centering_tilt_limit < 0.0):
+                raise ValueError(
+                    "contact_frame_centering_tilt_limit must be non-negative, got "
+                    f"{self.contact_frame_centering_tilt_limit}."
+                )
+            if np.any(self.contact_frame_centering_tilt_limit > self.target_tilt_limit + 1.0e-9):
+                raise ValueError(
+                    "contact_frame_centering_tilt_limit must stay within target_tilt_limit, got "
+                    f"{self.contact_frame_centering_tilt_limit} with target_tilt_limit={self.target_tilt_limit}."
+                )
+        if self.contact_frame_centering_tilt_radius is not None and self.contact_frame_centering_tilt_radius <= 0.0:
+            raise ValueError(
+                "contact_frame_centering_tilt_radius must be positive when provided, got "
+                f"{self.contact_frame_centering_tilt_radius}."
+            )
+        if self.contact_frame_centering_tilt_deadband < 0.0:
+            raise ValueError(
+                "contact_frame_centering_tilt_deadband must be non-negative, got "
+                f"{self.contact_frame_centering_tilt_deadband}."
+            )
         if self.contact_frame_action_penalty_weight < 0.0:
             raise ValueError(
                 "contact_frame_action_penalty_weight must be non-negative, got "
@@ -755,6 +814,8 @@ class PingPongKeepUpEnv:
             "next_intercept_recovery_readiness": next_intercept_metrics["info_recovery_readiness"],
             "easy_next_ball_score": next_intercept_metrics["info_easy_next_ball_score"],
             "strike_lift_feedforward": self._strike_lift_feedforward(),
+            "contact_frame_apex_lift": self._contact_frame_apex_lift(),
+            "contact_frame_centering_tilt": self._contact_frame_centering_tilt(),
             "racket_face_normal": self.sim.racket_face_normal,
             "target_tilt": self.controller.target_tilt,
             "projected_contact_apex_height_above_racket": (
@@ -893,6 +954,17 @@ class PingPongKeepUpEnv:
             "contact_frame_base_tilt_residual": (
                 None if self.contact_frame_base_tilt_residual is None else self.contact_frame_base_tilt_residual.tolist()
             ),
+            "contact_frame_apex_lift_gain": self.contact_frame_apex_lift_gain,
+            "contact_frame_apex_lift_max": self.contact_frame_apex_lift_max,
+            "contact_frame_apex_lift_reference_velocity_z": self.contact_frame_apex_lift_reference_velocity_z,
+            "contact_frame_apex_lift_restitution": self.contact_frame_apex_lift_restitution,
+            "contact_frame_centering_tilt_limit": (
+                None
+                if self.contact_frame_centering_tilt_limit is None
+                else self.contact_frame_centering_tilt_limit.tolist()
+            ),
+            "contact_frame_centering_tilt_radius": self.contact_frame_centering_tilt_radius,
+            "contact_frame_centering_tilt_deadband": self.contact_frame_centering_tilt_deadband,
             "contact_frame_action_penalty_weight": self.contact_frame_action_penalty_weight,
         }
 
@@ -1022,6 +1094,17 @@ class PingPongKeepUpEnv:
     def _predicted_intercept_xy(self, max_intercept_time: float = 0.35) -> np.ndarray:
         intercept_time = self._predicted_intercept_time(max_intercept_time=max_intercept_time)
         return np.asarray(self.sim.ball_position[:2] + intercept_time * self.sim.ball_velocity[:2], dtype=float)
+
+    def _predicted_contact_position(self, max_intercept_time: float = 0.35) -> np.ndarray:
+        intercept_time = self._predicted_intercept_time(max_intercept_time=max_intercept_time)
+        contact_position = np.asarray(self.sim.ball_position, dtype=float).copy()
+        contact_position[:2] = self.sim.ball_position[:2] + intercept_time * self.sim.ball_velocity[:2]
+        contact_position[2] = (
+            float(self.sim.ball_position[2])
+            + float(self.sim.ball_velocity[2]) * intercept_time
+            + 0.5 * self._gravity_z() * intercept_time * intercept_time
+        )
+        return contact_position
 
     def _tracking_alignment_error(self) -> float:
         return float(np.linalg.norm(self._predicted_intercept_xy() - self.sim.racket_position[:2]))
@@ -1781,17 +1864,97 @@ class PingPongKeepUpEnv:
             1.0,
         )
         strike_readiness = max(self._pre_contact_height_readiness(), urgency)
-        return float(
+        base_lift = float(
             self.contact_frame_base_strike_z_offset
             + self.contact_frame_base_strike_z_boost * np.clip(strike_readiness, 0.0, 1.0)
         )
+        return base_lift + self._contact_frame_apex_lift()
 
-    def _contact_frame_base_strike_tilt(self) -> np.ndarray:
-        if self.action_mode != "position_contact_frame" or self.contact_frame_base_tilt_residual is None:
+    def _contact_frame_apex_lift(self) -> float:
+        if self.action_mode != "position_contact_frame":
+            return 0.0
+        if self.contact_frame_apex_lift_gain <= 0.0 or self.contact_frame_apex_lift_max <= 0.0:
+            return 0.0
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return 0.0
+
+        contact_position = self._predicted_contact_position()
+        desired_velocity, _, _ = self._desired_outgoing_velocity(contact_position)
+        anchor_position = self._controller_anchor_position()
+        nominal_contact_position = anchor_position.copy()
+        nominal_contact_position[2] = float(anchor_position[2] + self._tracking_strike_plane_offset())
+        nominal_desired_velocity, _, _ = self._desired_outgoing_velocity(nominal_contact_position)
+
+        restitution = self.contact_frame_apex_lift_restitution
+        required_racket_velocity_z = (
+            float(desired_velocity[2]) - restitution * min(float(self.sim.ball_velocity[2]), 0.0)
+        ) / max(1.0 + restitution, 1.0e-6)
+        nominal_required_racket_velocity_z = (
+            float(nominal_desired_velocity[2]) - restitution * self.contact_frame_apex_lift_reference_velocity_z
+        ) / max(1.0 + restitution, 1.0e-6)
+        velocity_excess = max(required_racket_velocity_z - nominal_required_racket_velocity_z, 0.0)
+
+        intercept_time = self._predicted_intercept_time()
+        urgency = 1.0 - np.clip(
+            intercept_time / max(self.contact_frame_base_strike_time_horizon, 1.0e-6),
+            0.0,
+            1.0,
+        )
+        strike_readiness = max(self._pre_contact_height_readiness(), urgency)
+        lift = self.contact_frame_apex_lift_gain * velocity_excess * np.clip(strike_readiness, 0.0, 1.0)
+        return float(np.clip(lift, 0.0, self.contact_frame_apex_lift_max))
+
+    def _contact_frame_centering_tilt(self) -> np.ndarray:
+        if self.action_mode != "position_contact_frame" or self.contact_frame_centering_tilt_limit is None:
             return np.zeros(2, dtype=float)
         if self._phase_name() not in {"prepare", "strike"}:
             return np.zeros(2, dtype=float)
-        return np.asarray(self.contact_frame_base_tilt_residual, dtype=float)
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return np.zeros(2, dtype=float)
+
+        correction_xy = self._controller_anchor_position()[:2] - self._predicted_intercept_xy()
+        radius = (
+            self.contact_frame_centering_tilt_radius
+            if self.contact_frame_centering_tilt_radius is not None
+            else self.contact_centering_radius
+        )
+        effective_radius = max(float(radius), self.contact_frame_centering_tilt_deadband + 1.0e-6)
+        scale_xy = np.zeros(2, dtype=float)
+        for axis_index in range(2):
+            axis_error = float(correction_xy[axis_index])
+            axis_magnitude = abs(axis_error)
+            if axis_magnitude <= self.contact_frame_centering_tilt_deadband:
+                continue
+            scale_xy[axis_index] = np.sign(axis_error) * np.clip(
+                (axis_magnitude - self.contact_frame_centering_tilt_deadband)
+                / max(effective_radius - self.contact_frame_centering_tilt_deadband, 1.0e-6),
+                0.0,
+                1.0,
+            )
+
+        if not np.any(scale_xy):
+            return np.zeros(2, dtype=float)
+        intercept_time = self._predicted_intercept_time()
+        urgency = 1.0 - np.clip(intercept_time / 0.16, 0.0, 1.0)
+        ramp = float(np.clip(max(self._pre_contact_height_readiness(), urgency), 0.0, 1.0))
+        return np.array(
+            [
+                self.contact_frame_centering_tilt_limit[0] * scale_xy[0] * ramp,
+                -self.contact_frame_centering_tilt_limit[1] * scale_xy[1] * ramp,
+            ],
+            dtype=float,
+        )
+
+    def _contact_frame_base_strike_tilt(self) -> np.ndarray:
+        if self.action_mode != "position_contact_frame":
+            return np.zeros(2, dtype=float)
+        if self._phase_name() not in {"prepare", "strike"}:
+            return np.zeros(2, dtype=float)
+        target_tilt = np.zeros(2, dtype=float)
+        if self.contact_frame_base_tilt_residual is not None:
+            target_tilt = target_tilt + np.asarray(self.contact_frame_base_tilt_residual, dtype=float)
+        target_tilt = target_tilt + self._contact_frame_centering_tilt()
+        return target_tilt
 
     def _contact_frame_action_target_position(self, action: Sequence[float]) -> np.ndarray:
         action_array = np.asarray(action, dtype=float)

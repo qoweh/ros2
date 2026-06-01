@@ -150,10 +150,17 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "strike_tilt_ramp_pitch": -0.06,
         "strike_tilt_ramp_xy_tolerance": 0.04,
         "followup_strike_target_tilt": (-0.06, 0.0),
-        "contact_frame_base_strike_z_boost": 0.024,
+        "followup_strike_contact_offset_ratio": 0.25,
+        "followup_strike_contact_offset_max": 0.02,
+        "contact_frame_base_strike_z_boost": 0.032,
         "contact_frame_base_strike_z_offset": 0.01,
         "contact_frame_base_tilt_residual": (-0.02, 0.0),
-        "contact_frame_action_penalty_weight": 0.05,
+        "contact_frame_action_penalty_weight": 0.2,
+        "trajectory_match_reward_weight": 0.4,
+        "useful_contact_return_target_xy_reward_weight": 0.25,
+        "return_target_xy_tolerance": 0.12,
+        "next_intercept_reachable_bonus_weight": 0.25,
+        "easy_next_ball_reward_weight": 0.3,
         "log_std_init": -3.0,
         "zero_init_action_mean": True,
         "post_contact_return_assist_weight": 0.8,
@@ -161,12 +168,14 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "include_task_phase_observation": True,
         "include_contact_context_observation": True,
         "include_next_intercept_observation": True,
+        "include_desired_outgoing_velocity_observation": True,
     },
 }
 
 _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "action_mode": "position",
     "tilt_profile": "auto",
+    "target_ball_height": None,
     "followup_lift_action_limit": None,
     "strike_tilt_ramp_pitch": None,
     "strike_tilt_ramp_xy_tolerance": None,
@@ -178,7 +187,10 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "include_next_intercept_observation": False,
     "include_desired_outgoing_velocity_observation": False,
     "trajectory_match_reward_weight": None,
+    "useful_contact_return_target_xy_reward_weight": None,
+    "return_target_xy_tolerance": None,
     "next_intercept_reachable_bonus_weight": None,
+    "easy_next_ball_reward_weight": None,
     "followup_strike_target_tilt": None,
     "followup_strike_contact_offset_ratio": None,
     "followup_strike_contact_offset_max": None,
@@ -187,6 +199,13 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_base_strike_z_offset": None,
     "contact_frame_base_strike_time_horizon": None,
     "contact_frame_base_tilt_residual": None,
+    "contact_frame_apex_lift_gain": None,
+    "contact_frame_apex_lift_max": None,
+    "contact_frame_apex_lift_reference_velocity_z": None,
+    "contact_frame_apex_lift_restitution": None,
+    "contact_frame_centering_tilt_limit": None,
+    "contact_frame_centering_tilt_radius": None,
+    "contact_frame_centering_tilt_deadband": None,
     "contact_frame_action_penalty_weight": None,
     "log_std_init": None,
     "zero_init_action_mean": False,
@@ -227,6 +246,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=DEFAULT_PPO_BATCH_SIZE)
     parser.add_argument("--learning-rate", type=float, default=DEFAULT_PPO_LEARNING_RATE)
     parser.add_argument("--gamma", type=float, default=DEFAULT_PPO_GAMMA)
+    parser.add_argument("--n-epochs", type=int, default=10)
+    parser.add_argument("--clip-range", type=float, default=0.2)
+    parser.add_argument("--ent-coef", type=float, default=0.0)
+    parser.add_argument("--vf-coef", type=float, default=0.5)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument(
@@ -321,6 +344,12 @@ def parse_args() -> argparse.Namespace:
         help="Convenience preset for position_tilt limits and regularization. 'auto' resolves to 'early'.",
     )
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
+    parser.add_argument(
+        "--target-ball-height",
+        type=float,
+        default=None,
+        help="Desired post-contact apex height above the racket. Defaults to --ball-height for backward compatibility.",
+    )
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--reset-xy-range", type=float, default=DEFAULT_RESET_XY_RANGE)
     parser.add_argument("--reset-velocity-xy-range", type=float, default=DEFAULT_RESET_VELOCITY_XY_RANGE)
@@ -438,6 +467,19 @@ def parse_args() -> argparse.Namespace:
         metavar=("PITCH", "ROLL"),
         default=None,
     )
+    parser.add_argument("--contact-frame-apex-lift-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-apex-lift-max", type=float, default=None)
+    parser.add_argument("--contact-frame-apex-lift-reference-velocity-z", type=float, default=None)
+    parser.add_argument("--contact-frame-apex-lift-restitution", type=float, default=None)
+    parser.add_argument(
+        "--contact-frame-centering-tilt-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
+    parser.add_argument("--contact-frame-centering-tilt-radius", type=float, default=None)
+    parser.add_argument("--contact-frame-centering-tilt-deadband", type=float, default=None)
     parser.add_argument("--contact-frame-action-penalty-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
@@ -610,7 +652,7 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
     env_kwargs: dict[str, object] = {
         "action_mode": args.action_mode,
         "ball_height": args.ball_height,
-        "target_ball_height": args.ball_height,
+        "target_ball_height": args.ball_height if args.target_ball_height is None else args.target_ball_height,
         "max_episode_steps": args.max_episode_steps,
         "reset_xy_range": args.reset_xy_range,
         "reset_velocity_xy_range": args.reset_velocity_xy_range,
@@ -673,6 +715,20 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_base_strike_time_horizon"] = args.contact_frame_base_strike_time_horizon
     if args.contact_frame_base_tilt_residual is not None:
         env_kwargs["contact_frame_base_tilt_residual"] = tuple(args.contact_frame_base_tilt_residual)
+    if args.contact_frame_apex_lift_gain is not None:
+        env_kwargs["contact_frame_apex_lift_gain"] = args.contact_frame_apex_lift_gain
+    if args.contact_frame_apex_lift_max is not None:
+        env_kwargs["contact_frame_apex_lift_max"] = args.contact_frame_apex_lift_max
+    if args.contact_frame_apex_lift_reference_velocity_z is not None:
+        env_kwargs["contact_frame_apex_lift_reference_velocity_z"] = args.contact_frame_apex_lift_reference_velocity_z
+    if args.contact_frame_apex_lift_restitution is not None:
+        env_kwargs["contact_frame_apex_lift_restitution"] = args.contact_frame_apex_lift_restitution
+    if args.contact_frame_centering_tilt_limit is not None:
+        env_kwargs["contact_frame_centering_tilt_limit"] = tuple(args.contact_frame_centering_tilt_limit)
+    if args.contact_frame_centering_tilt_radius is not None:
+        env_kwargs["contact_frame_centering_tilt_radius"] = args.contact_frame_centering_tilt_radius
+    if args.contact_frame_centering_tilt_deadband is not None:
+        env_kwargs["contact_frame_centering_tilt_deadband"] = args.contact_frame_centering_tilt_deadband
     if args.contact_frame_action_penalty_weight is not None:
         env_kwargs["contact_frame_action_penalty_weight"] = args.contact_frame_action_penalty_weight
     if args.post_contact_return_assist_weight is not None:
@@ -956,6 +1012,26 @@ def save_periodic_checkpoints(
     best_checkpoint_record: dict[str, object] | None = None
     checkpoint_history: list[dict[str, object]] = []
 
+    if total_timesteps > 0 and checkpoint_interval > 0:
+        initial_checkpoint_path = checkpoint_dir / f"{resolved_run_name}_step_{0:07d}_model"
+        model.save(str(initial_checkpoint_path))
+        initial_evaluation = evaluate_model(
+            model,
+            env_kwargs=env_kwargs,
+            episodes=checkpoint_eval_episodes,
+            seed=seed + 20_000,
+        )
+        initial_record = {
+            "timesteps": 0,
+            "model_path": str(initial_checkpoint_path.with_suffix(".zip").resolve()),
+            "evaluation": initial_evaluation,
+        }
+        checkpoint_history.append(initial_record)
+        best_evaluation = initial_evaluation
+        best_checkpoint_record = initial_record
+        best_model_path = run_dir / f"{resolved_run_name}_best_model"
+        model.save(str(best_model_path))
+
     while completed_timesteps < total_timesteps:
         learn_chunk = min(effective_interval, total_timesteps - completed_timesteps)
         model.learn(
@@ -1044,6 +1120,10 @@ def main() -> None:
             batch_size=args.batch_size,
             learning_rate=args.learning_rate,
             gamma=args.gamma,
+            n_epochs=args.n_epochs,
+            clip_range=args.clip_range,
+            ent_coef=args.ent_coef,
+            vf_coef=args.vf_coef,
             verbose=1,
             tensorboard_log=str(run_dir / "tb"),
             seed=args.seed,
@@ -1171,6 +1251,10 @@ def main() -> None:
             "batch_size": args.batch_size,
             "learning_rate": args.learning_rate,
             "gamma": args.gamma,
+            "n_epochs": args.n_epochs,
+            "clip_range": args.clip_range,
+            "ent_coef": args.ent_coef,
+            "vf_coef": args.vf_coef,
             "seed": args.seed,
             "device": args.device,
             "log_std_init": args.log_std_init,
