@@ -146,6 +146,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=0.0)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=0.0)
     parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=0.08)
+    parser.add_argument("--contact-frame-planner-enabled", action="store_true")
+    parser.add_argument(
+        "--disable-contact-frame-planner-hold-during-descent",
+        action="store_false",
+        dest="contact_frame_planner_hold_during_descent",
+        default=True,
+    )
+    parser.add_argument("--contact-frame-planner-min-intercept-time", type=float, default=0.03)
+    parser.add_argument("--contact-frame-planner-max-intercept-time", type=float, default=0.60)
+    parser.add_argument("--contact-frame-planner-target-apex-z-offset", type=float, default=0.0)
     parser.add_argument("--contact-frame-followthrough-gain", type=float, default=0.0)
     parser.add_argument("--contact-frame-followthrough-time", type=float, default=0.06)
     parser.add_argument("--contact-frame-followthrough-max", type=float, default=0.0)
@@ -176,6 +186,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-reachable-next-intercept-for-success", action="store_true")
     parser.add_argument("--min-easy-next-ball-score-for-success", type=float, default=None)
     parser.add_argument("--terminate-on-nonuseful-contact", action="store_true")
+    parser.add_argument("--next-intercept-xy-error-penalty-weight", type=float, default=0.0)
+    parser.add_argument("--post-contact-lateral-velocity-penalty-weight", type=float, default=0.0)
+    parser.add_argument("--contact-xy-error-penalty-weight", type=float, default=0.0)
+    parser.add_argument("--nonuseful-contact-penalty-weight", type=float, default=0.0)
     parser.add_argument(
         "--target-tilt-limit",
         type=float,
@@ -247,6 +261,11 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "contact_frame_intercept_velocity_gain": args.contact_frame_intercept_velocity_gain,
         "contact_frame_intercept_velocity_max": args.contact_frame_intercept_velocity_max,
         "contact_frame_intercept_velocity_time_floor": args.contact_frame_intercept_velocity_time_floor,
+        "contact_frame_planner_enabled": args.contact_frame_planner_enabled,
+        "contact_frame_planner_hold_during_descent": args.contact_frame_planner_hold_during_descent,
+        "contact_frame_planner_min_intercept_time": args.contact_frame_planner_min_intercept_time,
+        "contact_frame_planner_max_intercept_time": args.contact_frame_planner_max_intercept_time,
+        "contact_frame_planner_target_apex_z_offset": args.contact_frame_planner_target_apex_z_offset,
         "contact_frame_followthrough_gain": args.contact_frame_followthrough_gain,
         "contact_frame_followthrough_time": args.contact_frame_followthrough_time,
         "contact_frame_followthrough_max": args.contact_frame_followthrough_max,
@@ -262,6 +281,10 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "require_reachable_next_intercept_for_success": args.require_reachable_next_intercept_for_success,
         "min_easy_next_ball_score_for_success": args.min_easy_next_ball_score_for_success,
         "terminate_on_nonuseful_contact": args.terminate_on_nonuseful_contact,
+        "next_intercept_xy_error_penalty_weight": args.next_intercept_xy_error_penalty_weight,
+        "post_contact_lateral_velocity_penalty_weight": args.post_contact_lateral_velocity_penalty_weight,
+        "contact_xy_error_penalty_weight": args.contact_xy_error_penalty_weight,
+        "nonuseful_contact_penalty_weight": args.nonuseful_contact_penalty_weight,
         "contact_oracle_mode": args.contact_oracle_mode,
         "contact_oracle_blend": args.contact_oracle_blend,
         "desired_outgoing_xy_mode": args.desired_outgoing_xy_mode,
@@ -548,6 +571,38 @@ def main() -> None:
                                 None
                                 if info.get("contact_frame_intercept_velocity_target") is None
                                 else float(info["contact_frame_intercept_velocity_target"][2])
+                            ),
+                            "contact_frame_planner_active": info.get("contact_frame_planner_active"),
+                            "contact_frame_planner_intercept_time": info.get("contact_frame_planner_intercept_time"),
+                            "contact_frame_planner_contact_x": (
+                                None
+                                if info.get("contact_frame_planner_contact_position") is None
+                                else float(info["contact_frame_planner_contact_position"][0])
+                            ),
+                            "contact_frame_planner_contact_y": (
+                                None
+                                if info.get("contact_frame_planner_contact_position") is None
+                                else float(info["contact_frame_planner_contact_position"][1])
+                            ),
+                            "contact_frame_planner_contact_z": (
+                                None
+                                if info.get("contact_frame_planner_contact_position") is None
+                                else float(info["contact_frame_planner_contact_position"][2])
+                            ),
+                            "contact_frame_planner_desired_velocity_x": (
+                                None
+                                if info.get("contact_frame_planner_desired_velocity") is None
+                                else float(info["contact_frame_planner_desired_velocity"][0])
+                            ),
+                            "contact_frame_planner_desired_velocity_y": (
+                                None
+                                if info.get("contact_frame_planner_desired_velocity") is None
+                                else float(info["contact_frame_planner_desired_velocity"][1])
+                            ),
+                            "contact_frame_planner_desired_velocity_z": (
+                                None
+                                if info.get("contact_frame_planner_desired_velocity") is None
+                                else float(info["contact_frame_planner_desired_velocity"][2])
                             ),
                             "contact_racket_face_normal_x": info.get("contact_racket_face_normal_x"),
                             "contact_racket_face_normal_y": info.get("contact_racket_face_normal_y"),

@@ -288,6 +288,32 @@ _ENV_PRESETS["contact_frame_planned_intercept_candidate"] = {
     "contact_frame_intercept_velocity_time_floor": 0.08,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_candidate"] = {
+    **_ENV_PRESETS["contact_frame_planned_intercept_candidate"],
+    "target_ball_height": 0.25,
+    "lateral_action_limit": 0.02,
+    "vertical_action_limit": 0.025,
+    "tilt_action_limit": 0.01,
+    "contact_frame_planner_enabled": True,
+    "contact_frame_planner_hold_during_descent": True,
+    "contact_frame_planner_min_intercept_time": 0.03,
+    "contact_frame_planner_max_intercept_time": 0.60,
+    "contact_frame_velocity_target_gain": 0.35,
+    "contact_frame_velocity_target_max": 1.2,
+    "contact_frame_trajectory_tilt_gain": 1.0,
+    "contact_frame_trajectory_tilt_limit": (0.035, 0.035),
+    "contact_frame_centering_tilt_limit": (0.025, 0.035),
+    "contact_frame_centering_tilt_radius": 0.08,
+    "contact_frame_centering_tilt_deadband": 0.008,
+    "require_reachable_next_intercept_for_success": True,
+    "min_easy_next_ball_score_for_success": 0.0,
+    "next_intercept_xy_error_penalty_weight": 0.75,
+    "post_contact_lateral_velocity_penalty_weight": 0.30,
+    "contact_xy_error_penalty_weight": 0.25,
+    "nonuseful_contact_penalty_weight": 1.0,
+    "trajectory_error_penalty_weight": 0.25,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -363,6 +389,9 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "bootstrap_followup_min_useful_bounces": None,
     "bootstrap_followup_learning_rate": None,
     "action_mode": "position",
+    "lateral_action_limit": None,
+    "vertical_action_limit": None,
+    "tilt_action_limit": None,
     "tilt_profile": "auto",
     "target_ball_height": None,
     "followup_lift_action_limit": None,
@@ -408,6 +437,11 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_intercept_velocity_gain": None,
     "contact_frame_intercept_velocity_max": None,
     "contact_frame_intercept_velocity_time_floor": None,
+    "contact_frame_planner_enabled": False,
+    "contact_frame_planner_hold_during_descent": True,
+    "contact_frame_planner_min_intercept_time": None,
+    "contact_frame_planner_max_intercept_time": None,
+    "contact_frame_planner_target_apex_z_offset": None,
     "contact_frame_followthrough_gain": None,
     "contact_frame_followthrough_time": None,
     "contact_frame_followthrough_max": None,
@@ -431,6 +465,10 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_centering_tilt_radius": None,
     "contact_frame_centering_tilt_deadband": None,
     "contact_frame_action_penalty_weight": None,
+    "next_intercept_xy_error_penalty_weight": None,
+    "post_contact_lateral_velocity_penalty_weight": None,
+    "contact_xy_error_penalty_weight": None,
+    "nonuseful_contact_penalty_weight": None,
     "log_std_init": None,
     "zero_init_action_mean": False,
 }
@@ -710,6 +748,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
+    parser.add_argument(
+        "--contact-frame-planner-enabled",
+        action="store_true",
+        help="Use the self-rally contact-frame planner: fixed next target near the anchor, primitive base strike, RL residual only.",
+    )
+    parser.add_argument(
+        "--disable-contact-frame-planner-hold-during-descent",
+        action="store_false",
+        dest="contact_frame_planner_hold_during_descent",
+        default=True,
+        help="Recompute planner target XY/apex every step instead of holding one target for the current descent.",
+    )
+    parser.add_argument("--contact-frame-planner-min-intercept-time", type=float, default=None)
+    parser.add_argument("--contact-frame-planner-max-intercept-time", type=float, default=None)
+    parser.add_argument("--contact-frame-planner-target-apex-z-offset", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-gain", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-time", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-max", type=float, default=None)
@@ -755,6 +808,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-centering-tilt-radius", type=float, default=None)
     parser.add_argument("--contact-frame-centering-tilt-deadband", type=float, default=None)
     parser.add_argument("--contact-frame-action-penalty-weight", type=float, default=None)
+    parser.add_argument("--next-intercept-xy-error-penalty-weight", type=float, default=None)
+    parser.add_argument("--post-contact-lateral-velocity-penalty-weight", type=float, default=None)
+    parser.add_argument("--contact-xy-error-penalty-weight", type=float, default=None)
+    parser.add_argument("--nonuseful-contact-penalty-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
     parser.add_argument(
@@ -1067,6 +1124,16 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_intercept_velocity_max"] = args.contact_frame_intercept_velocity_max
     if args.contact_frame_intercept_velocity_time_floor is not None:
         env_kwargs["contact_frame_intercept_velocity_time_floor"] = args.contact_frame_intercept_velocity_time_floor
+    if args.contact_frame_planner_enabled:
+        env_kwargs["contact_frame_planner_enabled"] = True
+    if not args.contact_frame_planner_hold_during_descent:
+        env_kwargs["contact_frame_planner_hold_during_descent"] = False
+    if args.contact_frame_planner_min_intercept_time is not None:
+        env_kwargs["contact_frame_planner_min_intercept_time"] = args.contact_frame_planner_min_intercept_time
+    if args.contact_frame_planner_max_intercept_time is not None:
+        env_kwargs["contact_frame_planner_max_intercept_time"] = args.contact_frame_planner_max_intercept_time
+    if args.contact_frame_planner_target_apex_z_offset is not None:
+        env_kwargs["contact_frame_planner_target_apex_z_offset"] = args.contact_frame_planner_target_apex_z_offset
     if args.contact_frame_followthrough_gain is not None:
         env_kwargs["contact_frame_followthrough_gain"] = args.contact_frame_followthrough_gain
     if args.contact_frame_followthrough_time is not None:
@@ -1109,6 +1176,16 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_centering_tilt_deadband"] = args.contact_frame_centering_tilt_deadband
     if args.contact_frame_action_penalty_weight is not None:
         env_kwargs["contact_frame_action_penalty_weight"] = args.contact_frame_action_penalty_weight
+    if args.next_intercept_xy_error_penalty_weight is not None:
+        env_kwargs["next_intercept_xy_error_penalty_weight"] = args.next_intercept_xy_error_penalty_weight
+    if args.post_contact_lateral_velocity_penalty_weight is not None:
+        env_kwargs["post_contact_lateral_velocity_penalty_weight"] = (
+            args.post_contact_lateral_velocity_penalty_weight
+        )
+    if args.contact_xy_error_penalty_weight is not None:
+        env_kwargs["contact_xy_error_penalty_weight"] = args.contact_xy_error_penalty_weight
+    if args.nonuseful_contact_penalty_weight is not None:
+        env_kwargs["nonuseful_contact_penalty_weight"] = args.nonuseful_contact_penalty_weight
     if args.post_contact_return_assist_weight is not None:
         env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
     if args.post_contact_return_max_intercept_time is not None:

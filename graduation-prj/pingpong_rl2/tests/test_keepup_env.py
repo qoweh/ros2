@@ -1070,6 +1070,93 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         )
         self.assertLess(reward_terms["contact_frame_action_penalty"], 0.0)
 
+    def test_contact_frame_planner_fixes_next_target_near_anchor(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            target_ball_height=0.25,
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            keepup_target_xy_offset=(0.01, -0.02),
+            contact_frame_planner_enabled=True,
+            contact_frame_planner_hold_during_descent=True,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_target_xy = env._keepup_target_xy().copy()
+        ball_position = env._controller_anchor_position() + np.array([0.04, -0.03, 0.20])
+        env.sim.spawn_ball(ball_position, velocity=(0.15, 0.0, -1.0))
+
+        env._update_contact_frame_plan()
+
+        self.assertTrue(env._contact_frame_plan_active)
+        np.testing.assert_allclose(env._contact_frame_plan_target_xy, anchor_target_xy)
+        self.assertGreater(float(env._contact_frame_plan_desired_velocity[2]), 0.0)
+
+        env.keepup_target_xy_offset = np.array([0.04, 0.04], dtype=float)
+        env._update_contact_frame_plan()
+
+        np.testing.assert_allclose(env._contact_frame_plan_target_xy, anchor_target_xy)
+
+    def test_contact_frame_planner_base_target_uses_planned_contact_position(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_planner_enabled=True,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env._controller_anchor_position() + np.array([0.05, -0.02, 0.20])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        env._update_contact_frame_plan()
+
+        target_position = env._contact_frame_action_target_position(np.zeros(3, dtype=float))
+
+        self.assertTrue(env._contact_frame_plan_active)
+        np.testing.assert_allclose(target_position[:2], env._contact_frame_plan_contact_position[:2])
+
+    def test_contact_quality_penalties_apply_to_bad_upward_contact(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            next_intercept_success_radius=0.04,
+            next_intercept_xy_error_penalty_weight=0.5,
+            post_contact_lateral_velocity_penalty_weight=0.5,
+            contact_xy_error_penalty_weight=0.5,
+            nonuseful_contact_penalty_weight=1.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.08, 0.0, 0.03])
+        env.sim.spawn_ball(ball_position, velocity=(0.6, 0.0, 1.0))
+        contact_trace = {
+            "contact_ball_position_x": float(ball_position[0]),
+            "contact_ball_position_y": float(ball_position[1]),
+            "contact_ball_position_z": float(ball_position[2]),
+            "contact_ball_velocity_x": 0.6,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": 1.0,
+            "contact_xy_alignment_error": 0.08,
+        }
+        outgoing_metrics = {
+            "actual_outgoing_velocity_x": 0.6,
+            "actual_outgoing_velocity_y": 0.0,
+            "actual_outgoing_velocity_z": 1.0,
+        }
+
+        reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=False,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace=contact_trace,
+            outgoing_trajectory_metrics=outgoing_metrics,
+        )
+
+        self.assertLess(reward_terms["next_intercept_xy_error_penalty"], 0.0)
+        self.assertLess(reward_terms["post_contact_lateral_velocity_penalty"], 0.0)
+        self.assertLess(reward_terms["contact_xy_error_penalty"], 0.0)
+        self.assertEqual(reward_terms["nonuseful_contact_penalty"], -1.0)
+
     def test_gym_wrapper_exposes_position_contact_frame_spaces(self) -> None:
         env = PingPongKeepUpGymEnv(action_mode="position_contact_frame", reset_xy_range=0.0)
         observation, _ = env.reset(seed=7)

@@ -66,6 +66,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--post-contact-return-z-offset", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
+    parser.add_argument("--contact-frame-planner-enabled", action="store_true")
+    parser.add_argument(
+        "--disable-contact-frame-planner-hold-during-descent",
+        action="store_false",
+        dest="contact_frame_planner_hold_during_descent",
+        default=True,
+    )
+    parser.add_argument("--contact-frame-planner-min-intercept-time", type=float, default=None)
+    parser.add_argument("--contact-frame-planner-max-intercept-time", type=float, default=None)
+    parser.add_argument("--contact-frame-planner-target-apex-z-offset", type=float, default=None)
     parser.add_argument("--controller-velocity-gain", type=float, default=None)
     parser.add_argument("--controller-velocity-feedback-gain", type=float, default=None)
     parser.add_argument("--controller-max-velocity-step", type=float, default=None)
@@ -81,6 +91,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-reachable-next-intercept-for-success", action="store_true")
     parser.add_argument("--min-easy-next-ball-score-for-success", type=float, default=None)
     parser.add_argument("--terminate-on-nonuseful-contact", action="store_true")
+    parser.add_argument("--next-intercept-xy-error-penalty-weight", type=float, default=None)
+    parser.add_argument("--post-contact-lateral-velocity-penalty-weight", type=float, default=None)
+    parser.add_argument("--contact-xy-error-penalty-weight", type=float, default=None)
+    parser.add_argument("--nonuseful-contact-penalty-weight", type=float, default=None)
     parser.add_argument("--hold-final-seconds", type=float, default=1.5)
     parser.add_argument("--stochastic", action="store_true")
     return parser.parse_args()
@@ -114,6 +128,16 @@ def main() -> None:
         env_kwargs["contact_frame_velocity_target_gain"] = args.contact_frame_velocity_target_gain
     if args.contact_frame_velocity_target_max is not None:
         env_kwargs["contact_frame_velocity_target_max"] = args.contact_frame_velocity_target_max
+    if args.contact_frame_planner_enabled:
+        env_kwargs["contact_frame_planner_enabled"] = True
+    if not args.contact_frame_planner_hold_during_descent:
+        env_kwargs["contact_frame_planner_hold_during_descent"] = False
+    if args.contact_frame_planner_min_intercept_time is not None:
+        env_kwargs["contact_frame_planner_min_intercept_time"] = args.contact_frame_planner_min_intercept_time
+    if args.contact_frame_planner_max_intercept_time is not None:
+        env_kwargs["contact_frame_planner_max_intercept_time"] = args.contact_frame_planner_max_intercept_time
+    if args.contact_frame_planner_target_apex_z_offset is not None:
+        env_kwargs["contact_frame_planner_target_apex_z_offset"] = args.contact_frame_planner_target_apex_z_offset
     if args.controller_velocity_gain is not None:
         env_kwargs["controller_velocity_gain"] = args.controller_velocity_gain
     if args.controller_velocity_feedback_gain is not None:
@@ -132,6 +156,16 @@ def main() -> None:
         env_kwargs["min_easy_next_ball_score_for_success"] = args.min_easy_next_ball_score_for_success
     if args.terminate_on_nonuseful_contact:
         env_kwargs["terminate_on_nonuseful_contact"] = True
+    if args.next_intercept_xy_error_penalty_weight is not None:
+        env_kwargs["next_intercept_xy_error_penalty_weight"] = args.next_intercept_xy_error_penalty_weight
+    if args.post_contact_lateral_velocity_penalty_weight is not None:
+        env_kwargs["post_contact_lateral_velocity_penalty_weight"] = (
+            args.post_contact_lateral_velocity_penalty_weight
+        )
+    if args.contact_xy_error_penalty_weight is not None:
+        env_kwargs["contact_xy_error_penalty_weight"] = args.contact_xy_error_penalty_weight
+    if args.nonuseful_contact_penalty_weight is not None:
+        env_kwargs["nonuseful_contact_penalty_weight"] = args.nonuseful_contact_penalty_weight
     if args.mode == "heuristic" and configured_model_path is None:
         env_kwargs.update(
             {
