@@ -46,6 +46,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recovery-blend", type=float, default=0.52)
     parser.add_argument("--strike-z-boost", type=float, default=0.018)
     parser.add_argument("--strike-time-horizon", type=float, default=0.14)
+    parser.add_argument("--strike-xy-correction-gain", type=float, default=0.0)
+    parser.add_argument("--strike-xy-correction-max", type=float, default=0.02)
     parser.add_argument(
         "--fixed-position-residual",
         type=float,
@@ -55,6 +57,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--strike-position-residual",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+        default=None,
+    )
+    parser.add_argument(
+        "--strike-phase-only-position-residual",
         type=float,
         nargs=3,
         metavar=("X", "Y", "Z"),
@@ -188,9 +197,16 @@ def main() -> None:
         recovery_blend=args.recovery_blend,
         strike_z_boost=args.strike_z_boost,
         strike_time_horizon=args.strike_time_horizon,
+        strike_xy_correction_gain=float(args.strike_xy_correction_gain),
+        strike_xy_correction_max=float(args.strike_xy_correction_max),
         fixed_position_residual=tuple(float(value) for value in args.fixed_position_residual),
         strike_position_residual=(
             None if args.strike_position_residual is None else tuple(float(value) for value in args.strike_position_residual)
+        ),
+        strike_phase_only_position_residual=(
+            None
+            if args.strike_phase_only_position_residual is None
+            else tuple(float(value) for value in args.strike_phase_only_position_residual)
         ),
         recovery_position_residual=(
             None
@@ -466,11 +482,18 @@ def main() -> None:
             "recovery_blend": args.recovery_blend,
             "strike_z_boost": args.strike_z_boost,
             "strike_time_horizon": args.strike_time_horizon,
+            "strike_xy_correction_gain": float(args.strike_xy_correction_gain),
+            "strike_xy_correction_max": float(args.strike_xy_correction_max),
             "fixed_position_residual": [float(value) for value in args.fixed_position_residual],
             "strike_position_residual": (
                 None
                 if args.strike_position_residual is None
                 else [float(value) for value in args.strike_position_residual]
+            ),
+            "strike_phase_only_position_residual": (
+                None
+                if args.strike_phase_only_position_residual is None
+                else [float(value) for value in args.strike_phase_only_position_residual]
             ),
             "recovery_position_residual": (
                 None

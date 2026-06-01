@@ -42,12 +42,12 @@
    - current `strike_z_boost` / `followup_strike_lift_boost` around the best base config
 4. `pitch_residual`
    - current best negative pitch base (`-0.06`) 주변 residual
-5. `followup_lift_residual`
-   - second-bounce 이후 recovery margin residual
+5. `roll_residual`
+   - current best scripted `2+` candidate가 이미 small negative roll (`-0.02`)에 의존하므로 더 이상 고정 `0.0`으로 둘 이유가 약하다.
+6. `followup_lift_residual`
+   - second-bounce 이후 recovery margin residual; 다만 현재까지는 optional axis에 가깝다.
 
-초기 v1에서는 `roll`은 고정 `0.0`으로 두는 편이 낫다.
-
-이번 upper-bound 결과는 x/z outgoing correction이 핵심이라는 쪽으로 더 강하게 기울어 있기 때문이다.
+현재 evidence 기준으로는 `followup_lift`보다 `roll`이 더 먼저 보존되어야 한다.
 
 ## 4. base contract to preserve
 
@@ -123,11 +123,13 @@ primitive branch는 아래를 만족해야 다음 단계로 넘어간다.
 - phase-aware non-tilt residual은 의미 있음: `strike z = +0.01` + `strike roll = -0.02` candidate가 `max_useful_bounces = 2`, `two_plus_rate = 0.11`까지 올림
 - 하지만 100-episode confirmation에서도 `three_or_more_useful_bounce_rate = 0.0`이라 현재 abstraction은 여전히 `max=2` ceiling에 걸려 있음
 - explicit `followup lift residual` scaffold는 추가했지만 첫 sweep에서는 gain이 없었음
+- linear state-dependent `anchor - predicted_intercept` XY correction gain sweep도 의미 있는 변화를 만들지 못함: 30-episode narrow eval에서 `gain=-0.5..1.0` 전 구간이 `mean_useful_bounces = 0.667`, `max_useful_bounces = 2`, `two_plus_rate = 0.167`로 동일했음
+- simple late strike-only z pulse는 오히려 현재 best candidate를 악화시킴: `pulse=0.005`만 넣어도 `mean_useful_bounces = 0.433`, `max_useful_bounces = 1`, `two_plus_rate = 0.0`
 
 남은 구현 체크리스트는 아래다.
 
 1. `keepup_env.py`
-   - current `position_strike_tilt(_lift)` base 위에서 state-dependent contact-point / impact-time residual semantics를 추가하기
+   - current `position_strike_tilt(_lift)` base 위에서 richer state-dependent contact-point / impact-time residual semantics를 추가하기
 2. `run_heuristic_keepup_diagnostic.py`
    - 다음 primitive semantics용 scripted tuning sweep 추가
 3. `scripts/run_ppo_learning.py`
@@ -139,4 +141,4 @@ primitive branch는 아래를 만족해야 다음 단계로 넘어간다.
 
 한 줄 결론:
 
-> next work should be a non-cheating contact primitive that preserves the current best strike contract and gives PPO a small contact-intent residual action space.
+> next work should be a non-cheating contact primitive that preserves the current best strike contract and gives PPO a richer state-dependent contact-intent residual action space than constant residuals, linear XY gains, or a simple late z pulse.

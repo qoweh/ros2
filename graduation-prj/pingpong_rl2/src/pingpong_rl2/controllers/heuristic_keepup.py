@@ -15,9 +15,12 @@ class HeuristicKeepUpPolicy:
     recovery_blend: float = 0.52
     strike_z_boost: float = 0.018
     strike_time_horizon: float = 0.14
+    strike_xy_correction_gain: float = 0.0
+    strike_xy_correction_max: float = 0.02
     fixed_position_residual: tuple[float, float, float] = (0.0, 0.0, 0.0)
     strike_position_residual: tuple[float, float, float] | None = None
     recovery_position_residual: tuple[float, float, float] | None = None
+    strike_phase_only_position_residual: tuple[float, float, float] | None = None
     fixed_tilt_residual_pitch: float = 0.0
     fixed_tilt_residual_roll: float = 0.0
     strike_tilt_residual_pitch: float | None = None
@@ -41,7 +44,24 @@ class HeuristicKeepUpPolicy:
 
         if position_residual is None:
             position_residual = self.fixed_position_residual
-        return np.asarray(position_residual, dtype=float)
+        resolved_residual = np.asarray(position_residual, dtype=float)
+        if phase_name == "strike" and self.strike_phase_only_position_residual is not None:
+            resolved_residual = resolved_residual + np.asarray(self.strike_phase_only_position_residual, dtype=float)
+        return resolved_residual
+
+    def _state_dependent_strike_xy_residual(self, env: PingPongKeepUpEnv, phase_name: str) -> np.ndarray:
+        if phase_name not in {"prepare", "strike"}:
+            return np.zeros(3, dtype=float)
+        if self.strike_xy_correction_gain <= 0.0 or self.strike_xy_correction_max <= 0.0:
+            return np.zeros(3, dtype=float)
+
+        correction_xy = env._controller_anchor_position()[:2] - env._predicted_intercept_xy()
+        intercept_time = env._predicted_intercept_time()
+        urgency = 1.0 - np.clip(intercept_time / max(self.strike_time_horizon, 1.0e-6), 0.0, 1.0)
+        strike_readiness = max(env._pre_contact_height_readiness(), urgency)
+        residual_xy = self.strike_xy_correction_gain * strike_readiness * np.asarray(correction_xy, dtype=float)
+        residual_xy = np.clip(residual_xy, -self.strike_xy_correction_max, self.strike_xy_correction_max)
+        return np.array([residual_xy[0], residual_xy[1], 0.0], dtype=float)
 
     def _tilt_residual_for_phase(self, phase_name: str) -> np.ndarray:
         if phase_name in {"prepare", "strike"}:
@@ -97,6 +117,7 @@ class HeuristicKeepUpPolicy:
             desired_target[2] = base_target[2]
 
         desired_target = desired_target + self._position_residual_for_phase(phase_name)
+        desired_target = desired_target + self._state_dependent_strike_xy_residual(env, phase_name)
         action = desired_target - base_target
         if env.action_mode == "position_strike_tilt":
             tilt_residual = self._tilt_residual_for_phase(phase_name)

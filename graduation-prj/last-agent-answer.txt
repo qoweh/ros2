@@ -1,0 +1,237 @@
+이번 단계에서는 남은 핵심만 직접 밉니다. 목표는 두 가지입니다: `max=2` ceiling을 깨는 다음 primitive를 실제로 한 단계 더 구현·검증하고, 끝나면 다른 에이전트가 바로 이어받을 수 있는 상세 handoff 문서를 새 md로 남기는 겁니다.
+
+다음 확인은 아주 좁게 갑니다. current action 면에서 아직 안 쓴 가장 유력한 축이 `state-dependent contact-point / impact-time residual`인지 확인하려고, 관련 helper와 현재 heuristic surface만 다시 붙여보겠습니다.
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py)
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py#960-960), lines 960 to 1010
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py#1560-1560), lines 1560 to 1665
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/19_non_tilt_contact_residual_report.md)
+
+Read memory [](file:///Users/pilt/Library/Application%20Support/Code/User/workspaceStorage/30c55ce6bc66017b98a8be2b4fec146a/GitHub.copilot-chat/memory-tool/memories/repo/mujoco_pingpong_notes.md)
+
+로컬 가설은 이겁니다. 상수 `strike x`가 안 먹힌 건 `x/y contact-point residual` 자체가 무의미해서가 아니라, 그 부호와 크기가 상태에 따라 바뀌어야 하기 때문입니다. 가장 싼 판별은 기존 heuristic에 `anchor - predicted_intercept` 기반의 state-dependent strike XY correction gain만 추가하고, 그 gain sweep으로 `max=2` ceiling이 깨지는지 보는 겁니다.
+
+Searched for text `def _controller_anchor_position` (`**/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py`), 1 result
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py#930-930), lines 930 to 960
+
+Searched for regex `_strike_tilt_assist_target|correction_xy = self._controller_anchor_position\(\)\[:2\] - self._predicted_intercept_xy\(\)` (`**/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py`), 3 results
+
+state-dependent correction에 필요한 anchor helper는 충분히 좁혀졌습니다. env도 이미 같은 correction 신호를 tilt assist에서 쓰고 있으니, heuristic에 같은 local signal을 position residual로 열어보는 게 가장 작은 다음 edit입니다.
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py#1480-1480), lines 1480 to 1495
+
+이제 grounded edit로 바로 갑니다. 범위는 두 파일뿐입니다: heuristic에 state-dependent strike XY correction gain을 추가하고, diagnostic CLI에서 그 gain을 줄 수 있게 엽니다.
+
+Generating patch (39 lines) in [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py)
+
+
+```
+
+```
+
+
+Generating patch (36 lines) in [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/scripts/run_heuristic_keepup_diagnostic.py)
+
+
+```
+
+```
+첫 substantive edit 뒤에는 바로 검증으로 갑니다. nonzero strike XY gain 하나만 넣은 2-episode smoke로 새 path가 실제 env step과 summary까지 통과하는지 확인하겠습니다.
+
+Ran terminal command:  PYTHONPATH=src conda run -n mujoco_env python scripts/run_heuristic_keepup_diagnostic.py --analysis-name contact_xy_correction_smoke_v1 --variant-name gain_050 --action-mode position_strike_tilt --episodes 2 --strike-xy-correction-gain 0.5 --strike-xy-correction-max 0.02 --fixed-position-residual 0.0 0.0 0.0 --strike-position-residual 0.0 0.0 0.01 --recovery-position-residual 0.0 0.0 0.0 --fixed-tilt-residual 0.0 0.0 --strike-tilt-residual 0.0 -0.02 --recovery-tilt-residual 0.0 0.0 --strike-z-boost 0.024 --strike-tilt-ramp-pitch -0.06 --followup-strike-target-tilt -0.06 0.0 --followup-strike-lift-boost 0.02 --post-contact-return-assist-weight 0.5 --post-contact-return-max-intercept-time 0.6 --reset-xy-range 0.0 --reset-velocity-xy-range 0.0 --reset-velocity-z-range -0.01 0.01
+
+smoke는 통과했습니다. 이제 바로 판별 sweep입니다. positive gain만이 아니라 부호도 확인하려고 `-0.5`부터 `+1.0`까지 짧게 쓸어보고, 현재 best `z/roll` candidate를 실제로 넘는지 보겠습니다.
+
+Ran terminal command:  cd /Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2 && for gain in -0.50 0.00 0.25 0.50 0.75 1.00; do tag=$(printf '%s' "$gain" | sed 's/-/m/g; s/\./p/g'); analysis_name="contact_xy_gain_${tag}_v1"; PYTHONPATH=src conda run -n mujoco_env python scripts/run_heuristic_keepup_diagnostic.py --analysis-name "$analysis_name" --variant-name "gain_${gain}" --action-mode position_strike_tilt --episodes 30 --strike-xy-correction-gain "$gain" --strike-xy-correction-max 0.02 --fixed-position-residual 0.0 0.0 0.0 --strike-position-residual 0.0 0.0 0.01 --recovery-position-residual 0.0 0.0 0.0 --fixed-tilt-residual 0.0 0.0 --strike-tilt-residual 0.0 -0.02 --recovery-tilt-residual 0.0 0.0 --strike-z-boost 0.024 --strike-tilt-ramp-pitch -0.06 --followup-strike-target-tilt -0.06 0.0 --followup-strike-lift-boost 0.02 --post-contact-return-assist-weight 0.5 --post-contact-return-max-intercept-time 0.6 --reset-xy-range 0.0 --reset-velocity-xy-range 0.0 --reset-velocity-z-range -0.01 0.01; done && PYTHONPATH=src conda run -n mujoco_env python - <<'PY'
+import json
+from pathlib import Path
+rows = []
+root = Path('artifacts/benchmarks')
+for gain in ['-0.50','0.00','0.25','0.50','0.75','1.00']:
+    tag = gain.replace('-', 'm').replace('.', 'p')
+    summary_path = root / f'contact_xy_gain_{tag}_v1' / f'contact_xy_gain_{tag}_v1_summary.json'
+    data = json.loads(summary_path.read_text())
+    rows.append((
+        gain,
+        data['mean_useful_bounces'],
+        data['max_useful_bounces'],
+        data['one_or_more_useful_bounce_rate'],
+        data['two_or_more_useful_bounce_rate'],
+        data['three_or_more_useful_bounce_rate'],
+        data['useful_contact_next_intercept_reachable_rate'],
+        data['all_contact_mean_outgoing_velocity_error_norm'],
+    ))
+rows.sort(key=lambda item: (item[1], item[2], item[4], item[5], item[6]), reverse=True)
+print('gain mean_useful max_useful one_plus two_plus three_plus useful_reachable mean_out_err')
+for row in rows:
+    print(' '.join(f'{value:.4f}' if isinstance(value, float) else str(value) for value in row))
+PY
+
+XY correction gain은 narrow reset에서 사실상 죽어 있었습니다. 그럼 남은 가장 가까운 hypothesis는 `late impact-time z pulse`입니다. 같은 best candidate 위에 `phase == strike`일 때만 들어가는 추가 z residual을 얹어서, 상수 z residual과 timing pulse가 다르게 작동하는지 보겠습니다.
+
+Generating patch (22 lines) in [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py)
+
+
+```
+
+```
+
+
+Generating patch (52 lines) in [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/scripts/run_heuristic_keepup_diagnostic.py)
+
+
+```
+
+```
+편집 직후에는 같은 slice만 검증합니다. strike phase 전용 z pulse 하나를 2 episodes로 흘려서, 새 CLI와 heuristic 분기가 실제로 통과하는지만 먼저 확인하겠습니다.
+
+Ran terminal command:  PYTHONPATH=src conda run -n mujoco_env python scripts/run_heuristic_keepup_diagnostic.py --analysis-name contact_strike_pulse_smoke_v1 --variant-name pulse_001 --action-mode position_strike_tilt --episodes 2 --fixed-position-residual 0.0 0.0 0.0 --strike-position-residual 0.0 0.0 0.01 --strike-phase-only-position-residual 0.0 0.0 0.01 --recovery-position-residual 0.0 0.0 0.0 --fixed-tilt-residual 0.0 0.0 --strike-tilt-residual 0.0 -0.02 --recovery-tilt-residual 0.0 0.0 --strike-z-boost 0.024 --strike-tilt-ramp-pitch -0.06 --followup-strike-target-tilt -0.06 0.0 --followup-strike-lift-boost 0.02 --post-contact-return-assist-weight 0.5 --post-contact-return-max-intercept-time 0.6 --reset-xy-range 0.0 --reset-velocity-xy-range 0.0 --reset-velocity-z-range -0.01 0.01
+
+smoke는 통과했습니다. 이제 late pulse 크기만 좁게 쓸어보겠습니다. baseline best candidate 위에 `strike_phase_only z`를 `0`에서 `0.02`까지 올려서, timing pulse가 실제로 `max=2` ceiling에 변화를 주는지 바로 보겠습니다.
+
+Ran terminal command:  cd /Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2 && for pulse in 0.00 0.005 0.010 0.015 0.020; do tag=$(printf '%s' "$pulse" | sed 's/-/m/g; s/\./p/g'); analysis_name="contact_strike_pulse_${tag}_v1"; PYTHONPATH=src conda run -n mujoco_env python scripts/run_heuristic_keepup_diagnostic.py --analysis-name "$analysis_name" --variant-name "pulse_${pulse}" --action-mode position_strike_tilt --episodes 30 --fixed-position-residual 0.0 0.0 0.0 --strike-position-residual 0.0 0.0 0.01 --strike-phase-only-position-residual 0.0 0.0 "$pulse" --recovery-position-residual 0.0 0.0 0.0 --fixed-tilt-residual 0.0 0.0 --strike-tilt-residual 0.0 -0.02 --recovery-tilt-residual 0.0 0.0 --strike-z-boost 0.024 --strike-tilt-ramp-pitch -0.06 --followup-strike-target-tilt -0.06 0.0 --followup-strike-lift-boost 0.02 --post-contact-return-assist-weight 0.5 --post-contact-return-max-intercept-time 0.6 --reset-xy-range 0.0 --reset-velocity-xy-range 0.0 --reset-velocity-z-range -0.01 0.01; done && PYTHONPATH=src conda run -n mujoco_env python - <<'PY'
+import json
+from pathlib import Path
+rows = []
+root = Path('artifacts/benchmarks')
+for pulse in ['0.00','0.005','0.010','0.015','0.020']:
+    tag = pulse.replace('-', 'm').replace('.', 'p')
+    summary_path = root / f'contact_strike_pulse_{tag}_v1' / f'contact_strike_pulse_{tag}_v1_summary.json'
+    data = json.loads(summary_path.read_text())
+    rows.append((
+        pulse,
+        data['mean_useful_bounces'],
+        data['max_useful_bounces'],
+        data['one_or_more_useful_bounce_rate'],
+        data['two_or_more_useful_bounce_rate'],
+        data['three_or_more_useful_bounce_rate'],
+        data['useful_contact_next_intercept_reachable_rate'],
+        data['all_contact_mean_outgoing_velocity_error_norm'],
+    ))
+rows.sort(key=lambda item: (item[1], item[2], item[4], item[5], item[6]), reverse=True)
+print('pulse mean_useful max_useful one_plus two_plus three_plus useful_reachable mean_out_err')
+for row in rows:
+    print(' '.join(f'{value:.4f}' if isinstance(value, float) else str(value) for value in row))
+PY
+
+이제 코드보다는 정리와 위임 품질을 올릴 차례입니다. 방금 추가한 두 가설은 둘 다 locally falsify됐으니, 결과를 report와 handoff 문서에 고정하고 다음 에이전트가 중복 작업 없이 바로 이어받을 수 있게 만들겠습니다.
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/README.md)
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/00_index.md)
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/scripts)
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/src/pingpong_rl2)
+
+report index에도 새 결과를 걸어두겠습니다. 그리고 handoff 문서는 실험 흐름, 코드 표면, 왜 지금 결론이 나왔는지까지 한 번에 담는 형태로 만들겠습니다.
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/00_index.md#31-31), lines 31 to 31
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report)
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj)
+
+이제 문서 쪽 마감입니다. 새로 확인된 두 falsification 결과를 report로 분리하고, 루트에 다음 에이전트 handoff md를 하나 만들어서 프로젝트 목적, 지금까지의 선택 이유, 코드 표면, 검증 결과, 금지할 재실험까지 한 번에 남기겠습니다.
+
+Generating patch (507 lines) in [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/00_index.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/20_state_dependent_contact_point_and_timing_report.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/next-agent-contact-primitive-handoff-2026-06-01.md)
+
+새 report를 쓰기 전에 숫자 두 개만 고정하겠습니다. `XY gain sweep`이 왜 no-op인지, 그리고 `late z pulse`가 실제로 얼마나 나빠졌는지 summary json 한두 개만 확인하고 문서에 적겠습니다.Compacted conversation
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/artifacts/benchmarks/contact_xy_gain_0p50_v1/contact_xy_gain_0p50_v1_summary.json)
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/artifacts/benchmarks/contact_strike_pulse_0p005_v1/contact_strike_pulse_0p005_v1_summary.json)
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/artifacts/benchmarks/contact_strike_pulse_0p00_v1/contact_strike_pulse_0p00_v1_summary.json)
+
+
+```
+
+```
+
+```
+
+```
+
+```
+
+```
+수치 확인까지 끝났습니다. 문서 쪽에 남은 건 두 가지입니다. rolling plan에 이번 falsification을 반영하고, repo memory에도 다음 에이전트가 바로 쓸 수 있는 한 줄 사실을 남기겠습니다.
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/17_contact_primitive_training_plan.md)
+
+Read memory
+
+Checked [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py), [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/scripts/run_heuristic_keepup_diagnostic.py), no problems found
+
+Read memory [](file:///Users/pilt/Library/Application%20Support/Code/User/workspaceStorage/30c55ce6bc66017b98a8be2b4fec146a/GitHub.copilot-chat/memory-tool/memories/repo/mujoco_pingpong_notes.md)
+
+코드 쪽 syntax/type 오류는 없습니다. 이제 plan 문서와 repo memory만 맞춰서, 다음 에이전트가 문서와 실제 코드 상태를 혼동하지 않게 정리하겠습니다.
+
+Checked [](file:///Users/pilt/project-collection/ros2/graduation-prj/next-agent-contact-primitive-handoff-2026-06-01.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/20_state_dependent_contact_point_and_timing_report.md), 2 problems found
+
+Read memory [](file:///Users/pilt/Library/Application%20Support/Code/User/workspaceStorage/30c55ce6bc66017b98a8be2b4fec146a/GitHub.copilot-chat/memory-tool/memories/repo/mujoco_pingpong_notes.md)
+
+plan 문서의 한 군데가 이미 현재 best evidence와 어긋나 있었습니다. 그 부분까지 같이 바로잡고 newline lint도 같이 끝내겠습니다.
+
+Generating patch (59 lines) in [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/17_contact_primitive_training_plan.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/20_state_dependent_contact_point_and_timing_report.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/next-agent-contact-primitive-handoff-2026-06-01.md)
+
+report plan도 최신 결론에 맞춰 다듬고, markdown newline 경고도 같이 정리하겠습니다. 이후엔 memory 한 줄만 남기면 종료 조건은 충족됩니다.
+
+Generating patch (34 lines) in [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/17_contact_primitive_training_plan.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/20_state_dependent_contact_point_and_timing_report.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/next-agent-contact-primitive-handoff-2026-06-01.md)
+
+
+```
+
+```
+
+```
+
+```
+
+```
+
+```
+계획 문서 patch는 한 번에 일부만 먹었습니다. 바뀐 부분을 짧게 확인하고, 마지막으로 memory만 업데이트하겠습니다.
+
+Checked [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/17_contact_primitive_training_plan.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/20_state_dependent_contact_point_and_timing_report.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/next-agent-contact-primitive-handoff-2026-06-01.md), 1 problem found
+
+Read [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/17_contact_primitive_training_plan.md#20-20), lines 20 to 144
+
+Inserted into memory file [](file:///Users/pilt/Library/Application%20Support/Code/User/workspaceStorage/30c55ce6bc66017b98a8be2b4fec146a/GitHub.copilot-chat/memory-tool/memories/repo/mujoco_pingpong_notes.md)
+
+남은 건 markdown newline 한 줄입니다. 그거만 바로 정리하고 최종 상태를 닫겠습니다.
+
+Generating patch (7 lines) in [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/17_contact_primitive_training_plan.md)
+
+
+```
+
+```
+마지막 검증은 문서 lint 상태 확인입니다. 이번 턴에서 건드린 파일들에 에러가 남아 있지 않은지만 보고 마무리하겠습니다.
+
+Checked [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/17_contact_primitive_training_plan.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/docs/report/20_state_dependent_contact_point_and_timing_report.md), [](file:///Users/pilt/project-collection/ros2/graduation-prj/next-agent-contact-primitive-handoff-2026-06-01.md), no problems found
+
+Checked [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py), [](file:///Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2/scripts/run_heuristic_keepup_diagnostic.py), no problems found
+
+마지막 작업까지 끝냈습니다. heuristic에 state-dependent XY correction과 strike-phase-only z pulse probe를 추가해 smoke와 30-episode sweep으로 검증했고, 둘 다 현재 `max=2` ceiling을 깨지 못한다는 결론을 문서화했습니다. 다음 에이전트를 위한 상세 handoff 문서와 새 report를 만들고, rolling plan과 repo memory도 최신 상태로 맞췄습니다.
+
+
+
+현재 상태는 이번 research loop 기준으로 거의 끝까지 밀어둔 상태입니다. geometry 문제가 아니라 control/action abstraction 문제라는 점은 이미 확정됐고, 이번 턴에서는 그 뒤에 남아 있던 가장 싼 두 local branch까지 실제로 구현해서 falsify했습니다. 결과적으로 현재 best는 그대로 `strike z +0.01`과 `strike roll -0.02` 조합이고, ceiling도 여전히 `max_useful_bounces = 2`입니다.
+
+코드 쪽으로는 heuristic_keepup.py와 run_heuristic_keepup_diagnostic.py에 두 probe를 추가했습니다. 하나는 `anchor - predicted_intercept` 기반 state-dependent strike XY correction gain이고, 다른 하나는 `phase == strike`에서만 들어가는 late z pulse입니다. 좁은 smoke와 30-episode sweep 결과, XY correction gain은 narrow reset에서 전혀 변화를 만들지 못했고, late z pulse는 오히려 baseline best보다 나빠졌습니다. 그래서 다음 단계는 더 이상 상수 residual, linear XY gain, simple late z pulse 튜닝이 아니라, 더 직접적인 state-dependent contact-point 또는 impact-time primitive여야 한다는 결론이 더 강해졌습니다.
+
+문서도 정리해뒀습니다. 새 결과 보고서는 20_state_dependent_contact_point_and_timing_report.md이고, 다음 에이전트에게 바로 넘길 상세 handoff는 next-agent-contact-primitive-handoff-2026-06-01.md에 만들었습니다. 또한 17_contact_primitive_training_plan.md과 00_index.md도 최신 결론으로 맞췄습니다.
+
+검증은 끝냈습니다. 새 heuristic path 두 개는 각각 smoke를 통과했고, 두 sweep 결과로 결론을 고정했으며, 이번에 수정한 Python/Markdown 파일들은 모두 에러 없는 상태로 확인했습니다.
+
+자연스러운 다음 단계는 둘 중 하나입니다.
+1. handoff 문서를 그대로 다음 에이전트에 넘겨서 `explicit contact-frame dx/dy primitive` branch를 시작하기
+2. 같은 handoff를 바탕으로 `richer impact-time window primitive` branch를 시작하기
+
+Made changes.

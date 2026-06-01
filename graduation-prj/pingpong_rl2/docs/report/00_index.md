@@ -28,3 +28,19 @@
   - heuristic pitch/contact-direction variant 3개 비교, 100-episode gate 결과, PPO/bootstrapping 보류 판단을 정리한 보고서
 - `12_followup_strike_bootstrap_report.md`
   - follow-up strike contract PPO의 50-episode 비교, heuristic bootstrap warm-start 구현, 그리고 second-strike 품질 관점의 현재 결론을 정리한 보고서
+- `13_direct_trajectory_objective_report.md`
+  - direct outgoing-trajectory objective 실험과 왜 그것만으로는 구조 gate를 통과하지 못했는지 정리한 보고서
+- `14_contact_trace_sanity_report.md`
+  - contact trace와 outgoing velocity source 해석, MuJoCo normal 부호, post-contact velocity selection sanity를 정리한 보고서
+- `15_contact_feasibility_map_report.md`
+  - scripted contact feasibility grid sweep과 현재 `position_strike` ceiling이 왜 `3+`를 못 넘는지 정리한 보고서
+- `16_contact_upper_bound_report.md`
+  - desired-outgoing contact oracle로 geometry ceiling 여부를 분리하고, geometry가 아니라 controller/action abstraction이 병목이라는 점을 증명한 보고서
+- `17_contact_primitive_training_plan.md`
+  - contact primitive branch의 구현 순서, gating criteria, 현재까지의 scaffold 상태를 정리한 계획 문서
+- `18_tilt_primitive_scripted_feasibility_report.md`
+  - `position_strike_tilt` tilt-only residual sweep 결과와 왜 tilt-only primitive가 불충분한지 정리한 보고서
+- `19_non_tilt_contact_residual_report.md`
+  - phase-aware non-tilt residual, explicit lift scaffold, strike x sweep까지 포함한 최신 scripted primitive 결과를 정리한 보고서
+- `20_state_dependent_contact_point_and_timing_report.md`
+  - state-dependent strike XY correction gain과 late strike z pulse 실험, 그리고 왜 다음 branch가 더 직접적인 contact-point / impact-time primitive여야 하는지 정리한 보고서
