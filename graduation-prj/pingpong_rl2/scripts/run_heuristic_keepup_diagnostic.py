@@ -132,6 +132,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-apex-lift-max", type=float, default=0.0)
     parser.add_argument("--contact-frame-apex-lift-reference-velocity-z", type=float, default=-1.0)
     parser.add_argument("--contact-frame-apex-lift-restitution", type=float, default=0.8)
+    parser.add_argument("--contact-frame-velocity-lead-gain", type=float, default=0.0)
+    parser.add_argument("--contact-frame-velocity-lead-max", type=float, default=0.0)
     parser.add_argument(
         "--contact-frame-centering-tilt-limit",
         type=float,
@@ -200,6 +202,8 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "contact_frame_apex_lift_max": args.contact_frame_apex_lift_max,
         "contact_frame_apex_lift_reference_velocity_z": args.contact_frame_apex_lift_reference_velocity_z,
         "contact_frame_apex_lift_restitution": args.contact_frame_apex_lift_restitution,
+        "contact_frame_velocity_lead_gain": args.contact_frame_velocity_lead_gain,
+        "contact_frame_velocity_lead_max": args.contact_frame_velocity_lead_max,
         "contact_frame_centering_tilt_deadband": args.contact_frame_centering_tilt_deadband,
         "post_contact_return_assist_weight": args.post_contact_return_assist_weight,
         "post_contact_return_max_intercept_time": args.post_contact_return_max_intercept_time,

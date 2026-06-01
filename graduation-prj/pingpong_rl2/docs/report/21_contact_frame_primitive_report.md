@@ -340,7 +340,7 @@ Interpretation:
 
 The immediate problem is not that pitch/roll are absent. They are present. The problem is that the zero-residual primitive is still only marginally stable, and ordinary PPO updates quickly destroy the rare multi-bounce behavior. Raising height too aggressively also causes more speed-limit/out-of-bounds failures, so height should be increased through a small lift primitive plus conservative model selection, not by simply raising `target_ball_height` first.
 
-Recommended next command:
+Previous recommended command before the bootstrap preset:
 
 ```bash
 conda activate mujoco_env
@@ -472,3 +472,259 @@ Implement a true impact-time / impact-velocity primitive. The current apex-lift 
 ```
 
 The controller then needs to convert target apex and incoming ball velocity into required racket velocity near contact, instead of only moving the racket target position upward.
+
+## 2026-06-01 Third Follow-up: Target Height Was Being Clamped Too High
+
+New finding:
+
+`--target-ball-height` was not actually able to request a lower repeatable apex. Internally `_target_ball_height_above_racket()` returned the maximum of `target_ball_height` and the initial spawn height above the racket. With the default spawn height, any value below roughly 0.5 m was silently ignored.
+
+This matters because the user's intuition was correct: the project needs a repeatable next-ball apex, not a fixed upward force. But the useful repeat apex is lower than the initial drop height. The previous conservative PPO runs were still training against an apex that was too high/fast, so the ball often left the easy strike region.
+
+Code changes:
+
+- `_target_ball_height_above_racket()` now returns `target_ball_height` directly.
+- `target_ball_height` is validated as positive.
+- Added a regression test proving `target_ball_height` can be lower than `ball_height`.
+- Updated `contact_frame_candidate`:
+  - `target_ball_height = 0.25`
+  - `contact_frame_base_strike_z_boost = 0.024`
+- Checkpoint evaluation now records floor/body/speed failure rates and, when long-survival is tied, prefers fewer unsafe failures before smaller improvements in two-bounce rate.
+
+Diagnostic comparison after the clamp fix:
+
+```text
+contact-frame zero-residual, 200 episodes, seed=9100
+
+target=0.25, z_boost=0.024:
+  mean_useful=1.365, max=5, one_or_more=0.665, two_or_more=0.415, three_or_more=0.215
+  reachable_rate=0.672, failure_counts={ball_out_of_bounds:126, floor_contact:22, ball_speed_limit:14, robot_body_contact:38}
+
+target=0.28, z_boost=0.024:
+  mean_useful=1.165, max=5, one_or_more=0.615, two_or_more=0.340, three_or_more=0.160
+
+target=0.30, z_boost=0.024:
+  mean_useful=1.080, max=5, one_or_more=0.585, two_or_more=0.310, three_or_more=0.145
+
+target=0.25, z_boost=0.032:
+  mean_useful=1.310, max=5, one_or_more=0.670, two_or_more=0.355, three_or_more=0.195
+```
+
+Lower targets around 0.20 m can score even more useful bounces, but they also raise `robot_body_contact` sharply. For now `0.25 m` is the safer default: it improves repeatability without making the policy win mostly by hitting the ball too close to the robot body.
+
+Preset zero-init confirmation:
+
+```text
+python scripts/run_ppo_learning.py --preset contact_frame_candidate ... --total-timesteps 0 --eval-episodes 100
+
+evaluation mean_return=7.581
+mean_useful_bounces=1.460
+max_useful_bounces=4
+two_or_more_rate=0.440
+three_or_more_rate=0.220
+```
+
+Short PPO confirmation:
+
+```text
+pmk_cf_lowtarget_20k:
+  checkpoint step 0:     mean_useful=1.70, two_or_more=0.50, three_or_more=0.30
+  checkpoint step 10000: mean_useful=1.48, two_or_more=0.50, three_or_more=0.24
+  checkpoint step 20000: mean_useful=1.74, two_or_more=0.52, three_or_more=0.30
+
+final 100 episode evaluation:
+  mean_useful=1.29, max=5, two_or_more=0.39, three_or_more=0.20
+```
+
+Interpretation:
+
+- The best immediate answer to "힘을 일정하게 줄까, 높이를 일정하게 맞출까?" is: **height objective first**. The primitive should aim for a repeatable apex; force/velocity should be derived from that.
+- The current residual PPO is still fragile. It can preserve the primitive, but it is not yet clearly learning a better long-horizon skill. Do not assume longer training alone will fix the project.
+- Pitch/roll are already present and useful as a fixed bias. Dynamic pitch/roll should come back only after the impact primitive can explicitly control outgoing apex/XY. Otherwise tilt changes mostly disturb timing.
+
+Recommended next command:
+
+```bash
+conda activate mujoco_env
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_candidate \
+  --run-name pmk_cf_lowtarget \
+  --run-version v2 \
+  --reset-model \
+  --total-timesteps 100000 \
+  --n-envs 1 \
+  --n-steps 512 \
+  --batch-size 256 \
+  --learning-rate 0.00001 \
+  --n-epochs 1 \
+  --clip-range 0.05 \
+  --checkpoint-interval 10000 \
+  --checkpoint-eval-episodes 50 \
+  --eval-episodes 100 \
+  --reset-xy-range 0.0 \
+  --reset-velocity-xy-range 0.0 \
+  --reset-velocity-z-range -0.01 0.01 \
+  --early-stop-patience-evals 4
+```
+
+If this still plateaus around 1-2 useful bounces, the next real work is not more reward tuning. Implement the true impact primitive described above so the agent chooses a target apex/landing point and the low-level controller computes the required contact velocity.
+
+## 2026-06-01 Fourth Follow-up: Anchor-Referenced Apex And Bootstrap Preset
+
+New bugs / mismatches found:
+
+- Desired outgoing velocity was computed against `controller_anchor.z + target_ball_height`.
+- The useful-bounce apex check was still effectively comparing against the moving racket frame when contact position was available only as `contact_ball_height_above_racket`.
+- When the racket was lifted at impact, a physically correct outgoing velocity could be marked non-useful because the success check demanded `target_ball_height` above the lifted racket, not above the anchor.
+
+Fix:
+
+- `_projected_contact_apex_height_above_racket()` now uses `contact_ball_position_z` when available and subtracts the controller anchor height. This makes the success/reward trajectory target consistent with `_desired_outgoing_velocity()`.
+
+Upper-bound diagnostic:
+
+```text
+contact_oracle_mode=desired_outgoing_velocity, blend=1.0
+target_ball_height=0.25
+episodes=50
+
+mean_useful_bounces=27.48
+two_or_more_rate=1.00
+three_or_more_rate=1.00
+failure_counts={time_limit: 50}
+```
+
+Interpretation: the task is possible in this MuJoCo setup. The remaining bottleneck is not reachability in general; it is the physical policy/primitive failing to create the target outgoing velocity without the oracle.
+
+Physical primitive check:
+
+- The optional `contact_frame_apex_lift` calculation had the collision-sign wrong.
+- It treated faster downward incoming ball velocity as requiring more upward racket velocity.
+- The corrected approximation is:
+
+```text
+required_racket_velocity_z = (desired_outgoing_velocity_z + restitution * incoming_ball_velocity_z) / (1 + restitution)
+```
+
+This optional primitive is fixed and tested, but it is still not enabled in the main preset because short diagnostics did not improve repeat keep-up robustly.
+
+Best current non-oracle result:
+
+```text
+contact_frame_bootstrap_candidate, total_timesteps=0
+
+bootstrap:
+  sample_mode=post_success
+  bootstrap_heuristic_episodes=120
+  bootstrap_min_useful_bounces=2
+  bootstrap_max_samples=4000
+  bootstrap_epochs=50
+
+evaluation:
+  mean_useful_bounces=2.18
+  max_useful_bounces=5
+  two_or_more_rate=0.65
+  three_or_more_rate=0.39
+```
+
+Short PPO from this bootstrap did not reliably improve the model. With the current reward, PPO often drifts away from the bootstrapped primitive, so the project should use `*_best_model.zip` and treat checkpoint 0 / bootstrapped actor as a legitimate baseline.
+
+New simple command:
+
+```bash
+conda activate mujoco_env
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_bootstrap_candidate \
+  --run-name pmk_cf_bootstrap \
+  --run-version v1 \
+  --reset-model \
+  --total-timesteps 0
+```
+
+For PPO continuation:
+
+```bash
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_bootstrap_candidate \
+  --run-name pmk_cf_bootstrap \
+  --run-version v2 \
+  --reset-model \
+  --total-timesteps 100000
+```
+
+Use the generated `*_best_model.zip`, not necessarily the final `*_model.zip`.
+
+Remaining real gap:
+
+The best non-oracle model still averages only about 2 useful bounces, while the oracle reaches the time limit. Rebound analysis shows outgoing velocity error remains around 1 m/s and failures are mostly `ball_out_of_bounds`. The next structural step is therefore still a true impact-velocity primitive, not more scalar reward tweaking:
+
+```text
+policy chooses: target_apex_height, target_apex_xy/residual, contact offset, small tilt residual
+low-level primitive computes: required racket velocity near impact from incoming ball velocity and restitution
+controller tracks: contact point plus velocity/lead target, rather than only a static position target
+```
+
+## 2026-06-01 Fifth Follow-up: Velocity Lead Probe
+
+Implemented but **not enabled by default**:
+
+- `contact_frame_velocity_lead_gain`
+- `contact_frame_velocity_lead_max`
+
+Purpose:
+
+The current controller is still position-target based, but the real missing quantity is contact velocity. The new optional probe computes the required racket vertical velocity from desired outgoing ball velocity and incoming ball velocity, compares it with current racket velocity, and converts the error into a small signed z target lead.
+
+Formula used:
+
+```text
+required_racket_velocity_z = (desired_outgoing_velocity_z + restitution * incoming_ball_velocity_z) / (1 + restitution)
+lead_z = gain * (required_racket_velocity_z - current_racket_velocity_z)
+```
+
+Diagnostic result:
+
+```text
+120 episodes, seed=10000, target_ball_height=0.25
+
+baseline:
+  mean_useful=1.467, two_or_more=0.492, three_or_more=0.233
+
+velocity lead gain=0.03 max=0.02:
+  mean_useful=1.258, two_or_more=0.375, three_or_more=0.158
+
+velocity lead gain=0.05 max=0.03:
+  mean_useful=0.792, two_or_more=0.225, three_or_more=0.075
+
+velocity lead gain=0.08 max=0.04:
+  mean_useful=0.883, two_or_more=0.267, three_or_more=0.083
+```
+
+Interpretation:
+
+- The idea is aligned with the real objective, but adding a z lead on top of the current static position controller makes the scripted primitive worse.
+- This supports the previous conclusion: the project needs a real impact-velocity primitive or controller-level velocity target, not another z-offset heuristic.
+- Keep these options available for future experiments, but do not put them into `contact_frame_candidate` or `contact_frame_bootstrap_candidate` yet.
+
+Contact offset sweep:
+
+```text
+150 episodes, seed=10100
+
+offset ratio=0.00 max=0.00:
+  mean_useful=1.220, two_or_more=0.360, three_or_more=0.180
+
+offset ratio=0.25 max=0.02:
+  mean_useful=1.293, two_or_more=0.373, three_or_more=0.233
+
+offset ratio=0.50 max=0.03:
+  mean_useful=1.200, two_or_more=0.373, three_or_more=0.140
+
+offset ratio=0.75 max=0.04:
+  mean_useful=1.160, two_or_more=0.353, three_or_more=0.153
+```
+
+Interpretation:
+
+- The existing `0.25 / 0.02` follow-up contact offset is still the best of this sweep.
+- Stronger center bias reduces out-of-bounds somewhat, but increases robot-body/contact-quality failures and does not improve multi-bounce survival.

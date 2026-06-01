@@ -146,13 +146,14 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
     },
     "contact_frame_candidate": {
         "action_mode": "position_contact_frame",
+        "target_ball_height": 0.25,
         "tilt_profile": "early",
         "strike_tilt_ramp_pitch": -0.06,
         "strike_tilt_ramp_xy_tolerance": 0.04,
         "followup_strike_target_tilt": (-0.06, 0.0),
         "followup_strike_contact_offset_ratio": 0.25,
         "followup_strike_contact_offset_max": 0.02,
-        "contact_frame_base_strike_z_boost": 0.032,
+        "contact_frame_base_strike_z_boost": 0.024,
         "contact_frame_base_strike_z_offset": 0.01,
         "contact_frame_base_tilt_residual": (-0.02, 0.0),
         "contact_frame_action_penalty_weight": 0.2,
@@ -172,7 +173,51 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
     },
 }
 
+_ENV_PRESETS["contact_frame_bootstrap_candidate"] = {
+    **_ENV_PRESETS["contact_frame_candidate"],
+    "n_envs": 1,
+    "n_steps": 512,
+    "batch_size": 256,
+    "learning_rate": 1.0e-5,
+    "n_epochs": 1,
+    "clip_range": 0.05,
+    "checkpoint_interval": 10_000,
+    "checkpoint_eval_episodes": 50,
+    "eval_episodes": 100,
+    "early_stop_patience_evals": 4,
+    "reset_xy_range": 0.0,
+    "reset_velocity_xy_range": 0.0,
+    "reset_velocity_z_range": (-0.01, 0.01),
+    "bootstrap_heuristic_episodes": 120,
+    "bootstrap_min_useful_bounces": 2,
+    "bootstrap_max_samples": 4_000,
+    "bootstrap_epochs": 50,
+    "bootstrap_batch_size": 256,
+    "bootstrap_learning_rate": 1.0e-4,
+    "bootstrap_sample_mode": "post_success",
+}
+
 _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
+    "n_envs": 4,
+    "n_steps": DEFAULT_PPO_N_STEPS,
+    "batch_size": DEFAULT_PPO_BATCH_SIZE,
+    "learning_rate": DEFAULT_PPO_LEARNING_RATE,
+    "n_epochs": 10,
+    "clip_range": 0.2,
+    "eval_episodes": 5,
+    "checkpoint_interval": 10_000,
+    "checkpoint_eval_episodes": 10,
+    "early_stop_patience_evals": 0,
+    "reset_xy_range": DEFAULT_RESET_XY_RANGE,
+    "reset_velocity_xy_range": DEFAULT_RESET_VELOCITY_XY_RANGE,
+    "reset_velocity_z_range": DEFAULT_RESET_VELOCITY_Z_RANGE,
+    "bootstrap_heuristic_episodes": 0,
+    "bootstrap_min_useful_bounces": 1,
+    "bootstrap_max_samples": 0,
+    "bootstrap_epochs": 0,
+    "bootstrap_batch_size": 256,
+    "bootstrap_learning_rate": 1.0e-3,
+    "bootstrap_sample_mode": "episode",
     "action_mode": "position",
     "tilt_profile": "auto",
     "target_ball_height": None,
@@ -187,6 +232,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "include_next_intercept_observation": False,
     "include_desired_outgoing_velocity_observation": False,
     "trajectory_match_reward_weight": None,
+    "trajectory_error_penalty_weight": None,
     "useful_contact_return_target_xy_reward_weight": None,
     "return_target_xy_tolerance": None,
     "next_intercept_reachable_bonus_weight": None,
@@ -203,6 +249,8 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_apex_lift_max": None,
     "contact_frame_apex_lift_reference_velocity_z": None,
     "contact_frame_apex_lift_restitution": None,
+    "contact_frame_velocity_lead_gain": None,
+    "contact_frame_velocity_lead_max": None,
     "contact_frame_centering_tilt_limit": None,
     "contact_frame_centering_tilt_radius": None,
     "contact_frame_centering_tilt_deadband": None,
@@ -471,6 +519,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-apex-lift-max", type=float, default=None)
     parser.add_argument("--contact-frame-apex-lift-reference-velocity-z", type=float, default=None)
     parser.add_argument("--contact-frame-apex-lift-restitution", type=float, default=None)
+    parser.add_argument("--contact-frame-velocity-lead-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-velocity-lead-max", type=float, default=None)
     parser.add_argument(
         "--contact-frame-centering-tilt-limit",
         type=float,
@@ -490,6 +540,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Optional contact-event reward bonus for matching the desired outgoing ball velocity.",
+    )
+    parser.add_argument(
+        "--trajectory-error-penalty-weight",
+        type=float,
+        default=None,
+        help="Optional contact-event penalty for outgoing ball velocity error.",
     )
     parser.add_argument("--next-intercept-max-time", type=float, default=None)
     parser.add_argument(
@@ -723,6 +779,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_apex_lift_reference_velocity_z"] = args.contact_frame_apex_lift_reference_velocity_z
     if args.contact_frame_apex_lift_restitution is not None:
         env_kwargs["contact_frame_apex_lift_restitution"] = args.contact_frame_apex_lift_restitution
+    if args.contact_frame_velocity_lead_gain is not None:
+        env_kwargs["contact_frame_velocity_lead_gain"] = args.contact_frame_velocity_lead_gain
+    if args.contact_frame_velocity_lead_max is not None:
+        env_kwargs["contact_frame_velocity_lead_max"] = args.contact_frame_velocity_lead_max
     if args.contact_frame_centering_tilt_limit is not None:
         env_kwargs["contact_frame_centering_tilt_limit"] = tuple(args.contact_frame_centering_tilt_limit)
     if args.contact_frame_centering_tilt_radius is not None:
@@ -741,6 +801,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["easy_next_ball_reward_weight"] = args.easy_next_ball_reward_weight
     if args.trajectory_match_reward_weight is not None:
         env_kwargs["trajectory_match_reward_weight"] = args.trajectory_match_reward_weight
+    if args.trajectory_error_penalty_weight is not None:
+        env_kwargs["trajectory_error_penalty_weight"] = args.trajectory_error_penalty_weight
     if args.next_intercept_max_time is not None:
         env_kwargs["next_intercept_max_time"] = args.next_intercept_max_time
     if args.include_velocity_domain_observation:
@@ -784,6 +846,9 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
     two_or_more_useful = int(np.count_nonzero(bounce_array >= 2.0)) if bounce_array.size else 0
     three_or_more_useful = int(np.count_nonzero(bounce_array >= 3.0)) if bounce_array.size else 0
     ball_out_of_bounds_count = int(failure_counts.get("ball_out_of_bounds", 0))
+    floor_contact_count = int(failure_counts.get("floor_contact", 0))
+    robot_body_contact_count = int(failure_counts.get("robot_body_contact", 0))
+    ball_speed_limit_count = int(failure_counts.get("ball_speed_limit", 0))
     return {
         "episodes": episodes,
         "mean_return": float(returns_array.mean()) if returns_array.size else 0.0,
@@ -796,16 +861,22 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
         "episodes_with_three_or_more_useful_bounces": three_or_more_useful,
         "three_or_more_useful_bounce_rate": (three_or_more_useful / episodes) if episodes > 0 else 0.0,
         "ball_out_of_bounds_rate": (ball_out_of_bounds_count / episodes) if episodes > 0 else 0.0,
+        "floor_contact_rate": (floor_contact_count / episodes) if episodes > 0 else 0.0,
+        "robot_body_contact_rate": (robot_body_contact_count / episodes) if episodes > 0 else 0.0,
+        "ball_speed_limit_rate": (ball_speed_limit_count / episodes) if episodes > 0 else 0.0,
         "failure_counts": dict(failure_counts),
     }
 
 
-def evaluation_sort_key(evaluation: dict[str, object]) -> tuple[float, float, int, float, float]:
+def evaluation_sort_key(evaluation: dict[str, object]) -> tuple[float, ...]:
     failure_counts = evaluation.get("failure_counts", {})
     if not isinstance(failure_counts, dict):
         failure_counts = {}
     return (
         float(evaluation.get("three_or_more_useful_bounce_rate", 0.0)),
+        -float(failure_counts.get("robot_body_contact", 0)),
+        -float(failure_counts.get("floor_contact", 0)),
+        -float(failure_counts.get("ball_speed_limit", 0)),
         float(evaluation.get("two_or_more_useful_bounce_rate", 0.0)),
         float(evaluation.get("mean_useful_bounces", 0.0)),
         int(evaluation.get("max_useful_bounces", 0)),
