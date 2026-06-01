@@ -159,6 +159,7 @@ def resolve_env_kwargs_for_model(
     model_path: Path | None = None,
     *,
     ball_height: float | None = None,
+    target_ball_height: float | None = None,
     max_episode_steps: int | None = None,
     reset_xy_range: float | None = None,
     reset_velocity_xy_range: float | None = None,
@@ -182,7 +183,10 @@ def resolve_env_kwargs_for_model(
 
     if ball_height is not None:
         env_kwargs["ball_height"] = float(ball_height)
-        env_kwargs["target_ball_height"] = float(ball_height)
+        if target_ball_height is None:
+            env_kwargs["target_ball_height"] = float(ball_height)
+    if target_ball_height is not None:
+        env_kwargs["target_ball_height"] = float(target_ball_height)
     if max_episode_steps is not None:
         env_kwargs["max_episode_steps"] = int(max_episode_steps)
     if reset_xy_range is not None:

@@ -172,8 +172,12 @@ class PingPongKeepUpEnv:
         followup_strike_lift_boost: float = 0.0,
         post_contact_return_assist_weight: float = 0.0,
         post_contact_return_max_intercept_time: float = 0.6,
+        post_contact_return_z_offset: float = 0.0,
         next_intercept_reachable_bonus_weight: float = 0.0,
         easy_next_ball_reward_weight: float = 0.0,
+        require_reachable_next_intercept_for_success: bool = False,
+        min_easy_next_ball_score_for_success: float | None = None,
+        terminate_on_nonuseful_contact: bool = False,
         include_velocity_domain_observation: bool = False,
         include_task_phase_observation: bool = False,
         include_contact_context_observation: bool = False,
@@ -289,8 +293,14 @@ class PingPongKeepUpEnv:
         self.followup_strike_lift_boost = float(followup_strike_lift_boost)
         self.post_contact_return_assist_weight = float(post_contact_return_assist_weight)
         self.post_contact_return_max_intercept_time = float(post_contact_return_max_intercept_time)
+        self.post_contact_return_z_offset = float(post_contact_return_z_offset)
         self.next_intercept_reachable_bonus_weight = float(next_intercept_reachable_bonus_weight)
         self.easy_next_ball_reward_weight = float(easy_next_ball_reward_weight)
+        self.require_reachable_next_intercept_for_success = bool(require_reachable_next_intercept_for_success)
+        self.min_easy_next_ball_score_for_success = (
+            None if min_easy_next_ball_score_for_success is None else float(min_easy_next_ball_score_for_success)
+        )
+        self.terminate_on_nonuseful_contact = bool(terminate_on_nonuseful_contact)
         self.include_velocity_domain_observation = bool(include_velocity_domain_observation)
         self.include_task_phase_observation = bool(include_task_phase_observation)
         self.include_contact_context_observation = bool(include_contact_context_observation)
@@ -486,6 +496,11 @@ class PingPongKeepUpEnv:
                 "post_contact_return_max_intercept_time must be positive, got "
                 f"{self.post_contact_return_max_intercept_time}."
             )
+        if not np.isfinite(self.post_contact_return_z_offset):
+            raise ValueError(
+                "post_contact_return_z_offset must be finite, got "
+                f"{self.post_contact_return_z_offset}."
+            )
         if self.next_intercept_reachable_bonus_weight < 0.0:
             raise ValueError(
                 "next_intercept_reachable_bonus_weight must be non-negative, got "
@@ -494,6 +509,13 @@ class PingPongKeepUpEnv:
         if self.easy_next_ball_reward_weight < 0.0:
             raise ValueError(
                 f"easy_next_ball_reward_weight must be non-negative, got {self.easy_next_ball_reward_weight}."
+            )
+        if self.min_easy_next_ball_score_for_success is not None and not np.isfinite(
+            self.min_easy_next_ball_score_for_success
+        ):
+            raise ValueError(
+                "min_easy_next_ball_score_for_success must be finite when provided, got "
+                f"{self.min_easy_next_ball_score_for_success}."
             )
         if self.next_intercept_max_time <= 0.0:
             raise ValueError(
@@ -872,6 +894,7 @@ class PingPongKeepUpEnv:
         self.step_count += 1
 
         failure_reason = self._failure_reason()
+        robot_body_contact_name = self.sim.ball_robot_body_contact()
         contact_active = bool(contact_trace["contact_observed"] or self.sim.has_contact("ball_geom", "racket_head"))
         contact_event = contact_active and not self._contact_active_previous_step
         if contact_event:
@@ -880,6 +903,8 @@ class PingPongKeepUpEnv:
         success_reason = self._success_reason(failure_reason, contact_trace, contact_event)
         if success_reason is not None:
             self.successful_bounce_count += 1
+        if failure_reason is None and self.terminate_on_nonuseful_contact and contact_event and success_reason is None:
+            failure_reason = "nonuseful_contact"
 
         outgoing_trajectory_metrics = self._contact_outgoing_trajectory_metrics(contact_trace)
         next_intercept_metrics = self._next_intercept_metrics()
@@ -902,6 +927,7 @@ class PingPongKeepUpEnv:
             episode_success_reason = "keepup_time_limit"
         info: dict[str, object] = {
             "failure_reason": failure_reason,
+            "robot_body_contact_name": robot_body_contact_name,
             "success_reason": success_reason,
             "episode_success_reason": episode_success_reason,
             "reward_terms": reward_terms,
@@ -1081,8 +1107,12 @@ class PingPongKeepUpEnv:
             "followup_strike_lift_boost": self.followup_strike_lift_boost,
             "post_contact_return_assist_weight": self.post_contact_return_assist_weight,
             "post_contact_return_max_intercept_time": self.post_contact_return_max_intercept_time,
+            "post_contact_return_z_offset": self.post_contact_return_z_offset,
             "next_intercept_reachable_bonus_weight": self.next_intercept_reachable_bonus_weight,
             "easy_next_ball_reward_weight": self.easy_next_ball_reward_weight,
+            "require_reachable_next_intercept_for_success": self.require_reachable_next_intercept_for_success,
+            "min_easy_next_ball_score_for_success": self.min_easy_next_ball_score_for_success,
+            "terminate_on_nonuseful_contact": self.terminate_on_nonuseful_contact,
             "include_velocity_domain_observation": self.include_velocity_domain_observation,
             "include_task_phase_observation": self.include_task_phase_observation,
             "include_contact_context_observation": self.include_contact_context_observation,
@@ -1798,6 +1828,12 @@ class PingPongKeepUpEnv:
             return None
         if self._projected_contact_apex_height_above_racket(contact_trace) + 1.0e-6 < self._target_ball_height_above_racket():
             return None
+        next_intercept_metrics = self._next_intercept_metrics()
+        if self.require_reachable_next_intercept_for_success and not bool(next_intercept_metrics["reachable"]):
+            return None
+        if self.min_easy_next_ball_score_for_success is not None:
+            if float(next_intercept_metrics["easy_next_ball_score"]) < self.min_easy_next_ball_score_for_success:
+                return None
         return "useful_keepup_bounce"
 
     def _reward_terms(
@@ -2281,12 +2317,17 @@ class PingPongKeepUpEnv:
         lead = self.contact_frame_velocity_lead_gain * velocity_error_z * strike_readiness
         return float(np.clip(lead, -self.contact_frame_velocity_lead_max, self.contact_frame_velocity_lead_max))
 
+    def _contact_frame_strike_tilt_active(self) -> bool:
+        return (
+            self.action_mode == "position_contact_frame"
+            and self._phase_name() in {"prepare", "strike", "recovery"}
+            and float(self.sim.ball_velocity[2]) < self.descending_ball_velocity_threshold
+        )
+
     def _contact_frame_centering_tilt(self) -> np.ndarray:
         if self.action_mode != "position_contact_frame" or self.contact_frame_centering_tilt_limit is None:
             return np.zeros(2, dtype=float)
-        if self._phase_name() not in {"prepare", "strike"}:
-            return np.zeros(2, dtype=float)
-        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+        if not self._contact_frame_strike_tilt_active():
             return np.zeros(2, dtype=float)
 
         correction_xy = self._controller_anchor_position()[:2] - self._predicted_intercept_xy()
@@ -2327,9 +2368,7 @@ class PingPongKeepUpEnv:
             return np.zeros(2, dtype=float)
         if self.contact_frame_trajectory_tilt_gain <= 0.0:
             return np.zeros(2, dtype=float)
-        if self._phase_name() not in {"prepare", "strike"}:
-            return np.zeros(2, dtype=float)
-        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+        if not self._contact_frame_strike_tilt_active():
             return np.zeros(2, dtype=float)
 
         contact_position = self._predicted_contact_position()
@@ -2359,7 +2398,7 @@ class PingPongKeepUpEnv:
     def _contact_frame_base_strike_tilt(self) -> np.ndarray:
         if self.action_mode != "position_contact_frame":
             return np.zeros(2, dtype=float)
-        if self._phase_name() not in {"prepare", "strike"}:
+        if not self._contact_frame_strike_tilt_active():
             return np.zeros(2, dtype=float)
         target_tilt = np.zeros(2, dtype=float)
         if self.contact_frame_base_tilt_residual is not None:
@@ -2378,7 +2417,7 @@ class PingPongKeepUpEnv:
         contact_offset_xy = radial * action_array[0] + tangent * action_array[1]
         if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
             target_position[:2] = self._post_contact_return_target_xy() + contact_offset_xy
-            target_position[2] = anchor_position[2] + action_array[2]
+            target_position[2] = anchor_position[2] + self.post_contact_return_z_offset + action_array[2]
             return target_position
         target_position[:2] = self._strike_contact_target_xy() + contact_offset_xy
         lift_target = self._strike_lift_feedforward() + self._contact_frame_base_strike_lift()

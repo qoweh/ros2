@@ -757,6 +757,21 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         no_base_target = no_base_env._contact_frame_action_target_position(np.zeros(3, dtype=float))
         self.assertGreater(float(base_target[2]), float(no_base_target[2]))
 
+    def test_contact_frame_post_contact_return_z_offset_lowers_racket_target(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            post_contact_return_z_offset=-0.03,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        env.sim.spawn_ball(anchor_position + np.array([0.0, 0.0, 0.08]), velocity=(0.0, 0.0, 1.0))
+
+        target = env._contact_frame_action_target_position(np.zeros(3, dtype=float))
+
+        self.assertAlmostEqual(float(target[2]), float(anchor_position[2] - 0.03))
+
     def test_contact_frame_base_tilt_residual_applies_during_strike(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",
@@ -904,6 +919,28 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
 
         self.assertLess(float(target_tilt[0]), -0.01)
         self.assertLess(float(target_tilt[1]), -0.01)
+
+    def test_contact_frame_trajectory_tilt_remains_active_for_followup_recovery_strike(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            target_ball_height=0.25,
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_tilt_limit=(0.06, 0.06),
+            contact_frame_trajectory_tilt_gain=1.0,
+            contact_frame_trajectory_tilt_limit=(0.0, 0.03),
+        )
+        env.reset(ball_height=env.ball_height)
+        env.successful_bounce_count = 1
+        env._last_contact_step = env.step_count
+        ball_position = env.sim.racket_position + np.array([0.0, 0.05, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+
+        target_tilt = env._contact_frame_trajectory_tilt()
+
+        self.assertEqual(env._phase_name(), "recovery")
+        self.assertAlmostEqual(float(target_tilt[0]), 0.0)
+        self.assertGreater(float(target_tilt[1]), 0.01)
 
     def test_contact_frame_action_penalty_is_negative_for_nonzero_action(self) -> None:
         env = PingPongKeepUpEnv(

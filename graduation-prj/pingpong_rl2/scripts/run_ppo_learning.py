@@ -159,6 +159,9 @@ _ENV_PRESETS: dict[str, dict[str, object]] = {
         "contact_frame_followthrough_gain": 1.0,
         "contact_frame_followthrough_time": 0.06,
         "contact_frame_followthrough_max": 0.04,
+        "contact_frame_trajectory_tilt_gain": 1.0,
+        "contact_frame_trajectory_tilt_limit": (0.0, 0.03),
+        "post_contact_return_z_offset": -0.01,
         "contact_frame_action_penalty_weight": 0.2,
         "trajectory_match_reward_weight": 0.4,
         "useful_contact_return_target_xy_reward_weight": 0.25,
@@ -223,6 +226,29 @@ _ENV_PRESETS["contact_frame_followup_bootstrap_candidate"] = {
     "bootstrap_followup_sample_mode": "post_success_reachable",
     "bootstrap_followup_min_useful_bounces": 3,
     "bootstrap_followup_learning_rate": 5.0e-5,
+}
+
+_ENV_PRESETS["contact_frame_reachable_success_bootstrap_candidate"] = {
+    **_ENV_PRESETS["contact_frame_followup_bootstrap_candidate"],
+    "require_reachable_next_intercept_for_success": True,
+    "min_easy_next_ball_score_for_success": 0.0,
+}
+
+_ENV_PRESETS["contact_frame_strict_contract_bootstrap_candidate"] = {
+    **_ENV_PRESETS["contact_frame_reachable_success_bootstrap_candidate"],
+    "terminate_on_nonuseful_contact": True,
+}
+
+_ENV_PRESETS["contact_frame_recovery_retract_bootstrap_candidate"] = {
+    **_ENV_PRESETS["contact_frame_reachable_success_bootstrap_candidate"],
+    "post_contact_return_z_offset": -0.01,
+}
+
+_ENV_PRESETS["contact_frame_recovery_roll_retract_bootstrap_candidate"] = {
+    **_ENV_PRESETS["contact_frame_reachable_success_bootstrap_candidate"],
+    "contact_frame_trajectory_tilt_gain": 1.0,
+    "contact_frame_trajectory_tilt_limit": (0.0, 0.03),
+    "post_contact_return_z_offset": -0.01,
 }
 
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
@@ -308,6 +334,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "strike_tilt_ramp_xy_tolerance": None,
     "post_contact_return_assist_weight": None,
     "post_contact_return_max_intercept_time": None,
+    "post_contact_return_z_offset": None,
     "include_velocity_domain_observation": False,
     "include_task_phase_observation": False,
     "include_contact_context_observation": False,
@@ -320,6 +347,9 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "return_target_xy_tolerance": None,
     "next_intercept_reachable_bonus_weight": None,
     "easy_next_ball_reward_weight": None,
+    "require_reachable_next_intercept_for_success": False,
+    "min_easy_next_ball_score_for_success": None,
+    "terminate_on_nonuseful_contact": False,
     "followup_strike_target_tilt": None,
     "followup_strike_contact_offset_ratio": None,
     "followup_strike_contact_offset_max": None,
@@ -644,8 +674,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-action-penalty-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
+    parser.add_argument(
+        "--post-contact-return-z-offset",
+        type=float,
+        default=None,
+        help="Vertical offset applied to the racket target while the ball is rising after contact.",
+    )
     parser.add_argument("--next-intercept-reachable-bonus-weight", type=float, default=None)
     parser.add_argument("--easy-next-ball-reward-weight", type=float, default=None)
+    parser.add_argument(
+        "--require-reachable-next-intercept-for-success",
+        action="store_true",
+        help="Only count a contact as useful when the next descending intercept remains inside the strike zone.",
+    )
+    parser.add_argument(
+        "--min-easy-next-ball-score-for-success",
+        type=float,
+        default=None,
+        help="Optional lower bound on easy_next_ball_score for useful-contact success.",
+    )
+    parser.add_argument(
+        "--terminate-on-nonuseful-contact",
+        action="store_true",
+        help="End the episode immediately when a racket contact does not satisfy useful-contact success.",
+    )
     parser.add_argument(
         "--trajectory-match-reward-weight",
         type=float,
@@ -935,10 +987,18 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
     if args.post_contact_return_max_intercept_time is not None:
         env_kwargs["post_contact_return_max_intercept_time"] = args.post_contact_return_max_intercept_time
+    if args.post_contact_return_z_offset is not None:
+        env_kwargs["post_contact_return_z_offset"] = args.post_contact_return_z_offset
     if args.next_intercept_reachable_bonus_weight is not None:
         env_kwargs["next_intercept_reachable_bonus_weight"] = args.next_intercept_reachable_bonus_weight
     if args.easy_next_ball_reward_weight is not None:
         env_kwargs["easy_next_ball_reward_weight"] = args.easy_next_ball_reward_weight
+    if args.require_reachable_next_intercept_for_success:
+        env_kwargs["require_reachable_next_intercept_for_success"] = True
+    if args.min_easy_next_ball_score_for_success is not None:
+        env_kwargs["min_easy_next_ball_score_for_success"] = args.min_easy_next_ball_score_for_success
+    if args.terminate_on_nonuseful_contact:
+        env_kwargs["terminate_on_nonuseful_contact"] = True
     if args.trajectory_match_reward_weight is not None:
         env_kwargs["trajectory_match_reward_weight"] = args.trajectory_match_reward_weight
     if args.trajectory_error_penalty_weight is not None:

@@ -1208,3 +1208,278 @@ Current best model path:
 ```text
 artifacts/ppo_runs/pmk_cf_followup_bootstrap_zero_eval_final/pmk_cf_followup_bootstrap_zero_eval_final_model.zip
 ```
+
+## 2026-06-01 Tenth Follow-up: Reachable-Success Gate
+
+Question rechecked:
+
+- The user observed that some policies still hit the ball away from the robot or too low.
+- A higher fixed apex target was suspected as a possible fix.
+- Pitch/roll were also suspected to be necessary for bringing the ball back toward the arm.
+
+Diagnosis:
+
+- The conservative run trained with `target_ball_height=0.5` did not solve the task.
+- Compared with the current `target_ball_height=0.25` route, it produced taller bounces but worse easy-next-ball timing and worse repeatability.
+- The failure is therefore not "insufficient target height" alone.
+- Later contacts degrade because actual outgoing velocity and next-intercept quality drift; after contact index 4-6, useful rate drops sharply.
+- Pitch/roll are active, but the current best model saturates pitch at roughly `-0.06`; simply adding dynamic pitch/roll on top of that did not improve the scripted gate.
+
+Short gates run:
+
+```text
+base target 0.25, 40 episodes:
+  mean_useful_bounces=2.075
+  two_or_more_rate=0.600
+  reachable_rate=0.708
+
+apex_lift variant:
+  mean_useful_bounces=1.800
+  two_or_more_rate=0.525
+  reachable_rate=0.721
+
+velocity_target variant:
+  mean_useful_bounces=1.325
+  two_or_more_rate=0.425
+  reachable_rate=0.678
+
+small dynamic tilt variant:
+  mean_useful_bounces=2.075
+  two_or_more_rate=0.600
+  reachable_rate=0.708
+```
+
+Interpretation:
+
+- More force or a direct controller velocity target is not currently a safe win.
+- Dynamic tilt must not be added blindly; the current tilt path is already constrained and often saturated.
+- The useful-contact definition was too permissive for the final project goal because a high enough upward bounce could count as useful even when the next descending intercept was not actually easy/reachable.
+
+Code change kept:
+
+- Added environment options:
+
+```text
+require_reachable_next_intercept_for_success
+min_easy_next_ball_score_for_success
+```
+
+- Added the same overrides to `run_heuristic_keepup_diagnostic.py`.
+- Added the same overrides to `run_ppo_rebound_analysis.py`, so old models can be re-evaluated under the stricter project goal.
+- Added a new preset:
+
+```text
+contact_frame_reachable_success_bootstrap_candidate
+```
+
+This preset inherits the follow-up bootstrap route and requires:
+
+```text
+require_reachable_next_intercept_for_success = True
+min_easy_next_ball_score_for_success = 0.0
+```
+
+Strict model check:
+
+```bash
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_reachable_success_bootstrap_candidate \
+  --run-name pmk_cf_reachable_success_bootstrap \
+  --run-version zero_eval \
+  --reset-model \
+  --total-timesteps 0
+```
+
+Training-script evaluation:
+
+```text
+mean_useful_bounces=1.840
+max_useful_bounces=4
+two_or_more_rate=0.690
+three_or_more_rate=0.330
+```
+
+Independent strict evaluation:
+
+```text
+model=artifacts/ppo_runs/pmk_cf_reachable_success_bootstrap_zero_eval/pmk_cf_reachable_success_bootstrap_zero_eval_model.zip
+seed=12602, episodes=100
+
+mean_useful_bounces=1.760
+max_useful_bounces=5
+one_or_more_rate=0.750
+two_or_more_rate=0.610
+useful_contact_next_intercept_reachable_rate=1.000
+useful_contact_mean_next_intercept_xy_error=0.041
+useful_contact_mean_easy_next_ball_score=0.941
+failure_counts={ball_out_of_bounds:63, robot_body_contact:22, floor_contact:8, ball_speed_limit:7}
+```
+
+Fair comparison:
+
+- The old best model re-evaluated under the same strict success gate is still slightly better:
+
+```text
+model=artifacts/ppo_runs/pmk_cf_followup_bootstrap_zero_eval_final/pmk_cf_followup_bootstrap_zero_eval_final_model.zip
+seed=12602, episodes=100, strict success gate enabled
+
+mean_useful_bounces=1.830
+max_useful_bounces=5
+one_or_more_rate=0.770
+two_or_more_rate=0.610
+useful_contact_next_intercept_reachable_rate=1.000
+useful_contact_mean_next_intercept_xy_error=0.037
+useful_contact_mean_easy_next_ball_score=0.986
+failure_counts={ball_out_of_bounds:71, robot_body_contact:13, floor_contact:13, ball_speed_limit:3}
+```
+
+Short PPO continuation check:
+
+```text
+run=pmk_cf_reachable_success_ppo_40k
+total_timesteps=40000
+evaluation mean_useful_bounces=1.140
+max_useful_bounces=3
+two_or_more_rate=0.410
+three_or_more_rate=0.050
+```
+
+Conclusion:
+
+- The new strict success gate is a better project metric and should be kept.
+- The new strict bootstrap model is not the best deployment candidate yet.
+- The current best deployment/evaluation baseline remains:
+
+```text
+artifacts/ppo_runs/pmk_cf_followup_bootstrap_zero_eval_final/pmk_cf_followup_bootstrap_zero_eval_final_model.zip
+```
+
+- Do not raise `target_ball_height` to `0.5` as the main fix.
+- Do not continue PPO from the bootstrap model unless checkpoint selection is based on the strict success gate and beats the zero-timestep baseline.
+- The next improvement should target body-contact reduction and late-contact recovery while preserving strict reachable-success quality.
+
+## 2026-06-01 Eleventh Follow-up: Post-contact Retraction Check
+
+Question rechecked:
+
+- A useful hit must not only go upward; it must leave the next descending ball in a place the robot can hit again.
+- The user suspected that low bounces and drift away from the robot remain.
+- Prior strict-gate experiments showed that changing only apex height, pitch sign, stronger follow-up contact offset, or non-useful-contact termination was not enough.
+
+Code change kept:
+
+- Added `post_contact_return_z_offset` to `PingPongKeepUpEnv`.
+- This offset applies only while the ball is rising after contact in `position_contact_frame` mode.
+- The intended use is a small negative value, so the racket target retracts slightly below the anchor after a hit and gives the ball/arm more clearance before the next strike.
+- Exposed the same option through:
+
+```text
+scripts/run_ppo_learning.py
+scripts/run_heuristic_keepup_diagnostic.py
+scripts/run_ppo_rebound_analysis.py
+scripts/run_viewer.py
+```
+
+- Added preset:
+
+```text
+contact_frame_recovery_retract_bootstrap_candidate
+```
+
+This preset inherits the strict reachable-success bootstrap route and sets:
+
+```text
+post_contact_return_z_offset = -0.01
+```
+
+Runtime comparison on the current best model:
+
+```text
+model=artifacts/ppo_runs/pmk_cf_followup_bootstrap_zero_eval_final/pmk_cf_followup_bootstrap_zero_eval_final_model.zip
+seed=12602, episodes=100, strict success gate enabled
+
+z_offset=0.0:
+  mean_useful_bounces=1.83
+  one_or_more_rate=0.77
+  two_or_more_rate=0.61
+  failure_counts={floor_contact:13, robot_body_contact:13, ball_out_of_bounds:71, ball_speed_limit:3}
+
+z_offset=-0.01:
+  mean_useful_bounces=1.75
+  one_or_more_rate=0.79
+  two_or_more_rate=0.64
+  failure_counts={robot_body_contact:13, ball_out_of_bounds:75, ball_speed_limit:6, floor_contact:6}
+
+z_offset=-0.02:
+  mean_useful_bounces=1.90
+  one_or_more_rate=0.78
+  two_or_more_rate=0.60
+  failure_counts={ball_out_of_bounds:74, robot_body_contact:10, ball_speed_limit:8, floor_contact:8}
+
+z_offset=-0.04:
+  mean_useful_bounces=1.48
+  one_or_more_rate=0.64
+  two_or_more_rate=0.43
+  failure_counts={ball_speed_limit:13, robot_body_contact:3, ball_out_of_bounds:81, floor_contact:3}
+```
+
+Interpretation:
+
+- Small post-contact retraction can change the failure mix, but it is not a full solution.
+- `-0.01` is the safest visual/deployment A/B value because it improved `two_or_more_rate` in this seed without a large collapse.
+- `-0.02` reduced body/floor more, but increased speed/out failures and did not improve `two_or_more_rate`.
+- `-0.04` is too aggressive; it mostly trades body contact for worse keep-up.
+
+New bootstrap candidate check:
+
+```bash
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_recovery_retract_bootstrap_candidate \
+  --run-name pmk_cf_recovery_retract_bootstrap \
+  --run-version zero_eval \
+  --reset-model \
+  --total-timesteps 0
+```
+
+Training-script evaluation:
+
+```text
+mean_useful_bounces=1.900
+max_useful_bounces=5
+two_or_more_rate=0.700
+three_or_more_rate=0.330
+```
+
+Independent strict evaluation:
+
+```text
+model=artifacts/ppo_runs/pmk_cf_recovery_retract_bootstrap_zero_eval/pmk_cf_recovery_retract_bootstrap_zero_eval_model.zip
+seed=12602, episodes=100
+
+mean_useful_bounces=1.590
+max_useful_bounces=4
+one_or_more_rate=0.710
+two_or_more_rate=0.560
+failure_counts={ball_out_of_bounds:72, ball_speed_limit:13, floor_contact:7, robot_body_contact:8}
+```
+
+Conclusion:
+
+- The current best deployment model is still:
+
+```text
+artifacts/ppo_runs/pmk_cf_followup_bootstrap_zero_eval_final/pmk_cf_followup_bootstrap_zero_eval_final_model.zip
+```
+
+- For visual A/B testing, try the same model with:
+
+```bash
+mjpython scripts/run_viewer.py \
+  --model-path artifacts/ppo_runs/pmk_cf_followup_bootstrap_zero_eval_final/pmk_cf_followup_bootstrap_zero_eval_final_model.zip \
+  --post-contact-return-z-offset -0.01 \
+  --require-reachable-next-intercept-for-success \
+  --min-easy-next-ball-score-for-success 0.0
+```
+
+- Do not replace the best model with `pmk_cf_recovery_retract_bootstrap_zero_eval`; it did not beat the best model under independent strict evaluation.
+- The next meaningful work is no longer another scalar sweep. The remaining gap likely needs a stronger low-level strike primitive or residual controller that explicitly solves desired outgoing velocity/next-intercept while preserving a safe recovery pose.

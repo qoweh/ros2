@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pingpong_rl2.utils.ppo_runs import load_env_config_for_model
+from pingpong_rl2.utils.ppo_runs import load_env_config_for_model, resolve_env_kwargs_for_model
 
 
 class PpoRunsPathResolutionTests(unittest.TestCase):
@@ -45,6 +45,15 @@ class PpoRunsPathResolutionTests(unittest.TestCase):
             assert env_config is not None
             self.assertEqual(env_config["action_mode"], "position_strike")
             self.assertTrue(env_config["include_velocity_domain_observation"])
+
+    def test_resolve_env_kwargs_can_override_target_height_separately(self) -> None:
+        env_kwargs = resolve_env_kwargs_for_model(
+            ball_height=0.42,
+            target_ball_height=0.25,
+        )
+
+        self.assertAlmostEqual(env_kwargs["ball_height"], 0.42)
+        self.assertAlmostEqual(env_kwargs["target_ball_height"], 0.25)
 
 
 if __name__ == "__main__":

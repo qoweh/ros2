@@ -42,6 +42,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes", type=int, default=50)
     parser.add_argument("--seed", type=int, default=41)
     parser.add_argument("--ball-height", type=float, default=None)
+    parser.add_argument(
+        "--target-ball-height",
+        type=float,
+        default=None,
+        help="Override only the desired post-contact apex height. --ball-height still controls reset height.",
+    )
     parser.add_argument("--max-episode-steps", type=int, default=None)
     parser.add_argument("--reset-xy-range", type=float, default=None)
     parser.add_argument("--reset-velocity-xy-range", type=float, default=None)
@@ -53,6 +59,42 @@ def parse_args() -> argparse.Namespace:
         default=None,
     )
     parser.add_argument("--success-velocity-threshold", type=float, default=None)
+    parser.add_argument(
+        "--post-contact-return-z-offset",
+        type=float,
+        default=None,
+        help="Override the env post-contact vertical racket return offset.",
+    )
+    parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
+    parser.add_argument("--controller-velocity-gain", type=float, default=None)
+    parser.add_argument("--controller-velocity-feedback-gain", type=float, default=None)
+    parser.add_argument("--controller-max-velocity-step", type=float, default=None)
+    parser.add_argument("--contact-frame-trajectory-tilt-gain", type=float, default=None)
+    parser.add_argument(
+        "--contact-frame-trajectory-tilt-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
+    parser.add_argument("--contact-frame-trajectory-tilt-deadband", type=float, default=None)
+    parser.add_argument(
+        "--require-reachable-next-intercept-for-success",
+        action="store_true",
+        help="Override the env so useful contacts must leave the next descending intercept reachable.",
+    )
+    parser.add_argument(
+        "--min-easy-next-ball-score-for-success",
+        type=float,
+        default=None,
+        help="Override the env with a lower bound on easy_next_ball_score for useful contacts.",
+    )
+    parser.add_argument(
+        "--terminate-on-nonuseful-contact",
+        action="store_true",
+        help="Override the env so a racket contact that is not useful terminates the episode.",
+    )
     parser.add_argument("--stochastic", action="store_true")
     parser.add_argument("--analysis-name", type=str, default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
@@ -719,12 +761,37 @@ def main() -> None:
     env_kwargs = resolve_env_kwargs_for_model(
         model_path,
         ball_height=args.ball_height,
+        target_ball_height=args.target_ball_height,
         max_episode_steps=args.max_episode_steps,
         reset_xy_range=args.reset_xy_range,
         reset_velocity_xy_range=args.reset_velocity_xy_range,
         reset_velocity_z_range=args.reset_velocity_z_range,
         success_velocity_threshold=args.success_velocity_threshold,
     )
+    if args.require_reachable_next_intercept_for_success:
+        env_kwargs["require_reachable_next_intercept_for_success"] = True
+    if args.min_easy_next_ball_score_for_success is not None:
+        env_kwargs["min_easy_next_ball_score_for_success"] = args.min_easy_next_ball_score_for_success
+    if args.post_contact_return_z_offset is not None:
+        env_kwargs["post_contact_return_z_offset"] = args.post_contact_return_z_offset
+    if args.contact_frame_velocity_target_gain is not None:
+        env_kwargs["contact_frame_velocity_target_gain"] = args.contact_frame_velocity_target_gain
+    if args.contact_frame_velocity_target_max is not None:
+        env_kwargs["contact_frame_velocity_target_max"] = args.contact_frame_velocity_target_max
+    if args.controller_velocity_gain is not None:
+        env_kwargs["controller_velocity_gain"] = args.controller_velocity_gain
+    if args.controller_velocity_feedback_gain is not None:
+        env_kwargs["controller_velocity_feedback_gain"] = args.controller_velocity_feedback_gain
+    if args.controller_max_velocity_step is not None:
+        env_kwargs["controller_max_velocity_step"] = args.controller_max_velocity_step
+    if args.contact_frame_trajectory_tilt_gain is not None:
+        env_kwargs["contact_frame_trajectory_tilt_gain"] = args.contact_frame_trajectory_tilt_gain
+    if args.contact_frame_trajectory_tilt_limit is not None:
+        env_kwargs["contact_frame_trajectory_tilt_limit"] = tuple(args.contact_frame_trajectory_tilt_limit)
+    if args.contact_frame_trajectory_tilt_deadband is not None:
+        env_kwargs["contact_frame_trajectory_tilt_deadband"] = args.contact_frame_trajectory_tilt_deadband
+    if args.terminate_on_nonuseful_contact:
+        env_kwargs["terminate_on_nonuseful_contact"] = True
     env = PingPongKeepUpGymEnv(**env_kwargs)
     model = PPO.load(str(model_path))
     run_name = infer_run_name_from_model_path(model_path)
@@ -741,6 +808,7 @@ def main() -> None:
     returns: list[float] = []
     useful_bounces: list[int] = []
     failure_counts: Counter[str] = Counter()
+    robot_body_contact_counts: Counter[str] = Counter()
 
     try:
         for episode in range(1, args.episodes + 1):
@@ -975,6 +1043,9 @@ def main() -> None:
             if failure_reason is None:
                 failure_reason = "time_limit" if bool(info.get("truncated", False)) else "none"
             failure_counts[str(failure_reason)] += 1
+            robot_body_contact_name = info.get("robot_body_contact_name")
+            if str(failure_reason) == "robot_body_contact":
+                robot_body_contact_counts[str(robot_body_contact_name or "unknown")] += 1
             returns.append(episode_return)
             useful_bounces.append(useful_bounce_count)
             episode_rows.append(
@@ -986,6 +1057,7 @@ def main() -> None:
                     "first_contact_step": first_contact_step,
                     "useful_bounces": useful_bounce_count,
                     "failure_reason": failure_reason,
+                    "robot_body_contact_name": robot_body_contact_name,
                 }
             )
             print(
@@ -1014,6 +1086,7 @@ def main() -> None:
             float(np.count_nonzero(bounce_array >= 2.0) / bounce_array.size) if bounce_array.size else 0.0
         ),
         "failure_counts": dict(failure_counts),
+        "robot_body_contact_counts": dict(robot_body_contact_counts),
         "contact_summary": summarize_contacts(
             contact_rows,
             selected_apex_target=args.apex_target,

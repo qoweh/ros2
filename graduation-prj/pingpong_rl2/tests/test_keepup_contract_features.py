@@ -90,6 +90,59 @@ class PingPongKeepUpContractFeatureTests(unittest.TestCase):
         self.assertEqual(reward_terms["next_intercept_reachable_bonus"], 0.0)
         self.assertEqual(reward_terms["easy_next_ball_term"], 0.0)
 
+    def test_success_can_require_reachable_next_intercept(self) -> None:
+        env = PingPongKeepUpEnv(
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_ball_height=0.25,
+            require_reachable_next_intercept_for_success=True,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        contact_position = anchor_position + np.array([0.0, 0.0, env._tracking_strike_plane_offset()])
+        env.sim.spawn_ball(contact_position, velocity=(1.0, 0.0, 2.4))
+        contact_trace = {
+            "contact_ball_position_x": float(contact_position[0]),
+            "contact_ball_position_y": float(contact_position[1]),
+            "contact_ball_position_z": float(contact_position[2]),
+            "contact_ball_velocity_x": 1.0,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": 2.4,
+            "contact_racket_velocity_z": 0.2,
+            "contact_xy_alignment_error": 0.0,
+        }
+
+        self.assertIsNone(env._success_reason(None, contact_trace, contact_event=True))
+
+        permissive_env = PingPongKeepUpEnv(
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_ball_height=0.25,
+        )
+        permissive_env.reset(ball_height=permissive_env.ball_height)
+        permissive_env.sim.spawn_ball(contact_position, velocity=(1.0, 0.0, 2.4))
+        self.assertEqual(
+            permissive_env._success_reason(None, contact_trace, contact_event=True),
+            "useful_keepup_bounce",
+        )
+
+    def test_nonuseful_contact_can_terminate_episode(self) -> None:
+        env = PingPongKeepUpEnv(
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            terminate_on_nonuseful_contact=True,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        contact_position = anchor_position + np.array([0.0, 0.0, env._tracking_strike_plane_offset()])
+        env.sim.spawn_ball(contact_position, velocity=(0.0, 0.0, -1.0))
+
+        _, _, terminated, _, info = env.step(np.zeros(env.action_size, dtype=float))
+
+        self.assertTrue(info["contact_event_during_step"])
+        self.assertTrue(terminated)
+        self.assertEqual(info["failure_reason"], "nonuseful_contact")
+
     def test_heuristic_policy_returns_clipped_action(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_strike",

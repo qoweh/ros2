@@ -40,6 +40,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--seed", type=int, default=101)
     parser.add_argument("--ball-height", type=float, default=None)
+    parser.add_argument(
+        "--target-ball-height",
+        type=float,
+        default=None,
+        help="Override only the desired post-contact apex height. --ball-height still controls reset height.",
+    )
     parser.add_argument("--max-episode-steps", type=int, default=None)
     parser.add_argument("--reset-xy-range", type=float, default=None)
     parser.add_argument("--reset-velocity-xy-range", type=float, default=None)
@@ -50,6 +56,24 @@ def parse_args() -> argparse.Namespace:
         metavar=("LOW", "HIGH"),
         default=None,
     )
+    parser.add_argument("--post-contact-return-z-offset", type=float, default=None)
+    parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
+    parser.add_argument("--controller-velocity-gain", type=float, default=None)
+    parser.add_argument("--controller-velocity-feedback-gain", type=float, default=None)
+    parser.add_argument("--controller-max-velocity-step", type=float, default=None)
+    parser.add_argument("--contact-frame-trajectory-tilt-gain", type=float, default=None)
+    parser.add_argument(
+        "--contact-frame-trajectory-tilt-limit",
+        type=float,
+        nargs=2,
+        metavar=("PITCH", "ROLL"),
+        default=None,
+    )
+    parser.add_argument("--contact-frame-trajectory-tilt-deadband", type=float, default=None)
+    parser.add_argument("--require-reachable-next-intercept-for-success", action="store_true")
+    parser.add_argument("--min-easy-next-ball-score-for-success", type=float, default=None)
+    parser.add_argument("--terminate-on-nonuseful-contact", action="store_true")
     parser.add_argument("--hold-final-seconds", type=float, default=1.5)
     parser.add_argument("--stochastic", action="store_true")
     return parser.parse_args()
@@ -69,11 +93,36 @@ def main() -> None:
     env_kwargs = resolve_env_kwargs_for_model(
         configured_model_path,
         ball_height=args.ball_height,
+        target_ball_height=args.target_ball_height,
         max_episode_steps=args.max_episode_steps,
         reset_xy_range=args.reset_xy_range,
         reset_velocity_xy_range=args.reset_velocity_xy_range,
         reset_velocity_z_range=args.reset_velocity_z_range,
     )
+    if args.post_contact_return_z_offset is not None:
+        env_kwargs["post_contact_return_z_offset"] = args.post_contact_return_z_offset
+    if args.contact_frame_velocity_target_gain is not None:
+        env_kwargs["contact_frame_velocity_target_gain"] = args.contact_frame_velocity_target_gain
+    if args.contact_frame_velocity_target_max is not None:
+        env_kwargs["contact_frame_velocity_target_max"] = args.contact_frame_velocity_target_max
+    if args.controller_velocity_gain is not None:
+        env_kwargs["controller_velocity_gain"] = args.controller_velocity_gain
+    if args.controller_velocity_feedback_gain is not None:
+        env_kwargs["controller_velocity_feedback_gain"] = args.controller_velocity_feedback_gain
+    if args.controller_max_velocity_step is not None:
+        env_kwargs["controller_max_velocity_step"] = args.controller_max_velocity_step
+    if args.contact_frame_trajectory_tilt_gain is not None:
+        env_kwargs["contact_frame_trajectory_tilt_gain"] = args.contact_frame_trajectory_tilt_gain
+    if args.contact_frame_trajectory_tilt_limit is not None:
+        env_kwargs["contact_frame_trajectory_tilt_limit"] = tuple(args.contact_frame_trajectory_tilt_limit)
+    if args.contact_frame_trajectory_tilt_deadband is not None:
+        env_kwargs["contact_frame_trajectory_tilt_deadband"] = args.contact_frame_trajectory_tilt_deadband
+    if args.require_reachable_next_intercept_for_success:
+        env_kwargs["require_reachable_next_intercept_for_success"] = True
+    if args.min_easy_next_ball_score_for_success is not None:
+        env_kwargs["min_easy_next_ball_score_for_success"] = args.min_easy_next_ball_score_for_success
+    if args.terminate_on_nonuseful_contact:
+        env_kwargs["terminate_on_nonuseful_contact"] = True
     if args.mode == "heuristic" and configured_model_path is None:
         env_kwargs.update(
             {

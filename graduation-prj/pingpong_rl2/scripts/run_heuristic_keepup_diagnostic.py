@@ -162,6 +162,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-centering-tilt-deadband", type=float, default=0.015)
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=0.5)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=0.6)
+    parser.add_argument("--post-contact-return-z-offset", type=float, default=0.0)
+    parser.add_argument("--require-reachable-next-intercept-for-success", action="store_true")
+    parser.add_argument("--min-easy-next-ball-score-for-success", type=float, default=None)
+    parser.add_argument("--terminate-on-nonuseful-contact", action="store_true")
     parser.add_argument(
         "--target-tilt-limit",
         type=float,
@@ -240,6 +244,10 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "contact_frame_centering_tilt_deadband": args.contact_frame_centering_tilt_deadband,
         "post_contact_return_assist_weight": args.post_contact_return_assist_weight,
         "post_contact_return_max_intercept_time": args.post_contact_return_max_intercept_time,
+        "post_contact_return_z_offset": args.post_contact_return_z_offset,
+        "require_reachable_next_intercept_for_success": args.require_reachable_next_intercept_for_success,
+        "min_easy_next_ball_score_for_success": args.min_easy_next_ball_score_for_success,
+        "terminate_on_nonuseful_contact": args.terminate_on_nonuseful_contact,
         "contact_oracle_mode": args.contact_oracle_mode,
         "contact_oracle_blend": args.contact_oracle_blend,
         "desired_outgoing_xy_mode": args.desired_outgoing_xy_mode,
