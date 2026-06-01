@@ -930,3 +930,281 @@ python scripts/run_ppo_learning.py \
 ```
 
 Use the generated model from the zero-timestep bootstrap as the current best candidate unless a later PPO run beats it on an independent 100+ episode evaluation.
+
+## 2026-06-01 Eighth Follow-up: Next-Intercept Outgoing Objective
+
+Problem found:
+
+- The previous desired outgoing velocity sent the ball apex toward the controller anchor.
+- That is not the same as sending the next hittable descending strike point toward the controller anchor.
+- Because horizontal ball velocity continues after the apex, an apex-centered target can still overshoot the next strike zone.
+- This matches the observed failure mode where the ball can be hit upward but gradually drifts away from the robot.
+
+New change:
+
+- Added `desired_outgoing_xy_mode` with two modes:
+  - `next_intercept`: desired XY velocity targets the next descending intercept at the strike plane.
+  - `apex`: legacy behavior, desired XY velocity targets the apex.
+- `next_intercept` is now the default and is explicitly enabled in `contact_frame_candidate`.
+- Added trajectory diagnostics:
+  - `desired_outgoing_xy_mode`
+  - `desired_outgoing_target_z`
+  - `desired_outgoing_apex_x/y`
+  - `predicted_next_intercept_x/y/time_from_actual_velocity`
+  - `predicted_next_intercept_xy_error`
+  - `contact_substep_predicted_next_intercept_xy_error`
+
+The new target keeps the same vertical apex target, but computes XY velocity over the full time from contact to next descending strike-plane crossing:
+
+```text
+desired_velocity_z = sqrt(2 * g * (target_apex_z - contact_z))
+time_to_apex = desired_velocity_z / g
+time_from_apex_to_next_strike_plane = sqrt(2 * (target_apex_z - strike_plane_z) / g)
+desired_velocity_xy =
+  (anchor_xy - contact_xy) / (time_to_apex + time_from_apex_to_next_strike_plane)
+```
+
+Scripted A/B:
+
+```text
+120 episodes, seed=12700, followthrough enabled
+
+apex:
+  mean_useful=1.783
+  max=5
+  two_or_more=0.583
+  three_or_more=0.342
+  useful_contact_next_intercept_reachable=0.762
+  useful_contact_mean_predicted_next_intercept_xy_error=0.0688
+
+next_intercept:
+  mean_useful=1.717
+  max=5
+  two_or_more=0.508
+  three_or_more=0.342
+  useful_contact_next_intercept_reachable=0.786
+  useful_contact_mean_predicted_next_intercept_xy_error=0.0640
+```
+
+Interpretation:
+
+- The scripted heuristic did not immediately improve bounce count.
+- However, the next-intercept objective reduced outgoing velocity error and next-intercept XY error.
+- This means the target is more aligned with the final keep-up objective, but the low-level impact primitive still does not reproduce the desired impulse perfectly.
+
+Oracle check:
+
+```text
+30 episodes, seed=12800, contact_oracle_mode=desired_outgoing_velocity
+
+next_intercept:
+  mean_useful=28.000
+  time_limit_episode_rate=1.0
+  next_intercept_reachable_rate=1.0
+  useful_contact_mean_predicted_next_intercept_xy_error=0.0
+
+apex:
+  mean_useful=28.133
+  time_limit_episode_rate=1.0
+  next_intercept_reachable_rate=1.0
+```
+
+This proves the desired trajectory itself can sustain indefinite keep-up when the contact impulse is achieved. The remaining problem is physical/controller realization of the impact, not the high-level target.
+
+Target height check:
+
+```text
+target_ball_height=0.25:
+  mean_useful=1.717
+  two_or_more=0.508
+  reachable=0.697
+
+target_ball_height=0.30:
+  mean_useful=1.600
+  two_or_more=0.467
+  reachable=0.674
+
+target_ball_height=0.35:
+  mean_useful=1.175
+  two_or_more=0.358
+  reachable=0.601
+```
+
+Raising the target height does not solve the current failure. The current controller/primitive loses stability before the longer flight time helps, so keep `target_ball_height=0.25` for now.
+
+Best current model check:
+
+```text
+contact_frame_bootstrap_candidate, total_timesteps=0
+run_name=pmk_cf_next_intercept_bootstrap_zero_eval
+
+training-script evaluation:
+  mean_useful_bounces=2.600
+  max_useful_bounces=6
+  two_or_more_rate=0.730
+  three_or_more_rate=0.570
+
+independent evaluation, seed=12600, 100 episodes:
+  mean_useful_bounces=2.280
+  max_useful_bounces=5
+  one_or_more_rate=0.820
+  two_or_more_rate=0.650
+  three_or_more_rate=0.500
+  failure_counts={ball_out_of_bounds:68, robot_body_contact:17, floor_contact:7, ball_speed_limit:8}
+```
+
+PPO continuation check:
+
+```text
+contact_frame_bootstrap_candidate, total_timesteps=50000
+run_name=pmk_cf_next_intercept_bootstrap_50k
+
+final evaluation:
+  mean_useful_bounces=1.500
+  max_useful_bounces=5
+  two_or_more_rate=0.470
+  three_or_more_rate=0.260
+
+10k checkpoint independent evaluation, seed=12600, 100 episodes:
+  mean_useful_bounces=1.720
+  max_useful_bounces=4
+  two_or_more_rate=0.540
+  three_or_more_rate=0.310
+```
+
+The PPO continuation still damages the bootstrapped skill. Use the zero-timestep bootstrapped model as the current best candidate.
+
+Current recommended command:
+
+```bash
+conda activate mujoco_env
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_bootstrap_candidate \
+  --run-name pmk_cf_next_intercept_bootstrap \
+  --run-version zero_eval \
+  --reset-model \
+  --total-timesteps 0
+```
+
+Current best model path:
+
+```text
+artifacts/ppo_runs/pmk_cf_next_intercept_bootstrap_zero_eval/pmk_cf_next_intercept_bootstrap_zero_eval_model.zip
+```
+
+Remaining gap:
+
+- The project is improved but not complete.
+- The zero-timestep model often reaches 3-5 useful bounces, but still does not reach the time limit without oracle help.
+- Most failures are still `ball_out_of_bounds`; some are `robot_body_contact`.
+- The next major step should not be generic reward tuning. It should be a safer impact-realization layer that makes the physical racket contact match the desired outgoing velocity while respecting robot-body clearance.
+
+## 2026-06-01 Ninth Follow-up: Follow-up Bootstrap Preset And Pitch/Roll Sanity Check
+
+User questions addressed:
+
+- Should the project target a repeatable height rather than a fixed upward force?
+- Can the robot fold inward / keep the next ball closer?
+- Should pitch/roll be used when the ball drifts away?
+- Is the current direction just parameter tweaking?
+
+Decision:
+
+- The target should remain a repeatable next-ball trajectory, not a fixed force.
+- The current code already computes a desired outgoing velocity from a target apex height and, in `next_intercept` mode, from the next descending strike-plane intercept.
+- Raising `target_ball_height` alone is not supported by the diagnostics; it made the scripted primitive less stable.
+- Pitch/roll are already active through fixed strike tilt, action residuals, and optional trajectory/centering tilt. The issue is not absence of pitch/roll; it is that the current low-level impact realization cannot reliably produce the desired outgoing velocity.
+
+Paper takeaway:
+
+- [`Achieving Human Level Competitive Robot Table Tennis`](https://arxiv.org/html/2408.03906v3) supports the direction of preserving stable low-level skills and evaluating them with descriptors such as hit velocity, landing location, and return/success rate.
+- The paper is not directly a keep-up task, but it argues against relying on one monolithic RL continuation once a useful low-level skill exists.
+- This matches the local PPO result: continuation after bootstrap still often damages the skill.
+
+Code change kept:
+
+- Added a preset that packages the best follow-up bootstrap workflow:
+
+```text
+contact_frame_followup_bootstrap_candidate
+```
+
+It inherits `contact_frame_bootstrap_candidate` and adds:
+
+```text
+bootstrap_followup_epochs = 20
+bootstrap_followup_sample_mode = post_success_reachable
+bootstrap_followup_min_useful_bounces = 3
+bootstrap_followup_learning_rate = 5e-5
+```
+
+Rejected implementation direction:
+
+- A contact-frame step-order change was tested so current-step pitch/roll would affect follow-through target position immediately.
+- It was not kept because newly bootstrapped models from that change underperformed the stable baseline in independent evaluation.
+- The lesson is that pitch/roll should be improved through a deliberate impact-velocity primitive or a separate evaluated skill branch, not by silently changing the stable contact-frame execution order.
+
+Final zero-timestep bootstrap check:
+
+```bash
+conda activate mujoco_env
+python scripts/run_ppo_learning.py \
+  --preset contact_frame_followup_bootstrap_candidate \
+  --run-name pmk_cf_followup_bootstrap \
+  --run-version zero_eval_final \
+  --reset-model \
+  --total-timesteps 0
+```
+
+Training-script evaluation:
+
+```text
+mean_useful_bounces=2.470
+max_useful_bounces=5
+two_or_more_rate=0.710
+three_or_more_rate=0.560
+```
+
+Independent evaluation:
+
+```text
+model=artifacts/ppo_runs/pmk_cf_followup_bootstrap_zero_eval_final/pmk_cf_followup_bootstrap_zero_eval_final_model.zip
+seed=12600, episodes=100
+
+mean_useful_bounces=2.460
+max_useful_bounces=6
+one_or_more_rate=0.870
+two_or_more_rate=0.700
+three_or_more_rate=0.530
+failure_counts={ball_out_of_bounds:69, floor_contact:14, robot_body_contact:12, ball_speed_limit:5}
+```
+
+Comparison to previous best:
+
+```text
+previous next-intercept zero bootstrap:
+  mean_useful=2.280
+  max=5
+  two_or_more=0.650
+  three_or_more=0.500
+  failure_counts={ball_out_of_bounds:68, robot_body_contact:17, floor_contact:7, ball_speed_limit:8}
+
+follow-up bootstrap final:
+  mean_useful=2.460
+  max=6
+  two_or_more=0.700
+  three_or_more=0.530
+  failure_counts={ball_out_of_bounds:69, floor_contact:14, robot_body_contact:12, ball_speed_limit:5}
+```
+
+Current recommendation:
+
+- Use `contact_frame_followup_bootstrap_candidate` with `total_timesteps=0` as the current best reproducible route.
+- Do not continue PPO by default unless a checkpoint beats the zero-timestep bootstrap on an independent 100+ episode evaluation.
+- The next actual research step is a separate impact-realization branch that directly controls contact velocity / desired outgoing velocity while keeping the existing bootstrap model as the baseline.
+
+Current best model path:
+
+```text
+artifacts/ppo_runs/pmk_cf_followup_bootstrap_zero_eval_final/pmk_cf_followup_bootstrap_zero_eval_final_model.zip
+```

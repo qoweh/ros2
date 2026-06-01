@@ -217,6 +217,14 @@ _ENV_PRESETS["contact_frame_bootstrap_candidate"] = {
     "bootstrap_sample_mode": "post_success",
 }
 
+_ENV_PRESETS["contact_frame_followup_bootstrap_candidate"] = {
+    **_ENV_PRESETS["contact_frame_bootstrap_candidate"],
+    "bootstrap_followup_epochs": 20,
+    "bootstrap_followup_sample_mode": "post_success_reachable",
+    "bootstrap_followup_min_useful_bounces": 3,
+    "bootstrap_followup_learning_rate": 5.0e-5,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -287,6 +295,10 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "bootstrap_batch_size": 256,
     "bootstrap_learning_rate": 1.0e-3,
     "bootstrap_sample_mode": "episode",
+    "bootstrap_followup_epochs": 0,
+    "bootstrap_followup_sample_mode": "post_success_reachable",
+    "bootstrap_followup_min_useful_bounces": None,
+    "bootstrap_followup_learning_rate": None,
     "action_mode": "position",
     "tilt_profile": "auto",
     "target_ball_height": None,
