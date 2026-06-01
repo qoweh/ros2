@@ -280,6 +280,14 @@ _ENV_PRESETS["contact_frame_sweet_spot_nullspace_candidate"] = {
     "contact_frame_centering_tilt_deadband": 0.01,
 }
 
+_ENV_PRESETS["contact_frame_planned_intercept_candidate"] = {
+    **_ENV_PRESETS["contact_frame_sweet_spot_bootstrap_candidate"],
+    "post_contact_return_predict_during_rise": False,
+    "contact_frame_intercept_velocity_gain": 0.65,
+    "contact_frame_intercept_velocity_max": 1.2,
+    "contact_frame_intercept_velocity_time_floor": 0.08,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -397,6 +405,9 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_velocity_lead_max": None,
     "contact_frame_velocity_target_gain": None,
     "contact_frame_velocity_target_max": None,
+    "contact_frame_intercept_velocity_gain": None,
+    "contact_frame_intercept_velocity_max": None,
+    "contact_frame_intercept_velocity_time_floor": None,
     "contact_frame_followthrough_gain": None,
     "contact_frame_followthrough_time": None,
     "contact_frame_followthrough_max": None,
@@ -696,6 +707,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-velocity-lead-max", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
+    parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
+    parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-gain", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-time", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-max", type=float, default=None)
@@ -1047,6 +1061,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_velocity_target_gain"] = args.contact_frame_velocity_target_gain
     if args.contact_frame_velocity_target_max is not None:
         env_kwargs["contact_frame_velocity_target_max"] = args.contact_frame_velocity_target_max
+    if args.contact_frame_intercept_velocity_gain is not None:
+        env_kwargs["contact_frame_intercept_velocity_gain"] = args.contact_frame_intercept_velocity_gain
+    if args.contact_frame_intercept_velocity_max is not None:
+        env_kwargs["contact_frame_intercept_velocity_max"] = args.contact_frame_intercept_velocity_max
+    if args.contact_frame_intercept_velocity_time_floor is not None:
+        env_kwargs["contact_frame_intercept_velocity_time_floor"] = args.contact_frame_intercept_velocity_time_floor
     if args.contact_frame_followthrough_gain is not None:
         env_kwargs["contact_frame_followthrough_gain"] = args.contact_frame_followthrough_gain
     if args.contact_frame_followthrough_time is not None:

@@ -82,6 +82,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
+    parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
+    parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
     parser.add_argument("--controller-velocity-gain", type=float, default=None)
     parser.add_argument("--controller-velocity-feedback-gain", type=float, default=None)
     parser.add_argument("--controller-max-velocity-step", type=float, default=None)
@@ -815,6 +818,12 @@ def main() -> None:
         env_kwargs["contact_frame_velocity_target_gain"] = args.contact_frame_velocity_target_gain
     if args.contact_frame_velocity_target_max is not None:
         env_kwargs["contact_frame_velocity_target_max"] = args.contact_frame_velocity_target_max
+    if args.contact_frame_intercept_velocity_gain is not None:
+        env_kwargs["contact_frame_intercept_velocity_gain"] = args.contact_frame_intercept_velocity_gain
+    if args.contact_frame_intercept_velocity_max is not None:
+        env_kwargs["contact_frame_intercept_velocity_max"] = args.contact_frame_intercept_velocity_max
+    if args.contact_frame_intercept_velocity_time_floor is not None:
+        env_kwargs["contact_frame_intercept_velocity_time_floor"] = args.contact_frame_intercept_velocity_time_floor
     if args.controller_velocity_gain is not None:
         env_kwargs["controller_velocity_gain"] = args.controller_velocity_gain
     if args.controller_velocity_feedback_gain is not None:
@@ -1062,6 +1071,30 @@ def main() -> None:
                         "racket_velocity_y": info.get("contact_racket_velocity_y"),
                         "racket_velocity_z": info.get("contact_racket_velocity_z"),
                         "racket_speed_norm": info.get("contact_racket_speed_norm"),
+                        "target_velocity_x": (
+                            None if info.get("target_velocity") is None else float(info["target_velocity"][0])
+                        ),
+                        "target_velocity_y": (
+                            None if info.get("target_velocity") is None else float(info["target_velocity"][1])
+                        ),
+                        "target_velocity_z": (
+                            None if info.get("target_velocity") is None else float(info["target_velocity"][2])
+                        ),
+                        "contact_frame_intercept_velocity_target_x": (
+                            None
+                            if info.get("contact_frame_intercept_velocity_target") is None
+                            else float(info["contact_frame_intercept_velocity_target"][0])
+                        ),
+                        "contact_frame_intercept_velocity_target_y": (
+                            None
+                            if info.get("contact_frame_intercept_velocity_target") is None
+                            else float(info["contact_frame_intercept_velocity_target"][1])
+                        ),
+                        "contact_frame_intercept_velocity_target_z": (
+                            None
+                            if info.get("contact_frame_intercept_velocity_target") is None
+                            else float(info["contact_frame_intercept_velocity_target"][2])
+                        ),
                         "racket_face_normal_x": (
                             None if racket_face_normal is None else float(racket_face_normal[0])
                         ),

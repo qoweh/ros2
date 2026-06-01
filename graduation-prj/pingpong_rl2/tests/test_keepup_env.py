@@ -938,6 +938,42 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertGreater(float(slow_descent_target[2]), 0.0)
         self.assertLess(float(fast_descent_target[2]), float(slow_descent_target[2]))
 
+    def test_contact_frame_intercept_velocity_targets_contact_position(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_intercept_velocity_gain=1.0,
+            contact_frame_intercept_velocity_max=2.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        current_position = env.sim.racket_position.copy()
+        ball_position = current_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        target_position = current_position + np.array([0.04, 0.0, 0.0])
+
+        target_velocity = env._contact_frame_velocity_target(target_position)
+
+        self.assertGreater(float(target_velocity[0]), 0.0)
+        self.assertAlmostEqual(float(target_velocity[1]), 0.0, places=6)
+
+    def test_contact_frame_intercept_velocity_is_inactive_while_ball_rises(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_intercept_velocity_gain=1.0,
+            contact_frame_intercept_velocity_max=2.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        current_position = env.sim.racket_position.copy()
+        ball_position = current_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, 1.0))
+
+        target_velocity = env._contact_frame_velocity_target(current_position + np.array([0.04, 0.0, 0.0]))
+
+        self.assertTrue(np.allclose(target_velocity, np.zeros(3, dtype=float)))
+
     def test_contact_frame_followthrough_offset_tracks_required_impact_velocity(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",

@@ -143,6 +143,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-velocity-lead-max", type=float, default=0.0)
     parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=0.0)
     parser.add_argument("--contact-frame-velocity-target-max", type=float, default=0.0)
+    parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=0.0)
+    parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=0.0)
+    parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=0.08)
     parser.add_argument("--contact-frame-followthrough-gain", type=float, default=0.0)
     parser.add_argument("--contact-frame-followthrough-time", type=float, default=0.06)
     parser.add_argument("--contact-frame-followthrough-max", type=float, default=0.0)
@@ -241,6 +244,9 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
         "contact_frame_velocity_lead_max": args.contact_frame_velocity_lead_max,
         "contact_frame_velocity_target_gain": args.contact_frame_velocity_target_gain,
         "contact_frame_velocity_target_max": args.contact_frame_velocity_target_max,
+        "contact_frame_intercept_velocity_gain": args.contact_frame_intercept_velocity_gain,
+        "contact_frame_intercept_velocity_max": args.contact_frame_intercept_velocity_max,
+        "contact_frame_intercept_velocity_time_floor": args.contact_frame_intercept_velocity_time_floor,
         "contact_frame_followthrough_gain": args.contact_frame_followthrough_gain,
         "contact_frame_followthrough_time": args.contact_frame_followthrough_time,
         "contact_frame_followthrough_max": args.contact_frame_followthrough_max,
@@ -527,6 +533,21 @@ def main() -> None:
                             ),
                             "target_velocity_z": (
                                 None if info.get("target_velocity") is None else float(info["target_velocity"][2])
+                            ),
+                            "contact_frame_intercept_velocity_target_x": (
+                                None
+                                if info.get("contact_frame_intercept_velocity_target") is None
+                                else float(info["contact_frame_intercept_velocity_target"][0])
+                            ),
+                            "contact_frame_intercept_velocity_target_y": (
+                                None
+                                if info.get("contact_frame_intercept_velocity_target") is None
+                                else float(info["contact_frame_intercept_velocity_target"][1])
+                            ),
+                            "contact_frame_intercept_velocity_target_z": (
+                                None
+                                if info.get("contact_frame_intercept_velocity_target") is None
+                                else float(info["contact_frame_intercept_velocity_target"][2])
                             ),
                             "contact_racket_face_normal_x": info.get("contact_racket_face_normal_x"),
                             "contact_racket_face_normal_y": info.get("contact_racket_face_normal_y"),

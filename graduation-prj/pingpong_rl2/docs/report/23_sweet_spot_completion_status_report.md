@@ -110,9 +110,22 @@ controller_body_clearance_body_names
 ```text
 contact_frame_sweet_spot_bootstrap_candidate
 contact_frame_sweet_spot_nullspace_candidate
+contact_frame_planned_intercept_candidate
 ```
 
 첫 번째는 strict sweet spot reset/objective로 다시 시작하는 bootstrap 후보이고, 두 번째는 no-rise-chase와 controller clearance까지 포함한 실험 후보이다.
+
+세 번째는 사용자가 지적한 "공이 내려올 때 접촉 지점으로 빨리 이동해야 한다"를 직접 다루기 위한 후보이다. `position_contact_frame`에서 접촉 목표 위치까지 남은 시간으로 나눈 reference velocity를 만들어 controller velocity target에 더한다.
+
+추가 옵션:
+
+```text
+contact_frame_intercept_velocity_gain
+contact_frame_intercept_velocity_max
+contact_frame_intercept_velocity_time_floor
+```
+
+중요: 이 옵션도 기본 off다. 기존 정책을 깨지 않기 위해 명시적으로 켠 경우에만 동작한다.
 
 ## Latest Training Status
 
@@ -239,6 +252,34 @@ ball_speed_limit    = 14
 - 현재 방식의 controller velocity target은 너무 거칠거나 현재 position primitive와 충돌한다.
 - 그냥 속도 target을 키우는 방식은 답이 아니다.
 
+### planned intercept reference velocity
+
+```text
+analysis = h020_strict_planned_intercept_probe100
+post_contact_return_predict_during_rise = False
+contact_frame_intercept_velocity_gain = 0.65
+contact_frame_intercept_velocity_max = 1.2
+contact_frame_intercept_velocity_time_floor = 0.08
+
+mean_useful_bounces = 0.87
+two_or_more_rate    = 0.25
+max_useful_bounces  = 8
+failure_counts      = robot_body_contact 16, ball_out_of_bounds 63, floor_contact 8, ball_speed_limit 13
+
+all_contact_mean_next_intercept_xy_error    = 0.1049
+useful_contact_mean_next_intercept_xy_error = 0.0225
+mean_outgoing_velocity_error_norm           = 0.8676
+```
+
+해석:
+
+- 사용자가 지적한 "접촉 시각까지 라켓이 도착해야 한다"는 방향은 맞다.
+- max useful bounce가 8까지 올라간 것은 긍정적이다.
+- 하지만 two-or-more rate는 baseline strict와 같은 0.25이고, 전체 next-intercept error는 여전히 약 10cm다.
+- 따라서 이 기능은 다음 primitive에 넣을 재료이지, 단독 해결책이 아니다.
+
+heuristic zero-policy에 같은 reference velocity만 넣은 30 episode 진단은 `mean_useful_bounces=0.0`이었다. 즉 scripted policy 자체도 다시 설계해야 한다.
+
 ## User-Observed Problems
 
 ### 1. "공이 맞을 것 같으면 로봇팔이 후다닥 내려오는 위치로 이동해야 한다"
@@ -252,6 +293,8 @@ ball prediction -> planned contact pose/time -> smooth reference trajectory -> c
 ```
 
 즉 매 step 목표점을 튀게 바꾸지 않고, 예상 접촉 시각까지 도달하는 reference trajectory를 만들어야 한다.
+
+이번 작업에서 그 첫 hook으로 `contact_frame_intercept_velocity_*` 옵션을 추가했다. 다만 평가 결과 단독으로는 부족하다. 다음 작업은 이 값을 sweep하는 것이 아니라, planned contact pose/time/velocity를 하나의 primitive로 묶어서 heuristic/BC가 그 primitive를 재현하게 만드는 것이다.
 
 ### 2. "공이 올라가는 중 로봇팔이 휘적거린다"
 
@@ -348,6 +391,13 @@ _planned_contact_reference_velocity()
 ```
 
 단, velocity target을 바로 크게 넣으면 ball_speed_limit이 늘었다. ramp와 clipping이 필요하다.
+
+현재 구현된 `contact_frame_intercept_velocity_*`는 이 중 "접촉 위치까지 도착하는 reference velocity"만 담당한다. 아직 다음 두 부분이 남아 있다.
+
+```text
+1. planned contact pose/time을 episode phase state로 유지해서 target이 매 step 튀지 않게 하기
+2. impact normal velocity와 intercept velocity를 접촉 직전 ramp로 합성하기
+```
 
 ### Step 3. 다음 낙하지점 strict success를 학습 기준으로 유지한다
 
