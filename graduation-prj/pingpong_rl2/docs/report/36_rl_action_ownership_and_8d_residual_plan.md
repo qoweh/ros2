@@ -328,3 +328,45 @@ python scripts/run_ppo_rebound_analysis.py \
 - `outgoing_velocity_xy_error`
 - `next_intercept_reachable`
 - projected apex height / low-apex contact 비율
+
+## 2026-06-03 v17 ownership update
+
+v17에서 새 action mode를 추가했다.
+
+```text
+position_contact_frame_velocity_tilt_residual
+```
+
+v17 action layout:
+
+```text
+[radial, tangent, z, pitch, roll, vz_scale, outgoing_x_residual, outgoing_y_residual, racket_vz_residual, trajectory_tilt_scale, centering_tilt_scale]
+```
+
+v17에서 RL이 직접 배우는 것:
+
+1. `radial`, `tangent`, `z`
+   - 기존 contact-frame 목표 위치 residual.
+2. `pitch`, `roll`
+   - 기존 tilt residual.
+3. `vz_scale`
+   - desired outgoing velocity z 계열을 `max(0, 1 + action[5])` 형태로 스케일한다.
+4. `outgoing_x_residual`, `outgoing_y_residual`
+   - controller-side desired outgoing XY velocity에 직접 더한다.
+5. `racket_vz_residual`
+   - `_contact_frame_velocity_target()`의 z target velocity에 직접 더한다.
+   - v16에서 `actual racket velocity z`가 낮고, `vz_scale`이 충분히 쓰이지 않은 문제를 겨냥한다.
+6. `trajectory_tilt_scale`, `centering_tilt_scale`
+   - scripted trajectory/centering tilt primitive를 `max(0, 1 + residual)`로 스케일한다.
+   - raw tilt를 크게 여는 대신, 기존 안정화 primitive의 강도를 policy가 조절하게 한다.
+
+v17에서도 아직 RL이 직접 배우지 않는 것:
+
+- contact planner의 target time/position 계산
+- target apex와 return target 생성
+- low-apex recovery primitive의 기본 gain/max
+- controller gain, max velocity/orientation step
+- body clearance/nullspace posture
+- useful/stable cycle 판정과 reward gate
+
+따라서 v17은 full controller learning이 아니라, hand-coded juggling primitive 위에 velocity execution과 tilt 강도 조절 권한을 더 주는 구조다. v16에서 포착된 병목이 "목표 outgoing velocity는 있는데 실제 racket velocity와 타격 준비 시간이 부족함"이었기 때문에, 우선순위는 더 타당하다.

@@ -12,6 +12,7 @@ from pingpong_rl2.defaults import (
     DEFAULT_PPO_POSITION_STRIKE_TILT_LIFT_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_RESIDUAL_RUN_NAME,
+    DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_RESIDUAL_RUN_NAME,
     DEFAULT_PPO_POSITION_TILT_RUN_NAME,
     DEFAULT_PPO_RUN_NAME,
     DEFAULT_RESET_VELOCITY_XY_RANGE,
@@ -23,6 +24,7 @@ from pingpong_rl2.defaults import (
     SMOKE_PPO_POSITION_STRIKE_TILT_LIFT_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_RESIDUAL_RUN_NAME,
+    SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_RESIDUAL_RUN_NAME,
     SMOKE_PPO_POSITION_TILT_RUN_NAME,
     SMOKE_PPO_RUN_NAME,
     default_ppo_model_candidates,
@@ -41,6 +43,9 @@ def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> s
         "position_strike_tilt_lift": SMOKE_PPO_POSITION_STRIKE_TILT_LIFT_RUN_NAME,
         "position_contact_frame": SMOKE_PPO_POSITION_CONTACT_FRAME_RUN_NAME,
         "position_contact_frame_velocity_residual": SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_RESIDUAL_RUN_NAME,
+        "position_contact_frame_velocity_tilt_residual": (
+            SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_RESIDUAL_RUN_NAME
+        ),
     }
     standard_run_names = {
         "position": DEFAULT_PPO_RUN_NAME,
@@ -50,6 +55,9 @@ def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> s
         "position_strike_tilt_lift": DEFAULT_PPO_POSITION_STRIKE_TILT_LIFT_RUN_NAME,
         "position_contact_frame": DEFAULT_PPO_POSITION_CONTACT_FRAME_RUN_NAME,
         "position_contact_frame_velocity_residual": DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_RESIDUAL_RUN_NAME,
+        "position_contact_frame_velocity_tilt_residual": (
+            DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_RESIDUAL_RUN_NAME
+        ),
     }
     if smoke:
         if action_mode not in smoke_run_names:

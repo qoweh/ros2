@@ -828,6 +828,35 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertAlmostEqual(config["contact_frame_velocity_scale_action_limit"], 0.25)
         self.assertAlmostEqual(config["contact_frame_outgoing_xy_action_limit"], 0.40)
 
+    def test_position_contact_frame_velocity_tilt_residual_mode_exposes_11d_action_space(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame_velocity_tilt_residual",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            lateral_action_limit=0.02,
+            vertical_action_limit=0.03,
+            tilt_action_limit=0.006,
+            contact_frame_velocity_scale_action_limit=0.25,
+            contact_frame_outgoing_xy_action_limit=0.40,
+            contact_frame_racket_vz_action_limit=0.50,
+            contact_frame_tilt_scale_action_limit=0.60,
+            tracking_strike_plane_offset=0.06,
+        )
+        observation, _ = env.reset()
+        expected_high = np.array(
+            [0.02, 0.02, 0.03, 0.006, 0.006, 0.25, 0.40, 0.40, 0.50, 0.60, 0.60],
+            dtype=float,
+        )
+        self.assertEqual(env.action_size, 11)
+        self.assertTrue(np.allclose(env.action_high, expected_high))
+        self.assertAlmostEqual(env._tracking_strike_plane_offset(), 0.06)
+        self.assertEqual(observation.shape, (env.observation_size,))
+        config = env.training_config()
+        self.assertEqual(config["action_mode"], "position_contact_frame_velocity_tilt_residual")
+        self.assertAlmostEqual(config["contact_frame_racket_vz_action_limit"], 0.50)
+        self.assertAlmostEqual(config["contact_frame_tilt_scale_action_limit"], 0.60)
+        self.assertAlmostEqual(config["tracking_strike_plane_offset"], 0.06)
+
     def test_contact_frame_velocity_residual_changes_controller_desired_velocity_only(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame_velocity_residual",
@@ -871,6 +900,44 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertAlmostEqual(float(info["contact_frame_outgoing_y_residual_action"]), -0.12)
         self.assertIsNotNone(info["contact_frame_controller_desired_velocity"])
 
+    def test_contact_frame_racket_vz_residual_changes_velocity_target_directly(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame_velocity_tilt_residual",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_velocity_target_gain=0.0,
+            contact_frame_velocity_target_max=2.0,
+            contact_frame_racket_vz_action_limit=0.5,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+
+        baseline_target = env._contact_frame_velocity_target()
+        env._contact_frame_racket_vz_residual_action = 0.35
+        residual_target = env._contact_frame_velocity_target()
+
+        self.assertAlmostEqual(float(baseline_target[2]), 0.0)
+        self.assertAlmostEqual(float(residual_target[2]), 0.35)
+
+    def test_contact_frame_velocity_tilt_residual_step_info_exposes_extra_residuals(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame_velocity_tilt_residual",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        action = np.zeros(env.action_size, dtype=float)
+        action[5:] = np.array([0.10, -0.12, 0.08, 0.20, 0.30, -0.25], dtype=float)
+
+        _, _, _, _, info = env.step(action)
+
+        self.assertTrue(np.allclose(info["contact_frame_velocity_residual_action"], action[5:8]))
+        self.assertAlmostEqual(float(info["contact_frame_racket_vz_residual_action"]), 0.20)
+        self.assertAlmostEqual(float(info["contact_frame_trajectory_tilt_scale"]), 1.30)
+        self.assertAlmostEqual(float(info["contact_frame_centering_tilt_scale"]), 0.75)
+        self.assertTrue(np.allclose(info["contact_frame_tilt_scale_residual_action"], action[9:11]))
+
     def test_contact_frame_radial_action_moves_target_toward_anchor(self) -> None:
         env = PingPongKeepUpEnv(action_mode="position_contact_frame", reset_xy_range=0.0, reset_velocity_xy_range=0.0)
         env.reset(ball_height=env.ball_height)
@@ -902,6 +969,19 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertTrue(np.all(action <= env.action_high + 1.0e-9))
         self.assertTrue(np.all(action >= env.action_low - 1.0e-9))
         self.assertTrue(np.allclose(action[5:], np.zeros(3, dtype=float)))
+
+    def test_heuristic_policy_supports_contact_frame_velocity_tilt_residual_mode(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame_velocity_tilt_residual",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        action = HeuristicKeepUpPolicy().predict(env)
+        self.assertEqual(action.shape, (env.action_size,))
+        self.assertTrue(np.all(action <= env.action_high + 1.0e-9))
+        self.assertTrue(np.all(action >= env.action_low - 1.0e-9))
+        self.assertTrue(np.allclose(action[5:], np.zeros(6, dtype=float)))
 
     def test_contact_frame_base_strike_lift_makes_zero_action_nonempty(self) -> None:
         env = PingPongKeepUpEnv(
@@ -1838,6 +1918,12 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         observation, _ = env.reset(seed=7)
         self.assertEqual(observation.shape, env.observation_space.shape)
         self.assertEqual(env.action_space.shape, (8,))
+
+    def test_gym_wrapper_exposes_contact_frame_velocity_tilt_residual_spaces(self) -> None:
+        env = PingPongKeepUpGymEnv(action_mode="position_contact_frame_velocity_tilt_residual", reset_xy_range=0.0)
+        observation, _ = env.reset(seed=7)
+        self.assertEqual(observation.shape, env.observation_space.shape)
+        self.assertEqual(env.action_space.shape, (11,))
 
 
 if __name__ == "__main__":

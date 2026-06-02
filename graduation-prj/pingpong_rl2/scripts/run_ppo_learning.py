@@ -389,6 +389,28 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "bootstrap_followup_learning_rate": 3.0e-5,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v17_candidate"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_candidate"],
+    "action_mode": "position_contact_frame_velocity_tilt_residual",
+    "learning_rate": 2.0e-5,
+    "n_epochs": 2,
+    "clip_range": 0.08,
+    "log_std_init": -2.5,
+    "tracking_strike_plane_offset": 0.06,
+    "tilt_action_limit": 0.006,
+    "controller_velocity_feedback_gain": 0.55,
+    "controller_max_velocity_step": 0.085,
+    "contact_frame_base_strike_time_horizon": 0.18,
+    "contact_frame_strike_hold_time": 0.08,
+    "contact_frame_velocity_target_max": 3.2,
+    "contact_frame_racket_vz_action_limit": 0.45,
+    "contact_frame_tilt_scale_action_limit": 0.75,
+    "contact_frame_trajectory_tilt_limit": (0.06, 0.06),
+    "contact_frame_tilt_ramp_time": 0.45,
+    "contact_frame_centering_tilt_limit": (0.045, 0.045),
+    "contact_frame_action_penalty_weight": 0.10,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -524,6 +546,8 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_velocity_target_max": None,
     "contact_frame_velocity_scale_action_limit": None,
     "contact_frame_outgoing_xy_action_limit": None,
+    "contact_frame_racket_vz_action_limit": None,
+    "contact_frame_tilt_scale_action_limit": None,
     "contact_frame_intercept_velocity_gain": None,
     "contact_frame_intercept_velocity_max": None,
     "contact_frame_intercept_velocity_time_floor": None,
@@ -556,6 +580,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "controller_body_clearance_vertical_margin": None,
     "controller_body_clearance_max_step": None,
     "controller_body_clearance_body_names": None,
+    "tracking_strike_plane_offset": None,
     "contact_frame_centering_tilt_limit": None,
     "contact_frame_centering_tilt_radius": None,
     "contact_frame_centering_tilt_deadband": None,
@@ -713,6 +738,7 @@ def parse_args() -> argparse.Namespace:
             "position_strike_tilt_lift",
             "position_contact_frame",
             "position_contact_frame_velocity_residual",
+            "position_contact_frame_velocity_tilt_residual",
         ),
     )
     parser.add_argument(
@@ -869,6 +895,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-scale-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-outgoing-xy-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-racket-vz-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-tilt-scale-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
@@ -926,6 +954,12 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=None,
         help="Robot body names that the nullspace clearance controller should keep away from the ball.",
+    )
+    parser.add_argument(
+        "--tracking-strike-plane-offset",
+        type=float,
+        default=None,
+        help="Vertical strike-plane offset above the controller anchor used for contact/intercept timing.",
     )
     parser.add_argument(
         "--contact-frame-centering-tilt-limit",
@@ -1243,6 +1277,7 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
         "position_strike_tilt_lift",
         "position_contact_frame",
         "position_contact_frame_velocity_residual",
+        "position_contact_frame_velocity_tilt_residual",
     ):
         if args.tracking_during_contact_scale is None:
             args.tracking_during_contact_scale = 0.0
@@ -1277,6 +1312,7 @@ def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
             "position_strike_tilt_lift",
             "position_contact_frame",
             "position_contact_frame_velocity_residual",
+            "position_contact_frame_velocity_tilt_residual",
         )
         or args.tilt_action_limit is None
         or args.target_tilt_limit is None
@@ -1389,6 +1425,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_velocity_scale_action_limit"] = args.contact_frame_velocity_scale_action_limit
     if args.contact_frame_outgoing_xy_action_limit is not None:
         env_kwargs["contact_frame_outgoing_xy_action_limit"] = args.contact_frame_outgoing_xy_action_limit
+    if args.contact_frame_racket_vz_action_limit is not None:
+        env_kwargs["contact_frame_racket_vz_action_limit"] = args.contact_frame_racket_vz_action_limit
+    if args.contact_frame_tilt_scale_action_limit is not None:
+        env_kwargs["contact_frame_tilt_scale_action_limit"] = args.contact_frame_tilt_scale_action_limit
     if args.contact_frame_intercept_velocity_gain is not None:
         env_kwargs["contact_frame_intercept_velocity_gain"] = args.contact_frame_intercept_velocity_gain
     if args.contact_frame_intercept_velocity_max is not None:
@@ -1449,6 +1489,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["controller_body_clearance_max_step"] = args.controller_body_clearance_max_step
     if args.controller_body_clearance_body_names is not None:
         env_kwargs["controller_body_clearance_body_names"] = tuple(args.controller_body_clearance_body_names)
+    if args.tracking_strike_plane_offset is not None:
+        env_kwargs["tracking_strike_plane_offset"] = args.tracking_strike_plane_offset
     if args.contact_frame_centering_tilt_limit is not None:
         env_kwargs["contact_frame_centering_tilt_limit"] = tuple(args.contact_frame_centering_tilt_limit)
     if args.contact_frame_centering_tilt_radius is not None:
@@ -1680,11 +1722,13 @@ def collect_heuristic_bootstrap_dataset(
         "position_strike_tilt_lift",
         "position_contact_frame",
         "position_contact_frame_velocity_residual",
+        "position_contact_frame_velocity_tilt_residual",
     }:
         raise ValueError(
             "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', "
             "'position_strike_tilt_lift', 'position_contact_frame', or "
-            "'position_contact_frame_velocity_residual'."
+            "'position_contact_frame_velocity_residual', or "
+            "'position_contact_frame_velocity_tilt_residual'."
         )
     if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
         raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")

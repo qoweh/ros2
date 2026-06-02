@@ -8,7 +8,15 @@ import numpy as np
 if TYPE_CHECKING:
     from pingpong_rl2.envs.keepup_env import PingPongKeepUpEnv
 
-_CONTACT_FRAME_ACTION_MODES = ("position_contact_frame", "position_contact_frame_velocity_residual")
+_CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES = (
+    "position_contact_frame_velocity_residual",
+    "position_contact_frame_velocity_tilt_residual",
+)
+_CONTACT_FRAME_TILT_SCALE_ACTION_MODES = ("position_contact_frame_velocity_tilt_residual",)
+_CONTACT_FRAME_ACTION_MODES = (
+    "position_contact_frame",
+    *_CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES,
+)
 _STRIKE_CONTRACT_ACTION_MODES = (
     "position_strike",
     "position_strike_tilt",
@@ -152,6 +160,8 @@ class HeuristicKeepUpPolicy:
         elif env.action_mode in _CONTACT_FRAME_ACTION_MODES:
             tilt_residual = self._tilt_residual_for_phase(phase_name)
             action = np.concatenate([action, tilt_residual])
-            if env.action_mode == "position_contact_frame_velocity_residual":
+            if env.action_mode in _CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES:
+                action = np.concatenate([action, np.zeros(3, dtype=float)])
+            if env.action_mode in _CONTACT_FRAME_TILT_SCALE_ACTION_MODES:
                 action = np.concatenate([action, np.zeros(3, dtype=float)])
         return np.clip(action, env.action_low, env.action_high)

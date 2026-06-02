@@ -76,3 +76,7 @@
   - `pmk_cf_self_rally_v14`의 `ball_out_of_bounds`와 next-intercept reachable 하락을 분석하고, apex-progress easy-next-ball gate, lateral stability reward, residual/action logging, v15 preset, 학습 직전 검증과 v15 명령을 정리한 보고서
 - `36_rl_action_ownership_and_8d_residual_plan.md`
   - v15 기준 RL/hand-coded action ownership을 분해하고, `position_contact_frame_velocity_residual` 8D action mode, v16 preset, 검증 결과와 v16 학습 명령을 정리한 보고서
+- `37_v16_8d_residual_review_and_v17_direction.md`
+  - `pmk_cf_self_rally_v16` 최신 모델의 best/final 분석, 8D action 사용량, contact timing/velocity 병목, v17 구조 수정 방향을 정리한 보고서
+- `38_v17_contact_timing_velocity_tilt_residual.md`
+  - `position_contact_frame_velocity_tilt_residual` 11D action mode, configurable strike plane, direct racket z velocity residual, tilt primitive scale, v17 preset, 검증 결과와 v17 학습/분석 명령을 정리한 보고서

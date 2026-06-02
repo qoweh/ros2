@@ -90,6 +90,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-scale-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-outgoing-xy-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-racket-vz-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-tilt-scale-action-limit", type=float, default=None)
+    parser.add_argument("--tracking-strike-plane-offset", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
@@ -1007,6 +1010,12 @@ def main() -> None:
         env_kwargs["contact_frame_velocity_scale_action_limit"] = args.contact_frame_velocity_scale_action_limit
     if args.contact_frame_outgoing_xy_action_limit is not None:
         env_kwargs["contact_frame_outgoing_xy_action_limit"] = args.contact_frame_outgoing_xy_action_limit
+    if args.contact_frame_racket_vz_action_limit is not None:
+        env_kwargs["contact_frame_racket_vz_action_limit"] = args.contact_frame_racket_vz_action_limit
+    if args.contact_frame_tilt_scale_action_limit is not None:
+        env_kwargs["contact_frame_tilt_scale_action_limit"] = args.contact_frame_tilt_scale_action_limit
+    if args.tracking_strike_plane_offset is not None:
+        env_kwargs["tracking_strike_plane_offset"] = args.tracking_strike_plane_offset
     if args.contact_frame_intercept_velocity_gain is not None:
         env_kwargs["contact_frame_intercept_velocity_gain"] = args.contact_frame_intercept_velocity_gain
     if args.contact_frame_intercept_velocity_max is not None:
@@ -1266,6 +1275,15 @@ def main() -> None:
                         "applied_action_7_outgoing_y_residual": (
                             None if applied_action is None or applied_action.size <= 7 else float(applied_action[7])
                         ),
+                        "applied_action_8_racket_vz_residual": (
+                            None if applied_action is None or applied_action.size <= 8 else float(applied_action[8])
+                        ),
+                        "applied_action_9_trajectory_tilt_scale": (
+                            None if applied_action is None or applied_action.size <= 9 else float(applied_action[9])
+                        ),
+                        "applied_action_10_centering_tilt_scale": (
+                            None if applied_action is None or applied_action.size <= 10 else float(applied_action[10])
+                        ),
                         "contact_frame_vz_scale": info.get("contact_frame_vz_scale"),
                         "contact_frame_outgoing_x_residual_action": info.get(
                             "contact_frame_outgoing_x_residual_action"
@@ -1273,6 +1291,12 @@ def main() -> None:
                         "contact_frame_outgoing_y_residual_action": info.get(
                             "contact_frame_outgoing_y_residual_action"
                         ),
+                        "contact_frame_racket_vz_residual_action": info.get(
+                            "contact_frame_racket_vz_residual_action"
+                        ),
+                        "contact_frame_trajectory_tilt_scale": info.get("contact_frame_trajectory_tilt_scale"),
+                        "contact_frame_centering_tilt_scale": info.get("contact_frame_centering_tilt_scale"),
+                        "tracking_strike_plane_offset": info.get("tracking_strike_plane_offset"),
                         "contact_ball_position_x": contact_ball_position_x,
                         "contact_ball_position_y": contact_ball_position_y,
                         "contact_ball_position_z": contact_ball_position_z,
