@@ -256,6 +256,7 @@ class PingPongKeepUpEnv:
         max_contact_racket_lateral_speed_for_success: float | None = None,
         nonuseful_contact_penalty_weight: float = 0.0,
         contact_apex_under_target_penalty_weight: float = 0.0,
+        contact_apex_progress_reward_weight: float = 0.0,
     ) -> None:
         if sim is not None and scene_path is not None:
             raise ValueError("scene_path can only be provided when sim is None.")
@@ -448,6 +449,7 @@ class PingPongKeepUpEnv:
         )
         self.nonuseful_contact_penalty_weight = float(nonuseful_contact_penalty_weight)
         self.contact_apex_under_target_penalty_weight = float(contact_apex_under_target_penalty_weight)
+        self.contact_apex_progress_reward_weight = float(contact_apex_progress_reward_weight)
         if self.action_mode not in _ACTION_MODES:
             raise ValueError(f"action_mode must be one of {_ACTION_MODES}, got {self.action_mode!r}.")
         if self.contact_oracle_mode not in _CONTACT_ORACLE_MODES:
@@ -913,6 +915,11 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 "contact_apex_under_target_penalty_weight must be non-negative, got "
                 f"{self.contact_apex_under_target_penalty_weight}."
+            )
+        if self.contact_apex_progress_reward_weight < 0.0:
+            raise ValueError(
+                "contact_apex_progress_reward_weight must be non-negative, got "
+                f"{self.contact_apex_progress_reward_weight}."
             )
         if self.strike_tilt_ramp_xy_tolerance < 0.0:
             raise ValueError(
@@ -1523,6 +1530,7 @@ class PingPongKeepUpEnv:
             "max_contact_racket_lateral_speed_for_success": self.max_contact_racket_lateral_speed_for_success,
             "nonuseful_contact_penalty_weight": self.nonuseful_contact_penalty_weight,
             "contact_apex_under_target_penalty_weight": self.contact_apex_under_target_penalty_weight,
+            "contact_apex_progress_reward_weight": self.contact_apex_progress_reward_weight,
         }
 
     def close(self) -> None:
@@ -2285,6 +2293,14 @@ class PingPongKeepUpEnv:
         normalized_gap = min(under_target_gap / max(self.height_tolerance, 1.0e-6), 4.0)
         return float(-self.contact_apex_under_target_penalty_weight * normalized_gap)
 
+    def _contact_apex_progress_term(self, contact_trace: dict[str, object] | None) -> float:
+        if self.contact_apex_progress_reward_weight <= 0.0:
+            return 0.0
+        projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
+        target_apex = max(self._target_ball_height_above_racket(), 1.0e-6)
+        progress = float(np.clip(projected_apex / target_apex, 0.0, 1.0))
+        return float(self.contact_apex_progress_reward_weight * progress)
+
     def _normalized_tilt_magnitude(self) -> float:
         if self.action_mode not in ("position_tilt", "position_strike", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"):
             return 0.0
@@ -2393,6 +2409,7 @@ class PingPongKeepUpEnv:
             "contact_racket_lateral_velocity_penalty": 0.0,
             "nonuseful_contact_penalty": 0.0,
             "contact_apex_under_target_penalty": 0.0,
+            "contact_apex_progress_term": 0.0,
             "outgoing_x_term": 0.0,
             "failure_penalty": 0.0,
             "contact_frame_action_penalty": 0.0,
@@ -2427,6 +2444,7 @@ class PingPongKeepUpEnv:
             if actual_outgoing_velocity_z is None:
                 actual_outgoing_velocity_z = float(self.sim.ball_velocity[2])
             if float(actual_outgoing_velocity_z) > self.success_velocity_threshold:
+                reward_terms["contact_apex_progress_term"] = self._contact_apex_progress_term(contact_trace)
                 if success_reason is None and self.reward_contact_quality_on_any_upward_contact:
                     next_intercept_metrics = self._next_intercept_metrics()
                     reward_terms["apex_match_term"] = self._apex_match_term(contact_trace)

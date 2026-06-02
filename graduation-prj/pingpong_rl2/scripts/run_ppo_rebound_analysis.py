@@ -363,6 +363,13 @@ def summarize_contacts(
             "useful_contact_rate": 0.0,
             "mean_ball_lateral_speed": 0.0,
             "mean_ball_lateral_to_vertical_ratio": 0.0,
+            "mean_projected_contact_apex_height_above_racket": 0.0,
+            "median_projected_contact_apex_height_above_racket": 0.0,
+            "useful_contact_mean_projected_contact_apex_height_above_racket": 0.0,
+            "upward_contact_count": 0,
+            "upward_contact_projected_apex_below_0_16_rate": 0.0,
+            "upward_contact_projected_apex_below_0_20_rate": 0.0,
+            "upward_contact_projected_apex_below_target_rate": 0.0,
             "mean_projected_apex_xy_error": 0.0,
             "useful_contact_mean_projected_apex_xy_error": 0.0,
             "mean_outgoing_velocity_error_norm": 0.0,
@@ -415,6 +422,8 @@ def summarize_contacts(
     ball_lateral_ratio = float_series("ball_lateral_to_vertical_ratio", contact_rows)
     useful_lateral_speed = float_series("ball_lateral_speed", useful_rows)
     useful_lateral_ratio = float_series("ball_lateral_to_vertical_ratio", useful_rows)
+    projected_apex_height = float_series("projected_contact_apex_height_above_racket", contact_rows)
+    useful_projected_apex_height = float_series("projected_contact_apex_height_above_racket", useful_rows)
     projected_apex_xy_error = float_series(selected_error_key, contact_rows)
     useful_projected_apex_xy_error = float_series(selected_error_key, useful_rows)
     outgoing_velocity_error_norm = float_series("outgoing_velocity_error_norm", contact_rows)
@@ -437,6 +446,20 @@ def summarize_contacts(
     useful_tangential_relative_speed = float_series("contact_tangential_relative_speed", useful_rows)
     tangential_relative_ratio = float_series("contact_tangential_relative_ratio", contact_rows)
     useful_tangential_relative_ratio = float_series("contact_tangential_relative_ratio", useful_rows)
+    upward_rows = [
+        row
+        for row in contact_rows
+        if row.get("actual_outgoing_velocity_z") is not None and float(row["actual_outgoing_velocity_z"]) > 0.5
+    ]
+    upward_projected_apex_height = float_series("projected_contact_apex_height_above_racket", upward_rows)
+    target_apex_height_values = float_series("target_ball_height_above_racket", contact_rows)
+    target_apex_height = float(target_apex_height_values.mean()) if target_apex_height_values.size else None
+
+    def below_rate(values: np.ndarray, threshold: float) -> float:
+        if not values.size:
+            return 0.0
+        return float(np.count_nonzero(values < threshold) / values.size)
+
     summary = {
         "total_contacts": len(contact_rows),
         "useful_contact_rate": len(useful_rows) / len(contact_rows),
@@ -445,6 +468,21 @@ def summarize_contacts(
         "mean_ball_lateral_speed": float(ball_lateral_speed.mean()) if ball_lateral_speed.size else 0.0,
         "mean_ball_lateral_to_vertical_ratio": (
             float(ball_lateral_ratio.mean()) if ball_lateral_ratio.size else 0.0
+        ),
+        "mean_projected_contact_apex_height_above_racket": (
+            float(projected_apex_height.mean()) if projected_apex_height.size else 0.0
+        ),
+        "median_projected_contact_apex_height_above_racket": (
+            float(np.median(projected_apex_height)) if projected_apex_height.size else 0.0
+        ),
+        "useful_contact_mean_projected_contact_apex_height_above_racket": (
+            float(useful_projected_apex_height.mean()) if useful_projected_apex_height.size else 0.0
+        ),
+        "upward_contact_count": len(upward_rows),
+        "upward_contact_projected_apex_below_0_16_rate": below_rate(upward_projected_apex_height, 0.16),
+        "upward_contact_projected_apex_below_0_20_rate": below_rate(upward_projected_apex_height, 0.20),
+        "upward_contact_projected_apex_below_target_rate": (
+            0.0 if target_apex_height is None else below_rate(upward_projected_apex_height, target_apex_height)
         ),
         "useful_contact_mean_ball_lateral_speed": (
             float(useful_lateral_speed.mean()) if useful_lateral_speed.size else 0.0
@@ -533,6 +571,65 @@ def summarize_contacts(
             }
         summary["apex_target_metrics"] = apex_target_metrics
     return summary
+
+
+def summarize_terminal_contacts(contact_rows: list[dict[str, object]]) -> dict[str, object]:
+    if not contact_rows:
+        return {
+            "episodes_with_contacts": 0,
+            "mean_terminal_projected_contact_apex_height_above_racket": 0.0,
+            "median_terminal_projected_contact_apex_height_above_racket": 0.0,
+            "mean_terminal_actual_outgoing_velocity_z": 0.0,
+            "mean_terminal_desired_outgoing_velocity_z": 0.0,
+            "mean_terminal_outgoing_velocity_z_error": 0.0,
+            "terminal_upward_projected_apex_below_0_16_rate": 0.0,
+            "terminal_upward_projected_apex_below_0_20_rate": 0.0,
+        }
+
+    last_contact_by_episode: dict[int, dict[str, object]] = {}
+    for row in contact_rows:
+        last_contact_by_episode[int(row["episode"])] = row
+    terminal_rows = list(last_contact_by_episode.values())
+
+    def float_series(key: str, rows: list[dict[str, object]]) -> np.ndarray:
+        values = [float(row[key]) for row in rows if row.get(key) is not None]
+        return np.asarray(values, dtype=float)
+
+    def below_rate(values: np.ndarray, threshold: float) -> float:
+        if not values.size:
+            return 0.0
+        return float(np.count_nonzero(values < threshold) / values.size)
+
+    terminal_apex_height = float_series("projected_contact_apex_height_above_racket", terminal_rows)
+    terminal_actual_z = float_series("actual_outgoing_velocity_z", terminal_rows)
+    terminal_desired_z = float_series("desired_outgoing_velocity_z", terminal_rows)
+    terminal_z_error = float_series("outgoing_velocity_z_error", terminal_rows)
+    terminal_upward_rows = [
+        row
+        for row in terminal_rows
+        if row.get("actual_outgoing_velocity_z") is not None and float(row["actual_outgoing_velocity_z"]) > 0.5
+    ]
+    terminal_upward_apex_height = float_series("projected_contact_apex_height_above_racket", terminal_upward_rows)
+    return {
+        "episodes_with_contacts": len(terminal_rows),
+        "mean_terminal_projected_contact_apex_height_above_racket": (
+            float(terminal_apex_height.mean()) if terminal_apex_height.size else 0.0
+        ),
+        "median_terminal_projected_contact_apex_height_above_racket": (
+            float(np.median(terminal_apex_height)) if terminal_apex_height.size else 0.0
+        ),
+        "mean_terminal_actual_outgoing_velocity_z": (
+            float(terminal_actual_z.mean()) if terminal_actual_z.size else 0.0
+        ),
+        "mean_terminal_desired_outgoing_velocity_z": (
+            float(terminal_desired_z.mean()) if terminal_desired_z.size else 0.0
+        ),
+        "mean_terminal_outgoing_velocity_z_error": (
+            float(terminal_z_error.mean()) if terminal_z_error.size else 0.0
+        ),
+        "terminal_upward_projected_apex_below_0_16_rate": below_rate(terminal_upward_apex_height, 0.16),
+        "terminal_upward_projected_apex_below_0_20_rate": below_rate(terminal_upward_apex_height, 0.20),
+    }
 
 
 def summarize_episode_apex_targets(
@@ -1185,6 +1282,7 @@ def main() -> None:
                         "projected_contact_apex_height_above_racket": info.get(
                             "projected_contact_apex_height_above_racket"
                         ),
+                        "target_ball_height_above_racket": float(env.base_env.target_ball_height),
                         "target_tilt_0": (
                             None if info.get("target_tilt") is None else float(np.asarray(info["target_tilt"])[0])
                         ),
@@ -1275,6 +1373,7 @@ def main() -> None:
             episode_rows,
             contact_rows,
         ),
+        "terminal_contact_summary": summarize_terminal_contacts(contact_rows),
         "output_files": {
             "episodes_csv": str((output_dir / f"{analysis_name}_episodes.csv").resolve()),
             "contacts_csv": str((output_dir / f"{analysis_name}_contacts.csv").resolve()),

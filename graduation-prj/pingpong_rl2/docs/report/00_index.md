@@ -66,3 +66,5 @@
   - `pmk_cf_self_rally_v5`가 개선됐지만 낮은 apex contact가 useful 판정의 주 병목임을 분석하고, 낮은 upward contact penalty와 vertical primitive 보강을 정리한 보고서
 - `31_v6_low_bounce_loop_and_strict_cycle_fix.md`
   - `pmk_cf_self_rally_v6` 4M 학습에서도 낮은 접촉 반복이 남은 원인을 분석하고, low-apex 반복 종료와 목표 cycle reset 높이 보강을 정리한 보고서
+- `32_v7_low_apex_recovery_reward_fix.md`
+  - `pmk_cf_self_rally_v7` 2M 결과가 대부분 low-apex 종료로 끝난 원인을 terminal contact 기준으로 분석하고, apex progress reward와 v8 preset 조정을 정리한 보고서

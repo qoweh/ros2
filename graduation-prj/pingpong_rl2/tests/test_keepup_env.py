@@ -1317,6 +1317,49 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertEqual(reward_terms["nonuseful_contact_penalty"], -1.0)
         self.assertLess(reward_terms["contact_apex_under_target_penalty"], 0.0)
 
+    def test_contact_apex_progress_reward_scales_with_projected_height(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_apex_progress_reward_weight=0.8,
+            target_ball_height=0.30,
+        )
+        env.reset(ball_height=env.ball_height)
+
+        low_reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=False,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={
+                "contact_ball_height_above_racket": 0.02,
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": 1.0,
+            },
+            outgoing_trajectory_metrics={"actual_outgoing_velocity_z": 1.0},
+        )
+        target_or_higher_reward_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=False,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={
+                "contact_ball_height_above_racket": 0.02,
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": 3.0,
+            },
+            outgoing_trajectory_metrics={"actual_outgoing_velocity_z": 3.0},
+        )
+
+        self.assertGreater(low_reward_terms["contact_apex_progress_term"], 0.0)
+        self.assertLess(low_reward_terms["contact_apex_progress_term"], 0.8)
+        self.assertAlmostEqual(target_or_higher_reward_terms["contact_apex_progress_term"], 0.8)
+
     def test_nonuseful_contact_penalty_applies_to_weak_contact(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",
