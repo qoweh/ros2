@@ -182,6 +182,9 @@ class PingPongKeepUpEnv:
         require_apex_height_window_for_success: bool = False,
         min_easy_next_ball_score_for_success: float | None = None,
         terminate_on_nonuseful_contact: bool = False,
+        terminate_on_low_apex_contact: bool = False,
+        low_apex_contact_height_threshold: float | None = None,
+        low_apex_contact_grace_count: int = 0,
         include_velocity_domain_observation: bool = False,
         include_task_phase_observation: bool = False,
         include_contact_context_observation: bool = False,
@@ -341,6 +344,11 @@ class PingPongKeepUpEnv:
             None if min_easy_next_ball_score_for_success is None else float(min_easy_next_ball_score_for_success)
         )
         self.terminate_on_nonuseful_contact = bool(terminate_on_nonuseful_contact)
+        self.terminate_on_low_apex_contact = bool(terminate_on_low_apex_contact)
+        self.low_apex_contact_height_threshold = (
+            None if low_apex_contact_height_threshold is None else float(low_apex_contact_height_threshold)
+        )
+        self.low_apex_contact_grace_count = int(low_apex_contact_grace_count)
         self.include_velocity_domain_observation = bool(include_velocity_domain_observation)
         self.include_task_phase_observation = bool(include_task_phase_observation)
         self.include_contact_context_observation = bool(include_contact_context_observation)
@@ -609,6 +617,21 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 "min_easy_next_ball_score_for_success must be finite when provided, got "
                 f"{self.min_easy_next_ball_score_for_success}."
+            )
+        if self.low_apex_contact_height_threshold is not None:
+            if not np.isfinite(self.low_apex_contact_height_threshold):
+                raise ValueError(
+                    "low_apex_contact_height_threshold must be finite when provided, got "
+                    f"{self.low_apex_contact_height_threshold}."
+                )
+            if self.low_apex_contact_height_threshold <= 0.0:
+                raise ValueError(
+                    "low_apex_contact_height_threshold must be positive when provided, got "
+                    f"{self.low_apex_contact_height_threshold}."
+                )
+        if self.low_apex_contact_grace_count < 0:
+            raise ValueError(
+                f"low_apex_contact_grace_count must be non-negative, got {self.low_apex_contact_grace_count}."
             )
         if self.next_intercept_max_time <= 0.0:
             raise ValueError(
@@ -988,6 +1011,7 @@ class PingPongKeepUpEnv:
         self.step_count = 0
         self.contact_count = 0
         self.successful_bounce_count = 0
+        self._consecutive_low_apex_contact_count = 0
         self._last_contact_step: int | None = None
         self._contact_active_previous_step = False
         self._previous_action = np.zeros(self.action_size, dtype=float)
@@ -1074,6 +1098,7 @@ class PingPongKeepUpEnv:
         self.step_count = 0
         self.contact_count = 0
         self.successful_bounce_count = 0
+        self._consecutive_low_apex_contact_count = 0
         self._last_contact_step = None
         self._contact_active_previous_step = False
         self._previous_action[:] = 0.0
@@ -1152,10 +1177,28 @@ class PingPongKeepUpEnv:
         success_reason = self._success_reason(failure_reason, contact_trace, contact_event)
         if success_reason is not None:
             self.successful_bounce_count += 1
-        if failure_reason is None and self.terminate_on_nonuseful_contact and contact_event and success_reason is None:
-            failure_reason = "nonuseful_contact"
 
         outgoing_trajectory_metrics = self._contact_outgoing_trajectory_metrics(contact_trace)
+        low_apex_contact_observed = self._is_low_apex_contact(
+            contact_trace,
+            outgoing_trajectory_metrics,
+            contact_event=contact_event,
+            success_reason=success_reason,
+        )
+        if success_reason is not None:
+            self._consecutive_low_apex_contact_count = 0
+        elif low_apex_contact_observed:
+            self._consecutive_low_apex_contact_count += 1
+        elif contact_event:
+            self._consecutive_low_apex_contact_count = 0
+        low_apex_contact_failure = (
+            low_apex_contact_observed
+            and self._consecutive_low_apex_contact_count > self.low_apex_contact_grace_count
+        )
+        if failure_reason is None and low_apex_contact_failure:
+            failure_reason = "low_apex_contact"
+        if failure_reason is None and self.terminate_on_nonuseful_contact and contact_event and success_reason is None:
+            failure_reason = "nonuseful_contact"
         next_intercept_metrics = self._next_intercept_metrics()
         phase_name = self._phase_name()
 
@@ -1178,6 +1221,10 @@ class PingPongKeepUpEnv:
             "failure_reason": failure_reason,
             "robot_body_contact_name": robot_body_contact_name,
             "success_reason": success_reason,
+            "low_apex_contact_observed": low_apex_contact_observed,
+            "low_apex_contact_failure": low_apex_contact_failure,
+            "low_apex_contact_height_threshold": self._low_apex_contact_height_threshold(),
+            "consecutive_low_apex_contact_count": self._consecutive_low_apex_contact_count,
             "episode_success_reason": episode_success_reason,
             "reward_terms": reward_terms,
             "contact_event_during_step": contact_event,
@@ -1388,6 +1435,9 @@ class PingPongKeepUpEnv:
             "require_apex_height_window_for_success": self.require_apex_height_window_for_success,
             "min_easy_next_ball_score_for_success": self.min_easy_next_ball_score_for_success,
             "terminate_on_nonuseful_contact": self.terminate_on_nonuseful_contact,
+            "terminate_on_low_apex_contact": self.terminate_on_low_apex_contact,
+            "low_apex_contact_height_threshold": self.low_apex_contact_height_threshold,
+            "low_apex_contact_grace_count": self.low_apex_contact_grace_count,
             "include_velocity_domain_observation": self.include_velocity_domain_observation,
             "include_task_phase_observation": self.include_task_phase_observation,
             "include_contact_context_observation": self.include_contact_context_observation,
@@ -1955,6 +2005,29 @@ class PingPongKeepUpEnv:
 
     def _target_ball_height_above_racket(self) -> float:
         return self.target_ball_height
+
+    def _low_apex_contact_height_threshold(self) -> float:
+        if self.low_apex_contact_height_threshold is not None:
+            return self.low_apex_contact_height_threshold
+        return max(self._target_ball_height_above_racket() - self.height_tolerance, 0.0)
+
+    def _is_low_apex_contact(
+        self,
+        contact_trace: dict[str, object] | None,
+        outgoing_trajectory_metrics: dict[str, object],
+        *,
+        contact_event: bool,
+        success_reason: str | None,
+    ) -> bool:
+        if not self.terminate_on_low_apex_contact or not contact_event or success_reason is not None:
+            return False
+        actual_outgoing_velocity_z = outgoing_trajectory_metrics.get("actual_outgoing_velocity_z")
+        if actual_outgoing_velocity_z is None:
+            actual_outgoing_velocity_z = None if contact_trace is None else contact_trace.get("contact_ball_velocity_z")
+        if actual_outgoing_velocity_z is None or float(actual_outgoing_velocity_z) <= self.success_velocity_threshold:
+            return False
+        projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
+        return bool(projected_apex < self._low_apex_contact_height_threshold())
 
     def _failure_z_bounds(self) -> tuple[float, float]:
         dynamic_upper_bound = (

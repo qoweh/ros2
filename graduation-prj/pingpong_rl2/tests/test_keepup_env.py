@@ -1337,6 +1337,47 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
 
         self.assertEqual(reward_terms["nonuseful_contact_penalty"], -1.0)
 
+    def test_low_apex_contact_failure_only_catches_under_target_upward_contact(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            target_ball_height=0.30,
+            height_tolerance=0.10,
+            terminate_on_low_apex_contact=True,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        low_contact_trace = {
+            "contact_ball_position_z": float(anchor_position[2] + 0.02),
+            "contact_ball_velocity_x": 0.0,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": 1.0,
+        }
+        high_contact_trace = {
+            "contact_ball_position_z": float(anchor_position[2] + 0.02),
+            "contact_ball_velocity_x": 0.0,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": 2.0,
+        }
+
+        self.assertTrue(
+            env._is_low_apex_contact(
+                low_contact_trace,
+                {"actual_outgoing_velocity_z": 1.0},
+                contact_event=True,
+                success_reason=None,
+            )
+        )
+        self.assertFalse(
+            env._is_low_apex_contact(
+                high_contact_trace,
+                {"actual_outgoing_velocity_z": 2.0},
+                contact_event=True,
+                success_reason=None,
+            )
+        )
+
     def test_gym_wrapper_exposes_position_contact_frame_spaces(self) -> None:
         env = PingPongKeepUpGymEnv(action_mode="position_contact_frame", reset_xy_range=0.0)
         observation, _ = env.reset(seed=7)

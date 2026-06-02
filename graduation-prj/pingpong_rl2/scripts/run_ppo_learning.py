@@ -27,6 +27,7 @@ from pingpong_rl2.defaults import (
     DEFAULT_PPO_N_STEPS,
     DEFAULT_PPO_RUN_NAME,
     DEFAULT_PPO_TOTAL_TIMESTEPS,
+    DEFAULT_RESET_BALL_HEIGHT_RANGE,
     DEFAULT_RESET_VELOCITY_XY_RANGE,
     DEFAULT_RESET_VELOCITY_Z_RANGE,
     DEFAULT_RESET_XY_RANGE,
@@ -296,7 +297,9 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "checkpoint_interval": 0,
     "checkpoint_eval_episodes": 20,
     "early_stop_patience_evals": 0,
+    "ball_height": 0.34,
     "target_ball_height": 0.30,
+    "reset_ball_height_range": 0.02,
     "lateral_action_limit": 0.02,
     "vertical_action_limit": 0.030,
     "tilt_action_limit": 0.006,
@@ -336,6 +339,9 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "require_reachable_next_intercept_for_success": True,
     "require_apex_height_window_for_success": True,
     "min_easy_next_ball_score_for_success": 0.35,
+    "terminate_on_low_apex_contact": True,
+    "low_apex_contact_height_threshold": 0.20,
+    "low_apex_contact_grace_count": 1,
     "easy_next_ball_reward_weight": 1.0,
     "next_intercept_xy_error_penalty_weight": 0.75,
     "post_contact_lateral_velocity_penalty_weight": 0.30,
@@ -414,6 +420,8 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "checkpoint_interval": 10_000,
     "checkpoint_eval_episodes": 10,
     "early_stop_patience_evals": 0,
+    "ball_height": DEFAULT_BALL_HEIGHT,
+    "reset_ball_height_range": DEFAULT_RESET_BALL_HEIGHT_RANGE,
     "reset_xy_range": DEFAULT_RESET_XY_RANGE,
     "reset_velocity_xy_range": DEFAULT_RESET_VELOCITY_XY_RANGE,
     "reset_velocity_z_range": DEFAULT_RESET_VELOCITY_Z_RANGE,
@@ -460,6 +468,9 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "require_apex_height_window_for_success": False,
     "min_easy_next_ball_score_for_success": None,
     "terminate_on_nonuseful_contact": False,
+    "terminate_on_low_apex_contact": False,
+    "low_apex_contact_height_threshold": None,
+    "low_apex_contact_grace_count": 0,
     "followup_strike_target_tilt": None,
     "followup_strike_contact_offset_ratio": None,
     "followup_strike_contact_offset_max": None,
@@ -663,6 +674,7 @@ def parse_args() -> argparse.Namespace:
         help="Convenience preset for position_tilt limits and regularization. 'auto' resolves to 'early'.",
     )
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
+    parser.add_argument("--reset-ball-height-range", type=float, default=DEFAULT_RESET_BALL_HEIGHT_RANGE)
     parser.add_argument(
         "--target-ball-height",
         type=float,
@@ -934,6 +946,23 @@ def parse_args() -> argparse.Namespace:
         help="End the episode immediately when a racket contact does not satisfy useful-contact success.",
     )
     parser.add_argument(
+        "--terminate-on-low-apex-contact",
+        action="store_true",
+        help="End the episode when an upward racket contact projects below the low-apex threshold.",
+    )
+    parser.add_argument(
+        "--low-apex-contact-height-threshold",
+        type=float,
+        default=None,
+        help="Minimum projected post-contact apex height above the racket before a low-apex contact terminates.",
+    )
+    parser.add_argument(
+        "--low-apex-contact-grace-count",
+        type=int,
+        default=0,
+        help="Number of consecutive low-apex upward contacts allowed before low-apex termination.",
+    )
+    parser.add_argument(
         "--trajectory-match-reward-weight",
         type=float,
         default=None,
@@ -1120,6 +1149,7 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         "ball_height": args.ball_height,
         "target_ball_height": args.ball_height if args.target_ball_height is None else args.target_ball_height,
         "max_episode_steps": args.max_episode_steps,
+        "reset_ball_height_range": args.reset_ball_height_range,
         "reset_xy_range": args.reset_xy_range,
         "reset_velocity_xy_range": args.reset_velocity_xy_range,
         "reset_velocity_z_range": tuple(args.reset_velocity_z_range),
@@ -1317,6 +1347,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["min_easy_next_ball_score_for_success"] = args.min_easy_next_ball_score_for_success
     if args.terminate_on_nonuseful_contact:
         env_kwargs["terminate_on_nonuseful_contact"] = True
+    if args.terminate_on_low_apex_contact:
+        env_kwargs["terminate_on_low_apex_contact"] = True
+    if args.low_apex_contact_height_threshold is not None:
+        env_kwargs["low_apex_contact_height_threshold"] = args.low_apex_contact_height_threshold
+    if args.low_apex_contact_grace_count != 0:
+        env_kwargs["low_apex_contact_grace_count"] = args.low_apex_contact_grace_count
     if args.trajectory_match_reward_weight is not None:
         env_kwargs["trajectory_match_reward_weight"] = args.trajectory_match_reward_weight
     if args.trajectory_error_penalty_weight is not None:
