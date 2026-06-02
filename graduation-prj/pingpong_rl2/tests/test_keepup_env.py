@@ -1360,6 +1360,92 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertLess(low_reward_terms["contact_apex_progress_term"], 0.8)
         self.assertAlmostEqual(target_or_higher_reward_terms["contact_apex_progress_term"], 0.8)
 
+    def test_stable_contact_reward_requires_target_apex_and_easy_next_ball(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            stable_contact_reward_weight=1.6,
+            target_ball_height=0.30,
+            height_tolerance=0.10,
+        )
+        env.reset(ball_height=env.ball_height)
+        target_velocity_z = float(np.sqrt(2.0 * abs(env._gravity_z()) * (0.30 - 0.02)))
+        good_contact_trace = {
+            "contact_ball_height_above_racket": 0.02,
+            "contact_ball_velocity_x": 0.0,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": target_velocity_z,
+        }
+        low_contact_trace = {
+            "contact_ball_height_above_racket": 0.02,
+            "contact_ball_velocity_x": 0.0,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": 1.0,
+        }
+        next_intercept_metrics = {"easy_next_ball_score": 0.5}
+
+        self.assertAlmostEqual(
+            env._stable_contact_term(good_contact_trace, next_intercept_metrics),
+            0.8,
+        )
+        self.assertEqual(env._stable_contact_term(low_contact_trace, next_intercept_metrics), 0.0)
+
+    def test_apex_gate_removes_easy_next_ball_reward_from_low_nonuseful_contact(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            easy_next_ball_reward_weight=1.0,
+            reward_contact_quality_on_any_upward_contact=True,
+            gate_nonuseful_easy_next_ball_by_apex=True,
+            target_ball_height=0.30,
+            height_tolerance=0.10,
+        )
+        ungated_env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            easy_next_ball_reward_weight=1.0,
+            reward_contact_quality_on_any_upward_contact=True,
+            gate_nonuseful_easy_next_ball_by_apex=False,
+            target_ball_height=0.30,
+            height_tolerance=0.10,
+        )
+        contact_trace = {
+            "contact_ball_height_above_racket": 0.02,
+            "contact_ball_velocity_x": 0.0,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": 1.6,
+        }
+        outgoing_metrics = {"actual_outgoing_velocity_z": 1.6}
+        for current_env in (env, ungated_env):
+            current_env.reset(ball_height=current_env.ball_height)
+            ball_position = current_env.sim.racket_position + np.array([0.0, 0.0, 0.02])
+            current_env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, 1.6))
+
+        gated_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=False,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace=contact_trace,
+            outgoing_trajectory_metrics=outgoing_metrics,
+        )
+        ungated_terms = ungated_env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=False,
+            applied_action=np.zeros(ungated_env.action_size, dtype=float),
+            contact_trace=contact_trace,
+            outgoing_trajectory_metrics=outgoing_metrics,
+        )
+
+        self.assertEqual(gated_terms["easy_next_ball_term"], 0.0)
+        self.assertGreater(ungated_terms["easy_next_ball_term"], 0.0)
+
     def test_nonuseful_contact_penalty_applies_to_weak_contact(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",

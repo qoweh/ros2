@@ -309,8 +309,8 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_base_tilt_residual": None,
     "controller_orientation_gain": 1.10,
     "controller_max_orientation_step": 0.24,
-    "controller_velocity_feedback_gain": 0.25,
-    "controller_max_velocity_step": 0.055,
+    "controller_velocity_feedback_gain": 0.40,
+    "controller_max_velocity_step": 0.060,
     "controller_nullspace_posture_gain": 0.20,
     "controller_nullspace_posture_max_step": 0.010,
     "controller_body_clearance_gain": 0.75,
@@ -324,12 +324,14 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_planner_max_intercept_time": 0.60,
     "contact_frame_strike_hold_time": 0.05,
     "contact_frame_strike_hold_min_readiness": 0.60,
-    "contact_frame_apex_lift_gain": 0.08,
-    "contact_frame_apex_lift_max": 0.075,
+    "contact_frame_base_strike_z_boost": 0.026,
+    "contact_frame_base_strike_z_offset": 0.010,
+    "contact_frame_apex_lift_gain": 0.09,
+    "contact_frame_apex_lift_max": 0.085,
     "contact_frame_velocity_lead_gain": 0.04,
     "contact_frame_velocity_lead_max": 0.025,
     "contact_frame_velocity_target_gain": 1.00,
-    "contact_frame_velocity_target_max": 2.4,
+    "contact_frame_velocity_target_max": 2.6,
     "contact_frame_followthrough_max": 0.055,
     "contact_frame_trajectory_tilt_gain": 1.0,
     "contact_frame_trajectory_tilt_limit": (0.08, 0.08),
@@ -339,22 +341,24 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_centering_tilt_deadband": 0.008,
     "require_reachable_next_intercept_for_success": True,
     "require_apex_height_window_for_success": True,
-    "min_easy_next_ball_score_for_success": 0.35,
+    "min_easy_next_ball_score_for_success": 0.45,
+    "gate_nonuseful_easy_next_ball_by_apex": True,
     "terminate_on_low_apex_contact": True,
-    "low_apex_contact_height_threshold": 0.16,
+    "low_apex_contact_height_threshold": 0.18,
     "low_apex_contact_grace_count": 2,
-    "easy_next_ball_reward_weight": 1.0,
-    "next_intercept_xy_error_penalty_weight": 0.75,
-    "post_contact_lateral_velocity_penalty_weight": 0.30,
+    "easy_next_ball_reward_weight": 1.00,
+    "next_intercept_xy_error_penalty_weight": 0.90,
+    "post_contact_lateral_velocity_penalty_weight": 0.35,
     "contact_xy_error_penalty_weight": 0.25,
-    "contact_racket_lateral_velocity_penalty_weight": 0.25,
+    "contact_racket_lateral_velocity_penalty_weight": 0.30,
     "contact_racket_lateral_velocity_tolerance": 0.18,
     "max_contact_racket_lateral_speed_for_success": 0.45,
     "nonuseful_contact_penalty_weight": 0.75,
-    "contact_apex_under_target_penalty_weight": 0.55,
-    "contact_apex_progress_reward_weight": 0.80,
-    "trajectory_match_reward_weight": 0.50,
-    "trajectory_error_penalty_weight": 0.50,
+    "contact_apex_under_target_penalty_weight": 0.65,
+    "contact_apex_progress_reward_weight": 0.55,
+    "stable_contact_reward_weight": 1.20,
+    "trajectory_match_reward_weight": 0.55,
+    "trajectory_error_penalty_weight": 0.55,
     "reward_contact_quality_on_any_upward_contact": True,
     "bootstrap_heuristic_episodes": 0,
     "bootstrap_epochs": 0,
@@ -469,6 +473,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "require_reachable_next_intercept_for_success": False,
     "require_apex_height_window_for_success": False,
     "min_easy_next_ball_score_for_success": None,
+    "gate_nonuseful_easy_next_ball_by_apex": False,
     "terminate_on_nonuseful_contact": False,
     "terminate_on_low_apex_contact": False,
     "low_apex_contact_height_threshold": None,
@@ -534,6 +539,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "nonuseful_contact_penalty_weight": None,
     "contact_apex_under_target_penalty_weight": None,
     "contact_apex_progress_reward_weight": None,
+    "stable_contact_reward_weight": None,
     "log_std_init": None,
     "zero_init_action_mean": False,
 }
@@ -904,6 +910,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Dense reward scale for upward contacts whose projected apex moves toward target_ball_height.",
     )
+    parser.add_argument(
+        "--stable-contact-reward-weight",
+        type=float,
+        default=None,
+        help="Reward scale for contacts that combine target apex height with an easy next descending intercept.",
+    )
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
     parser.add_argument(
@@ -948,6 +960,11 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Optional lower bound on easy_next_ball_score for useful-contact success.",
+    )
+    parser.add_argument(
+        "--gate-nonuseful-easy-next-ball-by-apex",
+        action="store_true",
+        help="Scale non-success easy-next-ball shaping by projected apex height match.",
     )
     parser.add_argument(
         "--terminate-on-nonuseful-contact",
@@ -1334,6 +1351,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         )
     if args.contact_apex_progress_reward_weight is not None:
         env_kwargs["contact_apex_progress_reward_weight"] = args.contact_apex_progress_reward_weight
+    if args.stable_contact_reward_weight is not None:
+        env_kwargs["stable_contact_reward_weight"] = args.stable_contact_reward_weight
     if args.post_contact_return_assist_weight is not None:
         env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
     if args.post_contact_return_max_intercept_time is not None:
@@ -1356,6 +1375,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["require_apex_height_window_for_success"] = True
     if args.min_easy_next_ball_score_for_success is not None:
         env_kwargs["min_easy_next_ball_score_for_success"] = args.min_easy_next_ball_score_for_success
+    if args.gate_nonuseful_easy_next_ball_by_apex:
+        env_kwargs["gate_nonuseful_easy_next_ball_by_apex"] = True
     if args.terminate_on_nonuseful_contact:
         env_kwargs["terminate_on_nonuseful_contact"] = True
     if args.terminate_on_low_apex_contact:

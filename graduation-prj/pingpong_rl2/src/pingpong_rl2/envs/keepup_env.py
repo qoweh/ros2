@@ -181,6 +181,7 @@ class PingPongKeepUpEnv:
         require_reachable_next_intercept_for_success: bool = False,
         require_apex_height_window_for_success: bool = False,
         min_easy_next_ball_score_for_success: float | None = None,
+        gate_nonuseful_easy_next_ball_by_apex: bool = False,
         terminate_on_nonuseful_contact: bool = False,
         terminate_on_low_apex_contact: bool = False,
         low_apex_contact_height_threshold: float | None = None,
@@ -257,6 +258,7 @@ class PingPongKeepUpEnv:
         nonuseful_contact_penalty_weight: float = 0.0,
         contact_apex_under_target_penalty_weight: float = 0.0,
         contact_apex_progress_reward_weight: float = 0.0,
+        stable_contact_reward_weight: float = 0.0,
     ) -> None:
         if sim is not None and scene_path is not None:
             raise ValueError("scene_path can only be provided when sim is None.")
@@ -344,6 +346,7 @@ class PingPongKeepUpEnv:
         self.min_easy_next_ball_score_for_success = (
             None if min_easy_next_ball_score_for_success is None else float(min_easy_next_ball_score_for_success)
         )
+        self.gate_nonuseful_easy_next_ball_by_apex = bool(gate_nonuseful_easy_next_ball_by_apex)
         self.terminate_on_nonuseful_contact = bool(terminate_on_nonuseful_contact)
         self.terminate_on_low_apex_contact = bool(terminate_on_low_apex_contact)
         self.low_apex_contact_height_threshold = (
@@ -450,6 +453,7 @@ class PingPongKeepUpEnv:
         self.nonuseful_contact_penalty_weight = float(nonuseful_contact_penalty_weight)
         self.contact_apex_under_target_penalty_weight = float(contact_apex_under_target_penalty_weight)
         self.contact_apex_progress_reward_weight = float(contact_apex_progress_reward_weight)
+        self.stable_contact_reward_weight = float(stable_contact_reward_weight)
         if self.action_mode not in _ACTION_MODES:
             raise ValueError(f"action_mode must be one of {_ACTION_MODES}, got {self.action_mode!r}.")
         if self.contact_oracle_mode not in _CONTACT_ORACLE_MODES:
@@ -920,6 +924,10 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 "contact_apex_progress_reward_weight must be non-negative, got "
                 f"{self.contact_apex_progress_reward_weight}."
+            )
+        if self.stable_contact_reward_weight < 0.0:
+            raise ValueError(
+                f"stable_contact_reward_weight must be non-negative, got {self.stable_contact_reward_weight}."
             )
         if self.strike_tilt_ramp_xy_tolerance < 0.0:
             raise ValueError(
@@ -1441,6 +1449,7 @@ class PingPongKeepUpEnv:
             "require_reachable_next_intercept_for_success": self.require_reachable_next_intercept_for_success,
             "require_apex_height_window_for_success": self.require_apex_height_window_for_success,
             "min_easy_next_ball_score_for_success": self.min_easy_next_ball_score_for_success,
+            "gate_nonuseful_easy_next_ball_by_apex": self.gate_nonuseful_easy_next_ball_by_apex,
             "terminate_on_nonuseful_contact": self.terminate_on_nonuseful_contact,
             "terminate_on_low_apex_contact": self.terminate_on_low_apex_contact,
             "low_apex_contact_height_threshold": self.low_apex_contact_height_threshold,
@@ -1531,6 +1540,7 @@ class PingPongKeepUpEnv:
             "nonuseful_contact_penalty_weight": self.nonuseful_contact_penalty_weight,
             "contact_apex_under_target_penalty_weight": self.contact_apex_under_target_penalty_weight,
             "contact_apex_progress_reward_weight": self.contact_apex_progress_reward_weight,
+            "stable_contact_reward_weight": self.stable_contact_reward_weight,
         }
 
     def close(self) -> None:
@@ -2284,6 +2294,11 @@ class PingPongKeepUpEnv:
         height_match = max(1.0 - height_error / self.height_tolerance, 0.0)
         return float(self.apex_match_reward_weight * height_match)
 
+    def _apex_height_match_score(self, contact_trace: dict[str, object] | None) -> float:
+        projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
+        height_error = abs(projected_apex - self._target_ball_height_above_racket())
+        return float(max(1.0 - height_error / self.height_tolerance, 0.0))
+
     def _contact_apex_under_target_penalty_term(self, contact_trace: dict[str, object] | None) -> float:
         if self.contact_apex_under_target_penalty_weight <= 0.0:
             return 0.0
@@ -2300,6 +2315,17 @@ class PingPongKeepUpEnv:
         target_apex = max(self._target_ball_height_above_racket(), 1.0e-6)
         progress = float(np.clip(projected_apex / target_apex, 0.0, 1.0))
         return float(self.contact_apex_progress_reward_weight * progress)
+
+    def _stable_contact_term(
+        self,
+        contact_trace: dict[str, object] | None,
+        next_intercept_metrics: dict[str, object],
+    ) -> float:
+        if self.stable_contact_reward_weight <= 0.0:
+            return 0.0
+        height_score = self._apex_height_match_score(contact_trace)
+        easy_score = max(float(next_intercept_metrics["easy_next_ball_score"]), 0.0)
+        return float(self.stable_contact_reward_weight * height_score * easy_score)
 
     def _normalized_tilt_magnitude(self) -> float:
         if self.action_mode not in ("position_tilt", "position_strike", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"):
@@ -2410,6 +2436,7 @@ class PingPongKeepUpEnv:
             "nonuseful_contact_penalty": 0.0,
             "contact_apex_under_target_penalty": 0.0,
             "contact_apex_progress_term": 0.0,
+            "stable_contact_term": 0.0,
             "outgoing_x_term": 0.0,
             "failure_penalty": 0.0,
             "contact_frame_action_penalty": 0.0,
@@ -2444,16 +2471,30 @@ class PingPongKeepUpEnv:
             if actual_outgoing_velocity_z is None:
                 actual_outgoing_velocity_z = float(self.sim.ball_velocity[2])
             if float(actual_outgoing_velocity_z) > self.success_velocity_threshold:
+                next_intercept_metrics: dict[str, object] | None = None
                 reward_terms["contact_apex_progress_term"] = self._contact_apex_progress_term(contact_trace)
                 if success_reason is None and self.reward_contact_quality_on_any_upward_contact:
                     next_intercept_metrics = self._next_intercept_metrics()
+                    easy_score_scale = (
+                        self._apex_height_match_score(contact_trace)
+                        if self.gate_nonuseful_easy_next_ball_by_apex
+                        else 1.0
+                    )
                     reward_terms["apex_match_term"] = self._apex_match_term(contact_trace)
                     reward_terms["easy_next_ball_term"] = self.easy_next_ball_reward_weight * max(
                         float(next_intercept_metrics["easy_next_ball_score"]),
                         0.0,
+                    ) * easy_score_scale
+                if self.stable_contact_reward_weight > 0.0:
+                    if next_intercept_metrics is None:
+                        next_intercept_metrics = self._next_intercept_metrics()
+                    reward_terms["stable_contact_term"] = self._stable_contact_term(
+                        contact_trace,
+                        next_intercept_metrics,
                     )
                 if self.next_intercept_xy_error_penalty_weight > 0.0:
-                    next_intercept_metrics = self._next_intercept_metrics()
+                    if next_intercept_metrics is None:
+                        next_intercept_metrics = self._next_intercept_metrics()
                     next_intercept_xy_error = next_intercept_metrics["info_xy_error"]
                     if next_intercept_xy_error is not None:
                         normalized_error = min(
