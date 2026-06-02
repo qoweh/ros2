@@ -299,10 +299,15 @@ class PingPongKeepUpEnv:
         contact_apex_recovery_progress_reward_weight: float = 0.0,
         gate_contact_apex_progress_by_easy_next_ball: bool = False,
         contact_apex_progress_min_easy_next_ball_score: float | None = None,
+        contact_apex_potential_reward_weight: float = 0.0,
+        contact_apex_potential_gamma: float = 0.99,
+        contact_apex_potential_cap: float = 2.0,
         contact_lateral_stability_reward_weight: float = 0.0,
         contact_lateral_stability_speed_tolerance: float = 0.25,
         contact_lateral_stability_xy_tolerance: float | None = None,
+        contact_lateral_stability_min_apex_ratio: float | None = None,
         stable_contact_reward_weight: float = 0.0,
+        stable_contact_min_apex_ratio: float | None = None,
         stable_cycle_reward_weight: float = 0.0,
         stable_cycle_reward_cap: int = 4,
         stable_cycle_min_easy_next_ball_score: float | None = None,
@@ -517,6 +522,9 @@ class PingPongKeepUpEnv:
             if contact_apex_progress_min_easy_next_ball_score is None
             else float(contact_apex_progress_min_easy_next_ball_score)
         )
+        self.contact_apex_potential_reward_weight = float(contact_apex_potential_reward_weight)
+        self.contact_apex_potential_gamma = float(contact_apex_potential_gamma)
+        self.contact_apex_potential_cap = float(contact_apex_potential_cap)
         self.contact_lateral_stability_reward_weight = float(contact_lateral_stability_reward_weight)
         self.contact_lateral_stability_speed_tolerance = float(contact_lateral_stability_speed_tolerance)
         self.contact_lateral_stability_xy_tolerance = (
@@ -524,7 +532,15 @@ class PingPongKeepUpEnv:
             if contact_lateral_stability_xy_tolerance is None
             else float(contact_lateral_stability_xy_tolerance)
         )
+        self.contact_lateral_stability_min_apex_ratio = (
+            None
+            if contact_lateral_stability_min_apex_ratio is None
+            else float(contact_lateral_stability_min_apex_ratio)
+        )
         self.stable_contact_reward_weight = float(stable_contact_reward_weight)
+        self.stable_contact_min_apex_ratio = (
+            None if stable_contact_min_apex_ratio is None else float(stable_contact_min_apex_ratio)
+        )
         self.stable_cycle_reward_weight = float(stable_cycle_reward_weight)
         self.stable_cycle_reward_cap = int(stable_cycle_reward_cap)
         self.stable_cycle_min_easy_next_ball_score = (
@@ -1062,6 +1078,15 @@ class PingPongKeepUpEnv:
                 "contact_apex_recovery_progress_reward_weight must be non-negative, got "
                 f"{self.contact_apex_recovery_progress_reward_weight}."
             )
+        if self.contact_apex_potential_reward_weight < 0.0:
+            raise ValueError(
+                "contact_apex_potential_reward_weight must be non-negative, got "
+                f"{self.contact_apex_potential_reward_weight}."
+            )
+        if not np.isfinite(self.contact_apex_potential_gamma):
+            raise ValueError(f"contact_apex_potential_gamma must be finite, got {self.contact_apex_potential_gamma}.")
+        if self.contact_apex_potential_cap <= 0.0:
+            raise ValueError(f"contact_apex_potential_cap must be positive, got {self.contact_apex_potential_cap}.")
         if self.contact_apex_progress_min_easy_next_ball_score is not None:
             if not np.isfinite(self.contact_apex_progress_min_easy_next_ball_score):
                 raise ValueError(
@@ -1094,10 +1119,30 @@ class PingPongKeepUpEnv:
                     "contact_lateral_stability_xy_tolerance must be positive when provided, got "
                     f"{self.contact_lateral_stability_xy_tolerance}."
                 )
+        if self.contact_lateral_stability_min_apex_ratio is not None:
+            if not np.isfinite(self.contact_lateral_stability_min_apex_ratio):
+                raise ValueError(
+                    "contact_lateral_stability_min_apex_ratio must be finite when provided, got "
+                    f"{self.contact_lateral_stability_min_apex_ratio}."
+                )
+            if self.contact_lateral_stability_min_apex_ratio < 0.0:
+                raise ValueError(
+                    "contact_lateral_stability_min_apex_ratio must be non-negative, got "
+                    f"{self.contact_lateral_stability_min_apex_ratio}."
+                )
         if self.stable_contact_reward_weight < 0.0:
             raise ValueError(
                 f"stable_contact_reward_weight must be non-negative, got {self.stable_contact_reward_weight}."
             )
+        if self.stable_contact_min_apex_ratio is not None:
+            if not np.isfinite(self.stable_contact_min_apex_ratio):
+                raise ValueError(
+                    f"stable_contact_min_apex_ratio must be finite when provided, got {self.stable_contact_min_apex_ratio}."
+                )
+            if self.stable_contact_min_apex_ratio < 0.0:
+                raise ValueError(
+                    f"stable_contact_min_apex_ratio must be non-negative, got {self.stable_contact_min_apex_ratio}."
+                )
         if self.stable_cycle_reward_weight < 0.0:
             raise ValueError(
                 f"stable_cycle_reward_weight must be non-negative, got {self.stable_cycle_reward_weight}."
@@ -1862,10 +1907,15 @@ class PingPongKeepUpEnv:
             "contact_apex_recovery_progress_reward_weight": self.contact_apex_recovery_progress_reward_weight,
             "gate_contact_apex_progress_by_easy_next_ball": self.gate_contact_apex_progress_by_easy_next_ball,
             "contact_apex_progress_min_easy_next_ball_score": self.contact_apex_progress_min_easy_next_ball_score,
+            "contact_apex_potential_reward_weight": self.contact_apex_potential_reward_weight,
+            "contact_apex_potential_gamma": self.contact_apex_potential_gamma,
+            "contact_apex_potential_cap": self.contact_apex_potential_cap,
             "contact_lateral_stability_reward_weight": self.contact_lateral_stability_reward_weight,
             "contact_lateral_stability_speed_tolerance": self.contact_lateral_stability_speed_tolerance,
             "contact_lateral_stability_xy_tolerance": self.contact_lateral_stability_xy_tolerance,
+            "contact_lateral_stability_min_apex_ratio": self.contact_lateral_stability_min_apex_ratio,
             "stable_contact_reward_weight": self.stable_contact_reward_weight,
+            "stable_contact_min_apex_ratio": self.stable_contact_min_apex_ratio,
             "stable_cycle_reward_weight": self.stable_cycle_reward_weight,
             "stable_cycle_reward_cap": self.stable_cycle_reward_cap,
             "stable_cycle_min_easy_next_ball_score": self.stable_cycle_min_easy_next_ball_score,
@@ -2714,6 +2764,37 @@ class PingPongKeepUpEnv:
         normalized_improvement = min(improvement / max(self.height_tolerance, 1.0e-6), 2.0)
         return float(self.contact_apex_recovery_progress_reward_weight * normalized_improvement)
 
+    def _contact_apex_potential_score(self, projected_apex: float) -> float:
+        target_apex = self._target_ball_height_above_racket()
+        shortfall = max(target_apex - projected_apex, 0.0)
+        normalized_shortfall = min(shortfall / max(self.height_tolerance, 1.0e-6), self.contact_apex_potential_cap)
+        return float(max(1.0 - normalized_shortfall / self.contact_apex_potential_cap, 0.0))
+
+    def _contact_apex_potential_term(self, contact_trace: dict[str, object] | None) -> float:
+        if self.contact_apex_potential_reward_weight <= 0.0:
+            return 0.0
+        previous_apex = self._last_projected_contact_apex_height
+        if previous_apex is None:
+            return 0.0
+        current_apex = self._projected_contact_apex_height_above_racket(contact_trace)
+        previous_score = self._contact_apex_potential_score(previous_apex)
+        current_score = self._contact_apex_potential_score(current_apex)
+        return float(
+            self.contact_apex_potential_reward_weight
+            * (self.contact_apex_potential_gamma * current_score - previous_score)
+        )
+
+    def _projected_apex_min_ratio_satisfied(
+        self,
+        contact_trace: dict[str, object] | None,
+        min_ratio: float | None,
+    ) -> bool:
+        if min_ratio is None:
+            return True
+        target_apex = self._target_ball_height_above_racket()
+        projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
+        return bool(projected_apex + 1.0e-6 >= target_apex * min_ratio)
+
     def _contact_apex_progress_easy_next_ball_gate(
         self,
         next_intercept_metrics: dict[str, object] | None = None,
@@ -2730,6 +2811,11 @@ class PingPongKeepUpEnv:
 
     def _contact_lateral_stability_term(self, contact_trace: dict[str, object] | None) -> float:
         if self.contact_lateral_stability_reward_weight <= 0.0:
+            return 0.0
+        if not self._projected_apex_min_ratio_satisfied(
+            contact_trace,
+            self.contact_lateral_stability_min_apex_ratio,
+        ):
             return 0.0
         outgoing_velocity, _ = self._resolved_outgoing_ball_velocity(contact_trace)
         if outgoing_velocity is None:
@@ -2805,6 +2891,8 @@ class PingPongKeepUpEnv:
         next_intercept_metrics: dict[str, object],
     ) -> float:
         if self.stable_contact_reward_weight <= 0.0:
+            return 0.0
+        if not self._projected_apex_min_ratio_satisfied(contact_trace, self.stable_contact_min_apex_ratio):
             return 0.0
         height_score = self._apex_height_match_score(contact_trace)
         easy_score = max(float(next_intercept_metrics["easy_next_ball_score"]), 0.0)
@@ -2984,6 +3072,7 @@ class PingPongKeepUpEnv:
             "contact_apex_under_target_penalty": 0.0,
             "contact_apex_progress_term": 0.0,
             "contact_apex_recovery_progress_term": 0.0,
+            "contact_apex_potential_term": 0.0,
             "contact_lateral_stability_term": 0.0,
             "stable_contact_term": 0.0,
             "stable_cycle_term": 0.0,
@@ -3030,6 +3119,7 @@ class PingPongKeepUpEnv:
                 reward_terms["contact_apex_recovery_progress_term"] = (
                     apex_progress_gate * self._contact_apex_recovery_progress_term(contact_trace)
                 )
+                reward_terms["contact_apex_potential_term"] = self._contact_apex_potential_term(contact_trace)
                 if success_reason is None and self.reward_contact_quality_on_any_upward_contact:
                     next_intercept_metrics = self._next_intercept_metrics()
                     easy_score_scale = (

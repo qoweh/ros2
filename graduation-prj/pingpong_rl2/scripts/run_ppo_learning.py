@@ -427,6 +427,22 @@ _ENV_PRESETS["contact_frame_self_rally_v18_candidate"] = {
     "contact_lateral_stability_reward_weight": 0.55,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v19_anti_low_loop"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v18_candidate"],
+    "low_apex_contact_height_threshold": 0.20,
+    "low_apex_contact_grace_count": 2,
+    "contact_apex_under_target_penalty_weight": 1.15,
+    "contact_apex_progress_reward_weight": 0.45,
+    "contact_apex_recovery_progress_reward_weight": 0.25,
+    "contact_apex_potential_reward_weight": 0.35,
+    "contact_apex_potential_gamma": 0.99,
+    "contact_apex_potential_cap": 2.0,
+    "contact_lateral_stability_min_apex_ratio": 0.85,
+    "stable_contact_min_apex_ratio": 0.90,
+    "stable_cycle_reward_weight": 1.35,
+    "stable_cycle_reward_cap": 5,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -614,10 +630,15 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_apex_recovery_progress_reward_weight": None,
     "gate_contact_apex_progress_by_easy_next_ball": False,
     "contact_apex_progress_min_easy_next_ball_score": None,
+    "contact_apex_potential_reward_weight": None,
+    "contact_apex_potential_gamma": None,
+    "contact_apex_potential_cap": None,
     "contact_lateral_stability_reward_weight": None,
     "contact_lateral_stability_speed_tolerance": None,
     "contact_lateral_stability_xy_tolerance": None,
+    "contact_lateral_stability_min_apex_ratio": None,
     "stable_contact_reward_weight": None,
+    "stable_contact_min_apex_ratio": None,
     "stable_cycle_reward_weight": None,
     "stable_cycle_reward_cap": 4,
     "stable_cycle_min_easy_next_ball_score": None,
@@ -1031,6 +1052,24 @@ def parse_args() -> argparse.Namespace:
         help="Optional easy_next_ball_score floor below which apex progress shaping is zeroed.",
     )
     parser.add_argument(
+        "--contact-apex-potential-reward-weight",
+        type=float,
+        default=None,
+        help="Potential-style shaping scale for moving projected contact apex closer to target height.",
+    )
+    parser.add_argument(
+        "--contact-apex-potential-gamma",
+        type=float,
+        default=None,
+        help="Discount factor used by --contact-apex-potential-reward-weight.",
+    )
+    parser.add_argument(
+        "--contact-apex-potential-cap",
+        type=float,
+        default=None,
+        help="Maximum normalized shortfall used by --contact-apex-potential-reward-weight.",
+    )
+    parser.add_argument(
         "--contact-lateral-stability-reward-weight",
         type=float,
         default=None,
@@ -1049,10 +1088,22 @@ def parse_args() -> argparse.Namespace:
         help="Projected apex XY tolerance used by --contact-lateral-stability-reward-weight.",
     )
     parser.add_argument(
+        "--contact-lateral-stability-min-apex-ratio",
+        type=float,
+        default=None,
+        help="Minimum projected apex/target apex ratio before lateral stability reward can be paid.",
+    )
+    parser.add_argument(
         "--stable-contact-reward-weight",
         type=float,
         default=None,
         help="Reward scale for contacts that combine target apex height with an easy next descending intercept.",
+    )
+    parser.add_argument(
+        "--stable-contact-min-apex-ratio",
+        type=float,
+        default=None,
+        help="Minimum projected apex/target apex ratio before stable-contact reward can be paid.",
     )
     parser.add_argument(
         "--stable-cycle-reward-weight",
@@ -1585,6 +1636,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_apex_progress_min_easy_next_ball_score"] = (
             args.contact_apex_progress_min_easy_next_ball_score
         )
+    if args.contact_apex_potential_reward_weight is not None:
+        env_kwargs["contact_apex_potential_reward_weight"] = args.contact_apex_potential_reward_weight
+    if args.contact_apex_potential_gamma is not None:
+        env_kwargs["contact_apex_potential_gamma"] = args.contact_apex_potential_gamma
+    if args.contact_apex_potential_cap is not None:
+        env_kwargs["contact_apex_potential_cap"] = args.contact_apex_potential_cap
     if args.contact_lateral_stability_reward_weight is not None:
         env_kwargs["contact_lateral_stability_reward_weight"] = args.contact_lateral_stability_reward_weight
     if args.contact_lateral_stability_speed_tolerance is not None:
@@ -1593,8 +1650,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         )
     if args.contact_lateral_stability_xy_tolerance is not None:
         env_kwargs["contact_lateral_stability_xy_tolerance"] = args.contact_lateral_stability_xy_tolerance
+    if args.contact_lateral_stability_min_apex_ratio is not None:
+        env_kwargs["contact_lateral_stability_min_apex_ratio"] = args.contact_lateral_stability_min_apex_ratio
     if args.stable_contact_reward_weight is not None:
         env_kwargs["stable_contact_reward_weight"] = args.stable_contact_reward_weight
+    if args.stable_contact_min_apex_ratio is not None:
+        env_kwargs["stable_contact_min_apex_ratio"] = args.stable_contact_min_apex_ratio
     if args.stable_cycle_reward_weight is not None:
         env_kwargs["stable_cycle_reward_weight"] = args.stable_cycle_reward_weight
     if args.stable_cycle_reward_cap != 4 or args.stable_cycle_reward_weight is not None:

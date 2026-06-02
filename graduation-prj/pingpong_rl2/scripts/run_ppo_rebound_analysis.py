@@ -141,6 +141,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--post-contact-lateral-velocity-penalty-weight", type=float, default=None)
     parser.add_argument("--contact-xy-error-penalty-weight", type=float, default=None)
     parser.add_argument("--nonuseful-contact-penalty-weight", type=float, default=None)
+    parser.add_argument("--contact-apex-potential-reward-weight", type=float, default=None)
+    parser.add_argument("--contact-apex-potential-gamma", type=float, default=None)
+    parser.add_argument("--contact-apex-potential-cap", type=float, default=None)
+    parser.add_argument("--contact-lateral-stability-min-apex-ratio", type=float, default=None)
+    parser.add_argument("--stable-contact-min-apex-ratio", type=float, default=None)
     parser.add_argument(
         "--require-reachable-next-intercept-for-success",
         action="store_true",
@@ -403,6 +408,7 @@ def summarize_contacts(
             "mean_contact_tangential_relative_ratio": 0.0,
             "useful_contact_mean_contact_tangential_relative_ratio": 0.0,
             "mean_contact_apex_progress_easy_next_ball_gate": 0.0,
+            "mean_contact_apex_potential_term": 0.0,
             "mean_contact_lateral_stability_term": 0.0,
             "useful_contact_mean_contact_lateral_stability_term": 0.0,
             "mean_applied_action_normalized_norm": 0.0,
@@ -469,6 +475,7 @@ def summarize_contacts(
     recovery_lift = float_series("contact_frame_low_apex_recovery_lift", contact_rows)
     recovery_velocity = float_series("contact_frame_low_apex_recovery_velocity", contact_rows)
     recovery_progress_term = float_series("contact_apex_recovery_progress_term", contact_rows)
+    apex_potential_term = float_series("contact_apex_potential_term", contact_rows)
     apex_progress_gate = float_series("contact_apex_progress_easy_next_ball_gate", contact_rows)
     lateral_stability_term = float_series("contact_lateral_stability_term", contact_rows)
     useful_lateral_stability_term = float_series("contact_lateral_stability_term", useful_rows)
@@ -604,6 +611,9 @@ def summarize_contacts(
         ),
         "mean_contact_apex_progress_easy_next_ball_gate": (
             float(apex_progress_gate.mean()) if apex_progress_gate.size else 0.0
+        ),
+        "mean_contact_apex_potential_term": (
+            float(apex_potential_term.mean()) if apex_potential_term.size else 0.0
         ),
         "mean_contact_lateral_stability_term": (
             float(lateral_stability_term.mean()) if lateral_stability_term.size else 0.0
@@ -1081,6 +1091,16 @@ def main() -> None:
         env_kwargs["contact_xy_error_penalty_weight"] = args.contact_xy_error_penalty_weight
     if args.nonuseful_contact_penalty_weight is not None:
         env_kwargs["nonuseful_contact_penalty_weight"] = args.nonuseful_contact_penalty_weight
+    if args.contact_apex_potential_reward_weight is not None:
+        env_kwargs["contact_apex_potential_reward_weight"] = args.contact_apex_potential_reward_weight
+    if args.contact_apex_potential_gamma is not None:
+        env_kwargs["contact_apex_potential_gamma"] = args.contact_apex_potential_gamma
+    if args.contact_apex_potential_cap is not None:
+        env_kwargs["contact_apex_potential_cap"] = args.contact_apex_potential_cap
+    if args.contact_lateral_stability_min_apex_ratio is not None:
+        env_kwargs["contact_lateral_stability_min_apex_ratio"] = args.contact_lateral_stability_min_apex_ratio
+    if args.stable_contact_min_apex_ratio is not None:
+        env_kwargs["stable_contact_min_apex_ratio"] = args.stable_contact_min_apex_ratio
     if args.terminate_on_nonuseful_contact:
         env_kwargs["terminate_on_nonuseful_contact"] = True
     env = PingPongKeepUpGymEnv(**env_kwargs)
@@ -1246,6 +1266,7 @@ def main() -> None:
                         "contact_apex_recovery_progress_term": reward_terms.get(
                             "contact_apex_recovery_progress_term"
                         ),
+                        "contact_apex_potential_term": reward_terms.get("contact_apex_potential_term"),
                         "contact_apex_progress_easy_next_ball_gate": info.get(
                             "contact_apex_progress_easy_next_ball_gate"
                         ),

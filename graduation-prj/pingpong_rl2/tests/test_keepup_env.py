@@ -1731,6 +1731,93 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertEqual(worse_terms["contact_apex_recovery_progress_term"], 0.0)
         self.assertEqual(already_recovered_terms["contact_apex_recovery_progress_term"], 0.0)
 
+    def test_contact_apex_potential_rewards_improvement_and_penalizes_drops(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_apex_potential_reward_weight=0.5,
+            contact_apex_potential_gamma=0.99,
+            contact_apex_potential_cap=2.0,
+            target_ball_height=0.30,
+            height_tolerance=0.10,
+        )
+        env.reset(ball_height=env.ball_height)
+
+        def contact_trace_for_apex(apex_height: float) -> dict[str, float]:
+            contact_height = 0.02
+            velocity_z = float(np.sqrt(2.0 * abs(env._gravity_z()) * max(apex_height - contact_height, 0.0)))
+            return {
+                "contact_ball_height_above_racket": contact_height,
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": velocity_z,
+            }
+
+        env._last_projected_contact_apex_height = 0.12
+        improved_term = env._contact_apex_potential_term(contact_trace_for_apex(0.22))
+        env._last_projected_contact_apex_height = 0.25
+        dropped_term = env._contact_apex_potential_term(contact_trace_for_apex(0.16))
+
+        self.assertGreater(improved_term, 0.0)
+        self.assertLess(dropped_term, 0.0)
+
+    def test_lateral_stability_reward_can_require_minimum_apex_ratio(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_lateral_stability_reward_weight=0.5,
+            contact_lateral_stability_speed_tolerance=0.25,
+            contact_lateral_stability_xy_tolerance=0.08,
+            contact_lateral_stability_min_apex_ratio=0.85,
+            target_ball_height=0.30,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+
+        def centered_trace_for_apex(apex_height: float) -> dict[str, float]:
+            contact_height = 0.02
+            velocity_z = float(np.sqrt(2.0 * abs(env._gravity_z()) * max(apex_height - contact_height, 0.0)))
+            return {
+                "contact_ball_position_x": float(anchor_position[0]),
+                "contact_ball_position_y": float(anchor_position[1]),
+                "contact_ball_height_above_racket": contact_height,
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": velocity_z,
+            }
+
+        self.assertEqual(env._contact_lateral_stability_term(centered_trace_for_apex(0.24)), 0.0)
+        self.assertGreater(env._contact_lateral_stability_term(centered_trace_for_apex(0.27)), 0.3)
+
+    def test_stable_contact_reward_can_require_minimum_apex_ratio(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            stable_contact_reward_weight=1.0,
+            stable_contact_min_apex_ratio=0.90,
+            target_ball_height=0.30,
+            height_tolerance=0.10,
+        )
+        env.reset(ball_height=env.ball_height)
+
+        def contact_trace_for_apex(apex_height: float) -> dict[str, float]:
+            contact_height = 0.02
+            velocity_z = float(np.sqrt(2.0 * abs(env._gravity_z()) * max(apex_height - contact_height, 0.0)))
+            return {
+                "contact_ball_height_above_racket": contact_height,
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": velocity_z,
+            }
+
+        next_intercept_metrics = {"easy_next_ball_score": 1.0}
+
+        self.assertEqual(env._stable_contact_term(contact_trace_for_apex(0.25), next_intercept_metrics), 0.0)
+        self.assertGreater(env._stable_contact_term(contact_trace_for_apex(0.30), next_intercept_metrics), 0.9)
+
     def test_contact_lateral_stability_rewards_centered_vertical_contact(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",
