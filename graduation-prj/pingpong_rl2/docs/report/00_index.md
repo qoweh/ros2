@@ -82,3 +82,5 @@
   - `position_contact_frame_velocity_tilt_residual` 11D action mode, configurable strike plane, direct racket z velocity residual, tilt primitive scale, v17 preset, 검증 결과와 v17 학습/분석 명령을 정리한 보고서
 - `39_v17_action_scale_and_v18_lateral_residual.md`
   - `pmk_cf_self_rally_v17` 1.5M 결과, 11D action limit/saturation, PPO action std와 작은 residual bound의 mismatch, `position_contact_frame_velocity_tilt_lateral_residual` 13D v18 mode, per-axis action std 초기화, 검증 결과와 v18 학습/분석 명령을 정리한 보고서
+- `40_v18_low_loop_and_v19_height_qualified_reward.md`
+  - `pmk_cf_self_rally_v18` 1M 결과, v17 action saturation/std 문제 해결 여부, 낮은 통통 루프 원인, height-qualified stability reward, apex potential shaping, v19 preset, 검증 결과와 v19 학습/분석 명령을 정리한 보고서
