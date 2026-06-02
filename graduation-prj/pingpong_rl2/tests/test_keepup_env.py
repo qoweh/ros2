@@ -925,6 +925,43 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         fast_lift = env._contact_frame_apex_lift()
         self.assertGreater(slow_lift, fast_lift)
 
+    def test_contact_frame_low_apex_recovery_only_runs_on_followup_descent(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            height_tolerance=0.10,
+            contact_frame_base_strike_z_boost=0.0,
+            contact_frame_base_strike_z_offset=0.0,
+            contact_frame_apex_lift_gain=0.0,
+            contact_frame_velocity_lead_gain=0.0,
+            contact_frame_low_apex_recovery_lift_gain=0.10,
+            contact_frame_low_apex_recovery_lift_max=0.04,
+            contact_frame_low_apex_recovery_velocity_gain=0.80,
+            contact_frame_low_apex_recovery_velocity_max=0.30,
+        )
+        env.reset(ball_height=env.ball_height)
+        config = env.training_config()
+        self.assertAlmostEqual(config["contact_frame_low_apex_recovery_lift_gain"], 0.10)
+        self.assertAlmostEqual(config["contact_frame_low_apex_recovery_velocity_max"], 0.30)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env._last_contact_apex_shortfall = 0.15
+
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        recovery_lift = env._contact_frame_low_apex_recovery_lift()
+        recovery_velocity = env._contact_frame_low_apex_recovery_velocity()
+        base_lift = env._contact_frame_base_strike_lift()
+
+        self.assertGreater(recovery_lift, 0.0)
+        self.assertLessEqual(recovery_lift, env.contact_frame_low_apex_recovery_lift_max)
+        self.assertGreater(recovery_velocity, 0.0)
+        self.assertLessEqual(recovery_velocity, env.contact_frame_low_apex_recovery_velocity_max)
+        self.assertAlmostEqual(base_lift, recovery_lift)
+
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, 0.2))
+        self.assertEqual(env._contact_frame_low_apex_recovery_lift(), 0.0)
+        self.assertEqual(env._contact_frame_low_apex_recovery_velocity(), 0.0)
+
     def test_contact_frame_velocity_lead_tracks_required_impact_velocity(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",
@@ -1359,6 +1396,66 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertGreater(low_reward_terms["contact_apex_progress_term"], 0.0)
         self.assertLess(low_reward_terms["contact_apex_progress_term"], 0.8)
         self.assertAlmostEqual(target_or_higher_reward_terms["contact_apex_progress_term"], 0.8)
+
+    def test_contact_apex_recovery_progress_rewards_improvement_after_low_contact(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_apex_recovery_progress_reward_weight=0.7,
+            target_ball_height=0.30,
+            height_tolerance=0.10,
+        )
+        env.reset(ball_height=env.ball_height)
+        env._last_projected_contact_apex_height = 0.12
+
+        improved_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=False,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={
+                "contact_ball_height_above_racket": 0.02,
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": 1.6,
+            },
+            outgoing_trajectory_metrics={"actual_outgoing_velocity_z": 1.6},
+        )
+        worse_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=False,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={
+                "contact_ball_height_above_racket": 0.02,
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": 0.8,
+            },
+            outgoing_trajectory_metrics={"actual_outgoing_velocity_z": 0.8},
+        )
+        env._last_projected_contact_apex_height = 0.31
+        already_recovered_terms = env._reward_terms(
+            failure_reason=None,
+            success_reason=None,
+            contact_event=True,
+            contact_active=False,
+            applied_action=np.zeros(env.action_size, dtype=float),
+            contact_trace={
+                "contact_ball_height_above_racket": 0.02,
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": 1.6,
+            },
+            outgoing_trajectory_metrics={"actual_outgoing_velocity_z": 1.6},
+        )
+
+        self.assertGreater(improved_terms["contact_apex_recovery_progress_term"], 0.0)
+        self.assertEqual(worse_terms["contact_apex_recovery_progress_term"], 0.0)
+        self.assertEqual(already_recovered_terms["contact_apex_recovery_progress_term"], 0.0)
 
     def test_stable_contact_reward_requires_target_apex_and_easy_next_ball(self) -> None:
         env = PingPongKeepUpEnv(

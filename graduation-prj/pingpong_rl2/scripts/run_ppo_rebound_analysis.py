@@ -452,6 +452,10 @@ def summarize_contacts(
     tangential_relative_ratio = float_series("contact_tangential_relative_ratio", contact_rows)
     useful_tangential_relative_ratio = float_series("contact_tangential_relative_ratio", useful_rows)
     consecutive_stable_cycle_count = float_series("consecutive_stable_cycle_count", contact_rows)
+    last_contact_apex_shortfall = float_series("last_contact_apex_shortfall", contact_rows)
+    recovery_lift = float_series("contact_frame_low_apex_recovery_lift", contact_rows)
+    recovery_velocity = float_series("contact_frame_low_apex_recovery_velocity", contact_rows)
+    recovery_progress_term = float_series("contact_apex_recovery_progress_term", contact_rows)
     upward_rows = [
         row
         for row in contact_rows
@@ -491,6 +495,20 @@ def summarize_contacts(
         "upward_contact_projected_apex_below_0_20_rate": below_rate(upward_projected_apex_height, 0.20),
         "upward_contact_projected_apex_below_target_rate": (
             0.0 if target_apex_height is None else below_rate(upward_projected_apex_height, target_apex_height)
+        ),
+        "mean_last_contact_apex_shortfall": (
+            float(last_contact_apex_shortfall.mean()) if last_contact_apex_shortfall.size else 0.0
+        ),
+        "mean_contact_frame_low_apex_recovery_lift": float(recovery_lift.mean()) if recovery_lift.size else 0.0,
+        "max_contact_frame_low_apex_recovery_lift": float(recovery_lift.max()) if recovery_lift.size else 0.0,
+        "mean_contact_frame_low_apex_recovery_velocity": (
+            float(recovery_velocity.mean()) if recovery_velocity.size else 0.0
+        ),
+        "max_contact_frame_low_apex_recovery_velocity": (
+            float(recovery_velocity.max()) if recovery_velocity.size else 0.0
+        ),
+        "mean_contact_apex_recovery_progress_term": (
+            float(recovery_progress_term.mean()) if recovery_progress_term.size else 0.0
         ),
         "useful_contact_mean_ball_lateral_speed": (
             float(useful_lateral_speed.mean()) if useful_lateral_speed.size else 0.0
@@ -1170,6 +1188,10 @@ def main() -> None:
                         "consecutive_stable_cycle_count": info.get("consecutive_stable_cycle_count"),
                         "stable_contact_term": reward_terms.get("stable_contact_term"),
                         "stable_cycle_term": reward_terms.get("stable_cycle_term"),
+                        "contact_apex_progress_term": reward_terms.get("contact_apex_progress_term"),
+                        "contact_apex_recovery_progress_term": reward_terms.get(
+                            "contact_apex_recovery_progress_term"
+                        ),
                         "contact_ball_position_x": contact_ball_position_x,
                         "contact_ball_position_y": contact_ball_position_y,
                         "contact_ball_position_z": contact_ball_position_z,
@@ -1260,6 +1282,13 @@ def main() -> None:
                         "contact_frame_planner_active": info.get("contact_frame_planner_active"),
                         "contact_frame_strike_hold_active": info.get("contact_frame_strike_hold_active"),
                         "controller_body_clearance_active": info.get("controller_body_clearance_active"),
+                        "contact_frame_apex_lift": info.get("contact_frame_apex_lift"),
+                        "contact_frame_low_apex_recovery_lift": info.get(
+                            "contact_frame_low_apex_recovery_lift"
+                        ),
+                        "contact_frame_low_apex_recovery_velocity": info.get(
+                            "contact_frame_low_apex_recovery_velocity"
+                        ),
                         "contact_frame_planner_intercept_time": info.get("contact_frame_planner_intercept_time"),
                         "contact_frame_planner_contact_x": (
                             None
@@ -1305,6 +1334,10 @@ def main() -> None:
                         "projected_contact_apex_height_above_racket": info.get(
                             "projected_contact_apex_height_above_racket"
                         ),
+                        "last_projected_contact_apex_height_above_racket": info.get(
+                            "last_projected_contact_apex_height_above_racket"
+                        ),
+                        "last_contact_apex_shortfall": info.get("last_contact_apex_shortfall"),
                         "target_ball_height_above_racket": float(env.base_env.target_ball_height),
                         "target_tilt_0": (
                             None if info.get("target_tilt") is None else float(np.asarray(info["target_tilt"])[0])

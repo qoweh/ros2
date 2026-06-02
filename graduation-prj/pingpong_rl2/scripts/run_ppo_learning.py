@@ -326,12 +326,16 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_strike_hold_min_readiness": 0.60,
     "contact_frame_base_strike_z_boost": 0.028,
     "contact_frame_base_strike_z_offset": 0.010,
-    "contact_frame_apex_lift_gain": 0.10,
-    "contact_frame_apex_lift_max": 0.095,
+    "contact_frame_apex_lift_gain": 0.12,
+    "contact_frame_apex_lift_max": 0.110,
+    "contact_frame_low_apex_recovery_lift_gain": 0.024,
+    "contact_frame_low_apex_recovery_lift_max": 0.045,
+    "contact_frame_low_apex_recovery_velocity_gain": 0.28,
+    "contact_frame_low_apex_recovery_velocity_max": 0.45,
     "contact_frame_velocity_lead_gain": 0.04,
     "contact_frame_velocity_lead_max": 0.025,
     "contact_frame_velocity_target_gain": 1.00,
-    "contact_frame_velocity_target_max": 2.7,
+    "contact_frame_velocity_target_max": 2.9,
     "contact_frame_followthrough_max": 0.055,
     "contact_frame_trajectory_tilt_gain": 1.0,
     "contact_frame_trajectory_tilt_limit": (0.08, 0.08),
@@ -344,8 +348,8 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "min_easy_next_ball_score_for_success": 0.45,
     "gate_nonuseful_easy_next_ball_by_apex": True,
     "terminate_on_low_apex_contact": True,
-    "low_apex_contact_height_threshold": 0.20,
-    "low_apex_contact_grace_count": 1,
+    "low_apex_contact_height_threshold": 0.14,
+    "low_apex_contact_grace_count": 3,
     "easy_next_ball_reward_weight": 1.00,
     "next_intercept_xy_error_penalty_weight": 1.00,
     "post_contact_lateral_velocity_penalty_weight": 0.45,
@@ -356,8 +360,9 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "nonuseful_contact_penalty_weight": 0.75,
     "contact_apex_under_target_penalty_weight": 0.80,
     "contact_apex_progress_reward_weight": 0.90,
+    "contact_apex_recovery_progress_reward_weight": 0.70,
     "stable_contact_reward_weight": 1.40,
-    "stable_cycle_reward_weight": 0.80,
+    "stable_cycle_reward_weight": 0.90,
     "stable_cycle_reward_cap": 4,
     "stable_cycle_min_easy_next_ball_score": 0.45,
     "trajectory_match_reward_weight": 0.55,
@@ -501,6 +506,10 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_apex_lift_max": None,
     "contact_frame_apex_lift_reference_velocity_z": None,
     "contact_frame_apex_lift_restitution": None,
+    "contact_frame_low_apex_recovery_lift_gain": None,
+    "contact_frame_low_apex_recovery_lift_max": None,
+    "contact_frame_low_apex_recovery_velocity_gain": None,
+    "contact_frame_low_apex_recovery_velocity_max": None,
     "contact_frame_velocity_lead_gain": None,
     "contact_frame_velocity_lead_max": None,
     "contact_frame_velocity_target_gain": None,
@@ -550,6 +559,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "nonuseful_contact_penalty_weight": None,
     "contact_apex_under_target_penalty_weight": None,
     "contact_apex_progress_reward_weight": None,
+    "contact_apex_recovery_progress_reward_weight": None,
     "stable_contact_reward_weight": None,
     "stable_cycle_reward_weight": None,
     "stable_cycle_reward_cap": 4,
@@ -833,6 +843,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-apex-lift-max", type=float, default=None)
     parser.add_argument("--contact-frame-apex-lift-reference-velocity-z", type=float, default=None)
     parser.add_argument("--contact-frame-apex-lift-restitution", type=float, default=None)
+    parser.add_argument("--contact-frame-low-apex-recovery-lift-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-low-apex-recovery-lift-max", type=float, default=None)
+    parser.add_argument("--contact-frame-low-apex-recovery-velocity-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-low-apex-recovery-velocity-max", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-lead-gain", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-lead-max", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
@@ -923,6 +937,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Dense reward scale for upward contacts whose projected apex moves toward target_ball_height.",
+    )
+    parser.add_argument(
+        "--contact-apex-recovery-progress-reward-weight",
+        type=float,
+        default=None,
+        help="Dense reward scale for upward contacts that improve the projected apex after a previous low contact.",
     )
     parser.add_argument(
         "--stable-contact-reward-weight",
@@ -1281,6 +1301,18 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_apex_lift_reference_velocity_z"] = args.contact_frame_apex_lift_reference_velocity_z
     if args.contact_frame_apex_lift_restitution is not None:
         env_kwargs["contact_frame_apex_lift_restitution"] = args.contact_frame_apex_lift_restitution
+    if args.contact_frame_low_apex_recovery_lift_gain is not None:
+        env_kwargs["contact_frame_low_apex_recovery_lift_gain"] = args.contact_frame_low_apex_recovery_lift_gain
+    if args.contact_frame_low_apex_recovery_lift_max is not None:
+        env_kwargs["contact_frame_low_apex_recovery_lift_max"] = args.contact_frame_low_apex_recovery_lift_max
+    if args.contact_frame_low_apex_recovery_velocity_gain is not None:
+        env_kwargs["contact_frame_low_apex_recovery_velocity_gain"] = (
+            args.contact_frame_low_apex_recovery_velocity_gain
+        )
+    if args.contact_frame_low_apex_recovery_velocity_max is not None:
+        env_kwargs["contact_frame_low_apex_recovery_velocity_max"] = (
+            args.contact_frame_low_apex_recovery_velocity_max
+        )
     if args.contact_frame_velocity_lead_gain is not None:
         env_kwargs["contact_frame_velocity_lead_gain"] = args.contact_frame_velocity_lead_gain
     if args.contact_frame_velocity_lead_max is not None:
@@ -1383,6 +1415,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         )
     if args.contact_apex_progress_reward_weight is not None:
         env_kwargs["contact_apex_progress_reward_weight"] = args.contact_apex_progress_reward_weight
+    if args.contact_apex_recovery_progress_reward_weight is not None:
+        env_kwargs["contact_apex_recovery_progress_reward_weight"] = (
+            args.contact_apex_recovery_progress_reward_weight
+        )
     if args.stable_contact_reward_weight is not None:
         env_kwargs["stable_contact_reward_weight"] = args.stable_contact_reward_weight
     if args.stable_cycle_reward_weight is not None:

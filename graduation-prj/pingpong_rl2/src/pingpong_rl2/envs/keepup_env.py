@@ -258,10 +258,15 @@ class PingPongKeepUpEnv:
         nonuseful_contact_penalty_weight: float = 0.0,
         contact_apex_under_target_penalty_weight: float = 0.0,
         contact_apex_progress_reward_weight: float = 0.0,
+        contact_apex_recovery_progress_reward_weight: float = 0.0,
         stable_contact_reward_weight: float = 0.0,
         stable_cycle_reward_weight: float = 0.0,
         stable_cycle_reward_cap: int = 4,
         stable_cycle_min_easy_next_ball_score: float | None = None,
+        contact_frame_low_apex_recovery_lift_gain: float = 0.0,
+        contact_frame_low_apex_recovery_lift_max: float = 0.0,
+        contact_frame_low_apex_recovery_velocity_gain: float = 0.0,
+        contact_frame_low_apex_recovery_velocity_max: float = 0.0,
     ) -> None:
         if sim is not None and scene_path is not None:
             raise ValueError("scene_path can only be provided when sim is None.")
@@ -456,6 +461,7 @@ class PingPongKeepUpEnv:
         self.nonuseful_contact_penalty_weight = float(nonuseful_contact_penalty_weight)
         self.contact_apex_under_target_penalty_weight = float(contact_apex_under_target_penalty_weight)
         self.contact_apex_progress_reward_weight = float(contact_apex_progress_reward_weight)
+        self.contact_apex_recovery_progress_reward_weight = float(contact_apex_recovery_progress_reward_weight)
         self.stable_contact_reward_weight = float(stable_contact_reward_weight)
         self.stable_cycle_reward_weight = float(stable_cycle_reward_weight)
         self.stable_cycle_reward_cap = int(stable_cycle_reward_cap)
@@ -464,6 +470,10 @@ class PingPongKeepUpEnv:
             if stable_cycle_min_easy_next_ball_score is None
             else float(stable_cycle_min_easy_next_ball_score)
         )
+        self.contact_frame_low_apex_recovery_lift_gain = float(contact_frame_low_apex_recovery_lift_gain)
+        self.contact_frame_low_apex_recovery_lift_max = float(contact_frame_low_apex_recovery_lift_max)
+        self.contact_frame_low_apex_recovery_velocity_gain = float(contact_frame_low_apex_recovery_velocity_gain)
+        self.contact_frame_low_apex_recovery_velocity_max = float(contact_frame_low_apex_recovery_velocity_max)
         if self.action_mode not in _ACTION_MODES:
             raise ValueError(f"action_mode must be one of {_ACTION_MODES}, got {self.action_mode!r}.")
         if self.contact_oracle_mode not in _CONTACT_ORACLE_MODES:
@@ -935,6 +945,11 @@ class PingPongKeepUpEnv:
                 "contact_apex_progress_reward_weight must be non-negative, got "
                 f"{self.contact_apex_progress_reward_weight}."
             )
+        if self.contact_apex_recovery_progress_reward_weight < 0.0:
+            raise ValueError(
+                "contact_apex_recovery_progress_reward_weight must be non-negative, got "
+                f"{self.contact_apex_recovery_progress_reward_weight}."
+            )
         if self.stable_contact_reward_weight < 0.0:
             raise ValueError(
                 f"stable_contact_reward_weight must be non-negative, got {self.stable_contact_reward_weight}."
@@ -951,6 +966,26 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 "stable_cycle_min_easy_next_ball_score must be finite when provided, got "
                 f"{self.stable_cycle_min_easy_next_ball_score}."
+            )
+        if self.contact_frame_low_apex_recovery_lift_gain < 0.0:
+            raise ValueError(
+                "contact_frame_low_apex_recovery_lift_gain must be non-negative, got "
+                f"{self.contact_frame_low_apex_recovery_lift_gain}."
+            )
+        if self.contact_frame_low_apex_recovery_lift_max < 0.0:
+            raise ValueError(
+                "contact_frame_low_apex_recovery_lift_max must be non-negative, got "
+                f"{self.contact_frame_low_apex_recovery_lift_max}."
+            )
+        if self.contact_frame_low_apex_recovery_velocity_gain < 0.0:
+            raise ValueError(
+                "contact_frame_low_apex_recovery_velocity_gain must be non-negative, got "
+                f"{self.contact_frame_low_apex_recovery_velocity_gain}."
+            )
+        if self.contact_frame_low_apex_recovery_velocity_max < 0.0:
+            raise ValueError(
+                "contact_frame_low_apex_recovery_velocity_max must be non-negative, got "
+                f"{self.contact_frame_low_apex_recovery_velocity_max}."
             )
         if self.strike_tilt_ramp_xy_tolerance < 0.0:
             raise ValueError(
@@ -1052,6 +1087,8 @@ class PingPongKeepUpEnv:
         self.stable_cycle_count = 0
         self._consecutive_stable_cycle_count = 0
         self._consecutive_low_apex_contact_count = 0
+        self._last_projected_contact_apex_height: float | None = None
+        self._last_contact_apex_shortfall = 0.0
         self._last_contact_step: int | None = None
         self._contact_active_previous_step = False
         self._previous_action = np.zeros(self.action_size, dtype=float)
@@ -1141,6 +1178,8 @@ class PingPongKeepUpEnv:
         self.stable_cycle_count = 0
         self._consecutive_stable_cycle_count = 0
         self._consecutive_low_apex_contact_count = 0
+        self._last_projected_contact_apex_height = None
+        self._last_contact_apex_shortfall = 0.0
         self._last_contact_step = None
         self._contact_active_previous_step = False
         self._previous_action[:] = 0.0
@@ -1151,6 +1190,8 @@ class PingPongKeepUpEnv:
             "successful_bounce_count": self.successful_bounce_count,
             "stable_cycle_count": self.stable_cycle_count,
             "consecutive_stable_cycle_count": self._consecutive_stable_cycle_count,
+            "last_projected_contact_apex_height_above_racket": self._last_projected_contact_apex_height,
+            "last_contact_apex_shortfall": self._last_contact_apex_shortfall,
             "step_count": self.step_count,
             "target_position": self.controller.target_position,
             "target_tilt": self.controller.target_tilt,
@@ -1285,6 +1326,10 @@ class PingPongKeepUpEnv:
             "stable_cycle_count": self.stable_cycle_count,
             "consecutive_stable_cycle_count": self._consecutive_stable_cycle_count,
             "stable_cycle_min_easy_next_ball_score": self.stable_cycle_min_easy_next_ball_score,
+            "last_projected_contact_apex_height_above_racket": self._last_projected_contact_apex_height,
+            "last_contact_apex_shortfall": self._last_contact_apex_shortfall,
+            "contact_frame_low_apex_recovery_lift": self._contact_frame_low_apex_recovery_lift(),
+            "contact_frame_low_apex_recovery_velocity": self._contact_frame_low_apex_recovery_velocity(),
             "episode_success_reason": episode_success_reason,
             "reward_terms": reward_terms,
             "contact_event_during_step": contact_event,
@@ -1430,6 +1475,7 @@ class PingPongKeepUpEnv:
         }
         for key, value in contact_trace.items():
             info.setdefault(key, value)
+        self._update_contact_apex_memory(contact_event=contact_event, contact_trace=contact_trace)
         self._contact_active_previous_step = contact_active
         self._previous_action = applied_action.copy()
         return self.observation(), reward, terminated, truncated, info
@@ -1585,10 +1631,15 @@ class PingPongKeepUpEnv:
             "nonuseful_contact_penalty_weight": self.nonuseful_contact_penalty_weight,
             "contact_apex_under_target_penalty_weight": self.contact_apex_under_target_penalty_weight,
             "contact_apex_progress_reward_weight": self.contact_apex_progress_reward_weight,
+            "contact_apex_recovery_progress_reward_weight": self.contact_apex_recovery_progress_reward_weight,
             "stable_contact_reward_weight": self.stable_contact_reward_weight,
             "stable_cycle_reward_weight": self.stable_cycle_reward_weight,
             "stable_cycle_reward_cap": self.stable_cycle_reward_cap,
             "stable_cycle_min_easy_next_ball_score": self.stable_cycle_min_easy_next_ball_score,
+            "contact_frame_low_apex_recovery_lift_gain": self.contact_frame_low_apex_recovery_lift_gain,
+            "contact_frame_low_apex_recovery_lift_max": self.contact_frame_low_apex_recovery_lift_max,
+            "contact_frame_low_apex_recovery_velocity_gain": self.contact_frame_low_apex_recovery_velocity_gain,
+            "contact_frame_low_apex_recovery_velocity_max": self.contact_frame_low_apex_recovery_velocity_max,
         }
 
     def close(self) -> None:
@@ -2364,6 +2415,72 @@ class PingPongKeepUpEnv:
         progress = float(np.clip(projected_apex / target_apex, 0.0, 1.0))
         return float(self.contact_apex_progress_reward_weight * progress)
 
+    def _contact_apex_recovery_progress_term(self, contact_trace: dict[str, object] | None) -> float:
+        if self.contact_apex_recovery_progress_reward_weight <= 0.0:
+            return 0.0
+        previous_apex = self._last_projected_contact_apex_height
+        if previous_apex is None:
+            return 0.0
+        target_apex = self._target_ball_height_above_racket()
+        previous_shortfall = target_apex - previous_apex
+        if previous_shortfall <= 0.0:
+            return 0.0
+        projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
+        improvement = projected_apex - previous_apex
+        if improvement <= 0.0:
+            return 0.0
+        normalized_improvement = min(improvement / max(self.height_tolerance, 1.0e-6), 2.0)
+        return float(self.contact_apex_recovery_progress_reward_weight * normalized_improvement)
+
+    def _update_contact_apex_memory(
+        self,
+        *,
+        contact_event: bool,
+        contact_trace: dict[str, object] | None,
+    ) -> None:
+        if not contact_event:
+            return
+        projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
+        self._last_projected_contact_apex_height = projected_apex
+        self._last_contact_apex_shortfall = max(self._target_ball_height_above_racket() - projected_apex, 0.0)
+
+    def _normalized_last_contact_apex_shortfall(self) -> float:
+        if self._last_contact_apex_shortfall <= 0.0:
+            return 0.0
+        return float(np.clip(self._last_contact_apex_shortfall / max(self.height_tolerance, 1.0e-6), 0.0, 2.0))
+
+    def _contact_frame_low_apex_recovery_lift(self) -> float:
+        if self.action_mode != "position_contact_frame":
+            return 0.0
+        if self.contact_frame_low_apex_recovery_lift_gain <= 0.0:
+            return 0.0
+        if self.contact_frame_low_apex_recovery_lift_max <= 0.0:
+            return 0.0
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return 0.0
+        normalized_shortfall = self._normalized_last_contact_apex_shortfall()
+        if normalized_shortfall <= 0.0:
+            return 0.0
+        strike_readiness = self._contact_frame_strike_readiness()
+        lift = self.contact_frame_low_apex_recovery_lift_gain * normalized_shortfall * strike_readiness
+        return float(np.clip(lift, 0.0, self.contact_frame_low_apex_recovery_lift_max))
+
+    def _contact_frame_low_apex_recovery_velocity(self) -> float:
+        if self.action_mode != "position_contact_frame":
+            return 0.0
+        if self.contact_frame_low_apex_recovery_velocity_gain <= 0.0:
+            return 0.0
+        if self.contact_frame_low_apex_recovery_velocity_max <= 0.0:
+            return 0.0
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return 0.0
+        normalized_shortfall = self._normalized_last_contact_apex_shortfall()
+        if normalized_shortfall <= 0.0:
+            return 0.0
+        strike_readiness = self._contact_frame_strike_readiness()
+        velocity = self.contact_frame_low_apex_recovery_velocity_gain * normalized_shortfall * strike_readiness
+        return float(np.clip(velocity, 0.0, self.contact_frame_low_apex_recovery_velocity_max))
+
     def _stable_contact_term(
         self,
         contact_trace: dict[str, object] | None,
@@ -2544,6 +2661,7 @@ class PingPongKeepUpEnv:
             "nonuseful_contact_penalty": 0.0,
             "contact_apex_under_target_penalty": 0.0,
             "contact_apex_progress_term": 0.0,
+            "contact_apex_recovery_progress_term": 0.0,
             "stable_contact_term": 0.0,
             "stable_cycle_term": 0.0,
             "outgoing_x_term": 0.0,
@@ -2582,6 +2700,9 @@ class PingPongKeepUpEnv:
             if float(actual_outgoing_velocity_z) > self.success_velocity_threshold:
                 next_intercept_metrics: dict[str, object] | None = None
                 reward_terms["contact_apex_progress_term"] = self._contact_apex_progress_term(contact_trace)
+                reward_terms["contact_apex_recovery_progress_term"] = (
+                    self._contact_apex_recovery_progress_term(contact_trace)
+                )
                 if success_reason is None and self.reward_contact_quality_on_any_upward_contact:
                     next_intercept_metrics = self._next_intercept_metrics()
                     easy_score_scale = (
@@ -2982,7 +3103,12 @@ class PingPongKeepUpEnv:
             self.contact_frame_base_strike_z_offset
             + self.contact_frame_base_strike_z_boost * np.clip(strike_readiness, 0.0, 1.0)
         )
-        return base_lift + self._contact_frame_apex_lift() + self._contact_frame_velocity_lead()
+        return (
+            base_lift
+            + self._contact_frame_apex_lift()
+            + self._contact_frame_low_apex_recovery_lift()
+            + self._contact_frame_velocity_lead()
+        )
 
     def _contact_frame_apex_lift(self) -> float:
         if self.action_mode != "position_contact_frame":
@@ -3117,6 +3243,7 @@ class PingPongKeepUpEnv:
         )
         strike_readiness = float(np.clip(max(self._pre_contact_height_readiness(), urgency), 0.0, 1.0))
         target_velocity = intercept_velocity + self.contact_frame_velocity_target_gain * strike_readiness * required_velocity
+        target_velocity[2] += self._contact_frame_low_apex_recovery_velocity()
         target_speed = float(np.linalg.norm(target_velocity))
         max_speed = max(self.contact_frame_velocity_target_max, self.contact_frame_intercept_velocity_max)
         if target_speed > max_speed:
