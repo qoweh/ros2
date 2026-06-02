@@ -88,6 +88,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
+    parser.add_argument("--contact-frame-velocity-scale-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-outgoing-xy-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
@@ -1001,6 +1003,10 @@ def main() -> None:
         env_kwargs["contact_frame_velocity_target_gain"] = args.contact_frame_velocity_target_gain
     if args.contact_frame_velocity_target_max is not None:
         env_kwargs["contact_frame_velocity_target_max"] = args.contact_frame_velocity_target_max
+    if args.contact_frame_velocity_scale_action_limit is not None:
+        env_kwargs["contact_frame_velocity_scale_action_limit"] = args.contact_frame_velocity_scale_action_limit
+    if args.contact_frame_outgoing_xy_action_limit is not None:
+        env_kwargs["contact_frame_outgoing_xy_action_limit"] = args.contact_frame_outgoing_xy_action_limit
     if args.contact_frame_intercept_velocity_gain is not None:
         env_kwargs["contact_frame_intercept_velocity_gain"] = args.contact_frame_intercept_velocity_gain
     if args.contact_frame_intercept_velocity_max is not None:
@@ -1251,6 +1257,22 @@ def main() -> None:
                         "applied_action_4_tilt_roll": (
                             None if applied_action is None or applied_action.size <= 4 else float(applied_action[4])
                         ),
+                        "applied_action_5_vz_scale": (
+                            None if applied_action is None or applied_action.size <= 5 else float(applied_action[5])
+                        ),
+                        "applied_action_6_outgoing_x_residual": (
+                            None if applied_action is None or applied_action.size <= 6 else float(applied_action[6])
+                        ),
+                        "applied_action_7_outgoing_y_residual": (
+                            None if applied_action is None or applied_action.size <= 7 else float(applied_action[7])
+                        ),
+                        "contact_frame_vz_scale": info.get("contact_frame_vz_scale"),
+                        "contact_frame_outgoing_x_residual_action": info.get(
+                            "contact_frame_outgoing_x_residual_action"
+                        ),
+                        "contact_frame_outgoing_y_residual_action": info.get(
+                            "contact_frame_outgoing_y_residual_action"
+                        ),
                         "contact_ball_position_x": contact_ball_position_x,
                         "contact_ball_position_y": contact_ball_position_y,
                         "contact_ball_position_z": contact_ball_position_z,
@@ -1322,6 +1344,21 @@ def main() -> None:
                         ),
                         "target_velocity_z": (
                             None if info.get("target_velocity") is None else float(info["target_velocity"][2])
+                        ),
+                        "contact_frame_controller_desired_velocity_x": (
+                            None
+                            if info.get("contact_frame_controller_desired_velocity") is None
+                            else float(info["contact_frame_controller_desired_velocity"][0])
+                        ),
+                        "contact_frame_controller_desired_velocity_y": (
+                            None
+                            if info.get("contact_frame_controller_desired_velocity") is None
+                            else float(info["contact_frame_controller_desired_velocity"][1])
+                        ),
+                        "contact_frame_controller_desired_velocity_z": (
+                            None
+                            if info.get("contact_frame_controller_desired_velocity") is None
+                            else float(info["contact_frame_controller_desired_velocity"][2])
                         ),
                         "contact_frame_intercept_velocity_target_x": (
                             None

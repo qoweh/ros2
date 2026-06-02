@@ -291,6 +291,7 @@ _ENV_PRESETS["contact_frame_planned_intercept_candidate"] = {
 
 _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     **_ENV_PRESETS["contact_frame_planned_intercept_candidate"],
+    "action_mode": "position_contact_frame_velocity_residual",
     "scene_path": "assets/scene.xml",
     "n_envs": 4,
     "batch_size": 512,
@@ -336,6 +337,8 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_velocity_lead_max": 0.025,
     "contact_frame_velocity_target_gain": 1.00,
     "contact_frame_velocity_target_max": 2.9,
+    "contact_frame_velocity_scale_action_limit": 0.35,
+    "contact_frame_outgoing_xy_action_limit": 0.35,
     "contact_frame_followthrough_max": 0.055,
     "contact_frame_trajectory_tilt_gain": 0.70,
     "contact_frame_trajectory_tilt_limit": (0.05, 0.05),
@@ -519,6 +522,8 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_velocity_lead_max": None,
     "contact_frame_velocity_target_gain": None,
     "contact_frame_velocity_target_max": None,
+    "contact_frame_velocity_scale_action_limit": None,
+    "contact_frame_outgoing_xy_action_limit": None,
     "contact_frame_intercept_velocity_gain": None,
     "contact_frame_intercept_velocity_max": None,
     "contact_frame_intercept_velocity_time_floor": None,
@@ -707,6 +712,7 @@ def parse_args() -> argparse.Namespace:
             "position_strike_tilt",
             "position_strike_tilt_lift",
             "position_contact_frame",
+            "position_contact_frame_velocity_residual",
         ),
     )
     parser.add_argument(
@@ -861,6 +867,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-velocity-lead-max", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-gain", type=float, default=None)
     parser.add_argument("--contact-frame-velocity-target-max", type=float, default=None)
+    parser.add_argument("--contact-frame-velocity-scale-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-outgoing-xy-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
@@ -1229,7 +1237,13 @@ def build_checkpoint_dir(run_dir: Path) -> Path:
 
 
 def resolve_tilt_profile(args: argparse.Namespace) -> str:
-    if args.action_mode not in ("position_tilt", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"):
+    if args.action_mode not in (
+        "position_tilt",
+        "position_strike_tilt",
+        "position_strike_tilt_lift",
+        "position_contact_frame",
+        "position_contact_frame_velocity_residual",
+    ):
         if args.tracking_during_contact_scale is None:
             args.tracking_during_contact_scale = 0.0
         return "disabled"
@@ -1255,7 +1269,18 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
 
 
 def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
-    if args.action_mode not in ("position_tilt", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame") or args.tilt_action_limit is None or args.target_tilt_limit is None:
+    if (
+        args.action_mode
+        not in (
+            "position_tilt",
+            "position_strike_tilt",
+            "position_strike_tilt_lift",
+            "position_contact_frame",
+            "position_contact_frame_velocity_residual",
+        )
+        or args.tilt_action_limit is None
+        or args.target_tilt_limit is None
+    ):
         return None
     return float(args.tilt_action_limit / max(min(args.target_tilt_limit), 1.0e-6))
 
@@ -1360,6 +1385,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_velocity_target_gain"] = args.contact_frame_velocity_target_gain
     if args.contact_frame_velocity_target_max is not None:
         env_kwargs["contact_frame_velocity_target_max"] = args.contact_frame_velocity_target_max
+    if args.contact_frame_velocity_scale_action_limit is not None:
+        env_kwargs["contact_frame_velocity_scale_action_limit"] = args.contact_frame_velocity_scale_action_limit
+    if args.contact_frame_outgoing_xy_action_limit is not None:
+        env_kwargs["contact_frame_outgoing_xy_action_limit"] = args.contact_frame_outgoing_xy_action_limit
     if args.contact_frame_intercept_velocity_gain is not None:
         env_kwargs["contact_frame_intercept_velocity_gain"] = args.contact_frame_intercept_velocity_gain
     if args.contact_frame_intercept_velocity_max is not None:
@@ -1645,9 +1674,17 @@ def collect_heuristic_bootstrap_dataset(
             "observations": np.empty((0, 0), dtype=np.float32),
             "actions": np.empty((0, 0), dtype=np.float32),
         }
-    if env_kwargs.get("action_mode") not in {"position_strike", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"}:
+    if env_kwargs.get("action_mode") not in {
+        "position_strike",
+        "position_strike_tilt",
+        "position_strike_tilt_lift",
+        "position_contact_frame",
+        "position_contact_frame_velocity_residual",
+    }:
         raise ValueError(
-            "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', 'position_strike_tilt_lift', or 'position_contact_frame'."
+            "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', "
+            "'position_strike_tilt_lift', 'position_contact_frame', or "
+            "'position_contact_frame_velocity_residual'."
         )
     if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
         raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")

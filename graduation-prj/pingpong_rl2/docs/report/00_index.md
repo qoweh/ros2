@@ -74,3 +74,5 @@
   - `pmk_cf_self_rally_v13`이 너무 빨리 `low_apex_contact`로 끝나는 병목을 분석하고, low-apex recovery memory/reward/feedforward, v14 preset, 학습 직전 검증과 v14 명령을 정리한 보고서
 - `35_v14_lateral_out_of_bounds_and_v15_stability_gate.md`
   - `pmk_cf_self_rally_v14`의 `ball_out_of_bounds`와 next-intercept reachable 하락을 분석하고, apex-progress easy-next-ball gate, lateral stability reward, residual/action logging, v15 preset, 학습 직전 검증과 v15 명령을 정리한 보고서
+- `36_rl_action_ownership_and_8d_residual_plan.md`
+  - v15 기준 RL/hand-coded action ownership을 분해하고, `position_contact_frame_velocity_residual` 8D action mode, v16 preset, 검증 결과와 v16 학습 명령을 정리한 보고서

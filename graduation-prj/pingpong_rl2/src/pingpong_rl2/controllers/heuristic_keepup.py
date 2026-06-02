@@ -8,6 +8,14 @@ import numpy as np
 if TYPE_CHECKING:
     from pingpong_rl2.envs.keepup_env import PingPongKeepUpEnv
 
+_CONTACT_FRAME_ACTION_MODES = ("position_contact_frame", "position_contact_frame_velocity_residual")
+_STRIKE_CONTRACT_ACTION_MODES = (
+    "position_strike",
+    "position_strike_tilt",
+    "position_strike_tilt_lift",
+    *_CONTACT_FRAME_ACTION_MODES,
+)
+
 
 @dataclass(slots=True)
 class HeuristicKeepUpPolicy:
@@ -93,12 +101,12 @@ class HeuristicKeepUpPolicy:
         return float(followup_lift_residual)
 
     def predict(self, env: PingPongKeepUpEnv) -> np.ndarray:
-        if env.action_mode not in ("position_strike", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"):
+        if env.action_mode not in _STRIKE_CONTRACT_ACTION_MODES:
             raise ValueError(
                 "HeuristicKeepUpPolicy requires a strike-contract action mode so it can steer the strike controller."
             )
 
-        if env.action_mode == "position_contact_frame":
+        if env.action_mode in _CONTACT_FRAME_ACTION_MODES:
             base_target = env._contact_frame_action_target_position(np.zeros(3, dtype=float))
         else:
             base_target = env._strike_action_target_position(np.zeros(3, dtype=float))
@@ -122,7 +130,7 @@ class HeuristicKeepUpPolicy:
         desired_target = desired_target + self._position_residual_for_phase(phase_name)
         desired_target = desired_target + self._state_dependent_strike_xy_residual(env, phase_name)
         world_delta = desired_target - base_target
-        if env.action_mode == "position_contact_frame":
+        if env.action_mode in _CONTACT_FRAME_ACTION_MODES:
             radial, tangent, _ = env._contact_frame_basis_xy()
             action = np.array(
                 [
@@ -141,7 +149,9 @@ class HeuristicKeepUpPolicy:
             tilt_residual = self._tilt_residual_for_phase(phase_name)
             followup_lift_residual = np.array([self._followup_lift_residual_for_phase(phase_name)], dtype=float)
             action = np.concatenate([action, tilt_residual, followup_lift_residual])
-        elif env.action_mode == "position_contact_frame":
+        elif env.action_mode in _CONTACT_FRAME_ACTION_MODES:
             tilt_residual = self._tilt_residual_for_phase(phase_name)
             action = np.concatenate([action, tilt_residual])
+            if env.action_mode == "position_contact_frame_velocity_residual":
+                action = np.concatenate([action, np.zeros(3, dtype=float)])
         return np.clip(action, env.action_low, env.action_high)
