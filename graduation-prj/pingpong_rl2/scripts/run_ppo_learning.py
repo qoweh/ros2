@@ -302,13 +302,13 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "reset_ball_height_range": 0.02,
     "lateral_action_limit": 0.02,
     "vertical_action_limit": 0.030,
-    "tilt_action_limit": 0.006,
-    "target_tilt_limit": (0.16, 0.16),
+    "tilt_action_limit": 0.004,
+    "target_tilt_limit": (0.12, 0.12),
     "strike_tilt_ramp_pitch": None,
     "followup_strike_target_tilt": None,
     "contact_frame_base_tilt_residual": None,
     "controller_orientation_gain": 1.10,
-    "controller_max_orientation_step": 0.24,
+    "controller_max_orientation_step": 0.18,
     "controller_velocity_feedback_gain": 0.45,
     "controller_max_velocity_step": 0.065,
     "controller_nullspace_posture_gain": 0.20,
@@ -337,11 +337,11 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_velocity_target_gain": 1.00,
     "contact_frame_velocity_target_max": 2.9,
     "contact_frame_followthrough_max": 0.055,
-    "contact_frame_trajectory_tilt_gain": 1.0,
-    "contact_frame_trajectory_tilt_limit": (0.08, 0.08),
+    "contact_frame_trajectory_tilt_gain": 0.70,
+    "contact_frame_trajectory_tilt_limit": (0.05, 0.05),
     "contact_frame_tilt_ramp_time": 0.35,
-    "contact_frame_centering_tilt_limit": (0.06, 0.06),
-    "contact_frame_centering_tilt_radius": 0.10,
+    "contact_frame_centering_tilt_limit": (0.035, 0.035),
+    "contact_frame_centering_tilt_radius": 0.12,
     "contact_frame_centering_tilt_deadband": 0.008,
     "require_reachable_next_intercept_for_success": True,
     "require_apex_height_window_for_success": True,
@@ -351,22 +351,27 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "low_apex_contact_height_threshold": 0.14,
     "low_apex_contact_grace_count": 3,
     "easy_next_ball_reward_weight": 1.00,
-    "next_intercept_xy_error_penalty_weight": 1.00,
-    "post_contact_lateral_velocity_penalty_weight": 0.45,
+    "next_intercept_xy_error_penalty_weight": 1.35,
+    "post_contact_lateral_velocity_penalty_weight": 0.75,
     "contact_xy_error_penalty_weight": 0.25,
-    "contact_racket_lateral_velocity_penalty_weight": 0.30,
+    "contact_racket_lateral_velocity_penalty_weight": 0.45,
     "contact_racket_lateral_velocity_tolerance": 0.18,
     "max_contact_racket_lateral_speed_for_success": 0.45,
     "nonuseful_contact_penalty_weight": 0.75,
     "contact_apex_under_target_penalty_weight": 0.80,
-    "contact_apex_progress_reward_weight": 0.90,
-    "contact_apex_recovery_progress_reward_weight": 0.70,
-    "stable_contact_reward_weight": 1.40,
-    "stable_cycle_reward_weight": 0.90,
+    "contact_apex_progress_reward_weight": 0.75,
+    "contact_apex_recovery_progress_reward_weight": 0.45,
+    "gate_contact_apex_progress_by_easy_next_ball": True,
+    "contact_apex_progress_min_easy_next_ball_score": 0.35,
+    "contact_lateral_stability_reward_weight": 0.45,
+    "contact_lateral_stability_speed_tolerance": 0.25,
+    "contact_lateral_stability_xy_tolerance": 0.08,
+    "stable_contact_reward_weight": 1.60,
+    "stable_cycle_reward_weight": 1.10,
     "stable_cycle_reward_cap": 4,
     "stable_cycle_min_easy_next_ball_score": 0.45,
     "trajectory_match_reward_weight": 0.55,
-    "trajectory_error_penalty_weight": 0.55,
+    "trajectory_error_penalty_weight": 0.75,
     "reward_contact_quality_on_any_upward_contact": True,
     "bootstrap_heuristic_episodes": 80,
     "bootstrap_min_useful_bounces": 1,
@@ -560,6 +565,11 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_apex_under_target_penalty_weight": None,
     "contact_apex_progress_reward_weight": None,
     "contact_apex_recovery_progress_reward_weight": None,
+    "gate_contact_apex_progress_by_easy_next_ball": False,
+    "contact_apex_progress_min_easy_next_ball_score": None,
+    "contact_lateral_stability_reward_weight": None,
+    "contact_lateral_stability_speed_tolerance": None,
+    "contact_lateral_stability_xy_tolerance": None,
     "stable_contact_reward_weight": None,
     "stable_cycle_reward_weight": None,
     "stable_cycle_reward_cap": 4,
@@ -943,6 +953,35 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Dense reward scale for upward contacts that improve the projected apex after a previous low contact.",
+    )
+    parser.add_argument(
+        "--gate-contact-apex-progress-by-easy-next-ball",
+        action="store_true",
+        help="Scale dense apex progress by easy_next_ball_score so height shaping only helps recoverable keep-up balls.",
+    )
+    parser.add_argument(
+        "--contact-apex-progress-min-easy-next-ball-score",
+        type=float,
+        default=None,
+        help="Optional easy_next_ball_score floor below which apex progress shaping is zeroed.",
+    )
+    parser.add_argument(
+        "--contact-lateral-stability-reward-weight",
+        type=float,
+        default=None,
+        help="Reward scale for upward contacts with low lateral outgoing speed and centered projected apex XY.",
+    )
+    parser.add_argument(
+        "--contact-lateral-stability-speed-tolerance",
+        type=float,
+        default=None,
+        help="Outgoing lateral-speed tolerance used by --contact-lateral-stability-reward-weight.",
+    )
+    parser.add_argument(
+        "--contact-lateral-stability-xy-tolerance",
+        type=float,
+        default=None,
+        help="Projected apex XY tolerance used by --contact-lateral-stability-reward-weight.",
     )
     parser.add_argument(
         "--stable-contact-reward-weight",
@@ -1419,6 +1458,20 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_apex_recovery_progress_reward_weight"] = (
             args.contact_apex_recovery_progress_reward_weight
         )
+    if args.gate_contact_apex_progress_by_easy_next_ball:
+        env_kwargs["gate_contact_apex_progress_by_easy_next_ball"] = True
+    if args.contact_apex_progress_min_easy_next_ball_score is not None:
+        env_kwargs["contact_apex_progress_min_easy_next_ball_score"] = (
+            args.contact_apex_progress_min_easy_next_ball_score
+        )
+    if args.contact_lateral_stability_reward_weight is not None:
+        env_kwargs["contact_lateral_stability_reward_weight"] = args.contact_lateral_stability_reward_weight
+    if args.contact_lateral_stability_speed_tolerance is not None:
+        env_kwargs["contact_lateral_stability_speed_tolerance"] = (
+            args.contact_lateral_stability_speed_tolerance
+        )
+    if args.contact_lateral_stability_xy_tolerance is not None:
+        env_kwargs["contact_lateral_stability_xy_tolerance"] = args.contact_lateral_stability_xy_tolerance
     if args.stable_contact_reward_weight is not None:
         env_kwargs["stable_contact_reward_weight"] = args.stable_contact_reward_weight
     if args.stable_cycle_reward_weight is not None:
@@ -1561,14 +1614,14 @@ def evaluation_sort_key(evaluation: dict[str, object]) -> tuple[float, ...]:
         float(evaluation.get("two_or_more_stable_cycle_rate", 0.0)),
         float(evaluation.get("mean_stable_cycles", 0.0)),
         int(evaluation.get("max_stable_cycles", 0)),
-        float(evaluation.get("three_or_more_useful_bounce_rate", 0.0)),
         -float(failure_counts.get("robot_body_contact", 0)),
         -float(failure_counts.get("floor_contact", 0)),
         -float(failure_counts.get("ball_speed_limit", 0)),
+        -float(failure_counts.get("ball_out_of_bounds", 0)),
+        float(evaluation.get("three_or_more_useful_bounce_rate", 0.0)),
         float(evaluation.get("two_or_more_useful_bounce_rate", 0.0)),
         float(evaluation.get("mean_useful_bounces", 0.0)),
         int(evaluation.get("max_useful_bounces", 0)),
-        -float(failure_counts.get("ball_out_of_bounds", 0)),
         float(evaluation.get("mean_return", 0.0)),
     )
 

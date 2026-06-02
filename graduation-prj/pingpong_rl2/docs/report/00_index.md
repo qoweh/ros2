@@ -72,3 +72,5 @@
   - `pmk_cf_self_rally_v12` 2M 결과의 낮은 apex/불안정 cycle 병목을 분석하고, stable-cycle reward, checkpoint 기준, bootstrap, XML 라켓 물성 수정, 학습 직전 검증과 v13 명령을 정리한 보고서
 - `34_v13_fast_episode_low_apex_recovery_fix.md`
   - `pmk_cf_self_rally_v13`이 너무 빨리 `low_apex_contact`로 끝나는 병목을 분석하고, low-apex recovery memory/reward/feedforward, v14 preset, 학습 직전 검증과 v14 명령을 정리한 보고서
+- `35_v14_lateral_out_of_bounds_and_v15_stability_gate.md`
+  - `pmk_cf_self_rally_v14`의 `ball_out_of_bounds`와 next-intercept reachable 하락을 분석하고, apex-progress easy-next-ball gate, lateral stability reward, residual/action logging, v15 preset, 학습 직전 검증과 v15 명령을 정리한 보고서

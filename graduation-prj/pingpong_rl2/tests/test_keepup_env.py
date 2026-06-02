@@ -45,6 +45,23 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertIn("contact_ball_position_y", info)
         self.assertTrue(np.allclose(info["controller_anchor_position"], env._controller_anchor_position()))
 
+    def test_step_info_exposes_applied_action_norms(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        action = np.array([0.01, -0.005, 0.02, 0.002, -0.003], dtype=float)
+
+        _, _, _, _, info = env.step(action)
+
+        self.assertTrue(np.allclose(info["applied_action"], action))
+        self.assertGreater(float(info["applied_action_norm"]), 0.0)
+        self.assertGreater(float(info["applied_action_normalized_norm"]), 0.0)
+        self.assertGreater(float(info["applied_position_action_norm"]), 0.0)
+        self.assertGreater(float(info["applied_tilt_action_norm"]), 0.0)
+
     def test_observation_includes_racket_velocity_slice(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
         observation, _ = env.reset()
@@ -1397,6 +1414,29 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertLess(low_reward_terms["contact_apex_progress_term"], 0.8)
         self.assertAlmostEqual(target_or_higher_reward_terms["contact_apex_progress_term"], 0.8)
 
+    def test_contact_apex_progress_can_be_gated_by_easy_next_ball(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            gate_contact_apex_progress_by_easy_next_ball=True,
+            contact_apex_progress_min_easy_next_ball_score=0.50,
+        )
+        env.reset(ball_height=env.ball_height)
+        config = env.training_config()
+
+        self.assertTrue(config["gate_contact_apex_progress_by_easy_next_ball"])
+        self.assertAlmostEqual(config["contact_apex_progress_min_easy_next_ball_score"], 0.50)
+        self.assertEqual(env._contact_apex_progress_easy_next_ball_gate({"easy_next_ball_score": 0.40}), 0.0)
+        self.assertAlmostEqual(
+            env._contact_apex_progress_easy_next_ball_gate({"easy_next_ball_score": 0.75}),
+            0.75,
+        )
+        self.assertAlmostEqual(
+            env._contact_apex_progress_easy_next_ball_gate({"easy_next_ball_score": 1.40}),
+            1.0,
+        )
+
     def test_contact_apex_recovery_progress_rewards_improvement_after_low_contact(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",
@@ -1456,6 +1496,37 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertGreater(improved_terms["contact_apex_recovery_progress_term"], 0.0)
         self.assertEqual(worse_terms["contact_apex_recovery_progress_term"], 0.0)
         self.assertEqual(already_recovered_terms["contact_apex_recovery_progress_term"], 0.0)
+
+    def test_contact_lateral_stability_rewards_centered_vertical_contact(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_lateral_stability_reward_weight=0.5,
+            contact_lateral_stability_speed_tolerance=0.25,
+            contact_lateral_stability_xy_tolerance=0.08,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        centered_trace = {
+            "contact_ball_position_x": float(anchor_position[0]),
+            "contact_ball_position_y": float(anchor_position[1]),
+            "contact_ball_velocity_x": 0.02,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": 1.6,
+        }
+        sweeping_trace = {
+            **centered_trace,
+            "contact_ball_velocity_x": 0.50,
+        }
+        off_center_trace = {
+            **centered_trace,
+            "contact_ball_position_x": float(anchor_position[0] + 0.20),
+        }
+
+        self.assertGreater(env._contact_lateral_stability_term(centered_trace), 0.3)
+        self.assertEqual(env._contact_lateral_stability_term(sweeping_trace), 0.0)
+        self.assertEqual(env._contact_lateral_stability_term(off_center_trace), 0.0)
 
     def test_stable_contact_reward_requires_target_apex_and_easy_next_ball(self) -> None:
         env = PingPongKeepUpEnv(

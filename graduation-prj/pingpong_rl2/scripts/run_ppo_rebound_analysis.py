@@ -396,6 +396,13 @@ def summarize_contacts(
             "useful_contact_mean_contact_tangential_relative_speed": 0.0,
             "mean_contact_tangential_relative_ratio": 0.0,
             "useful_contact_mean_contact_tangential_relative_ratio": 0.0,
+            "mean_contact_apex_progress_easy_next_ball_gate": 0.0,
+            "mean_contact_lateral_stability_term": 0.0,
+            "useful_contact_mean_contact_lateral_stability_term": 0.0,
+            "mean_applied_action_normalized_norm": 0.0,
+            "useful_contact_mean_applied_action_normalized_norm": 0.0,
+            "mean_applied_tilt_action_norm": 0.0,
+            "useful_contact_mean_applied_tilt_action_norm": 0.0,
             "mean_consecutive_stable_cycle_count": 0.0,
             "max_consecutive_stable_cycle_count": 0,
             "selected_apex_target": selected_apex_target,
@@ -456,6 +463,13 @@ def summarize_contacts(
     recovery_lift = float_series("contact_frame_low_apex_recovery_lift", contact_rows)
     recovery_velocity = float_series("contact_frame_low_apex_recovery_velocity", contact_rows)
     recovery_progress_term = float_series("contact_apex_recovery_progress_term", contact_rows)
+    apex_progress_gate = float_series("contact_apex_progress_easy_next_ball_gate", contact_rows)
+    lateral_stability_term = float_series("contact_lateral_stability_term", contact_rows)
+    useful_lateral_stability_term = float_series("contact_lateral_stability_term", useful_rows)
+    action_normalized_norm = float_series("applied_action_normalized_norm", contact_rows)
+    useful_action_normalized_norm = float_series("applied_action_normalized_norm", useful_rows)
+    tilt_action_norm = float_series("applied_tilt_action_norm", contact_rows)
+    useful_tilt_action_norm = float_series("applied_tilt_action_norm", useful_rows)
     upward_rows = [
         row
         for row in contact_rows
@@ -581,6 +595,25 @@ def summarize_contacts(
         ),
         "useful_contact_mean_contact_tangential_relative_ratio": (
             float(useful_tangential_relative_ratio.mean()) if useful_tangential_relative_ratio.size else 0.0
+        ),
+        "mean_contact_apex_progress_easy_next_ball_gate": (
+            float(apex_progress_gate.mean()) if apex_progress_gate.size else 0.0
+        ),
+        "mean_contact_lateral_stability_term": (
+            float(lateral_stability_term.mean()) if lateral_stability_term.size else 0.0
+        ),
+        "useful_contact_mean_contact_lateral_stability_term": (
+            float(useful_lateral_stability_term.mean()) if useful_lateral_stability_term.size else 0.0
+        ),
+        "mean_applied_action_normalized_norm": (
+            float(action_normalized_norm.mean()) if action_normalized_norm.size else 0.0
+        ),
+        "useful_contact_mean_applied_action_normalized_norm": (
+            float(useful_action_normalized_norm.mean()) if useful_action_normalized_norm.size else 0.0
+        ),
+        "mean_applied_tilt_action_norm": float(tilt_action_norm.mean()) if tilt_action_norm.size else 0.0,
+        "useful_contact_mean_applied_tilt_action_norm": (
+            float(useful_tilt_action_norm.mean()) if useful_tilt_action_norm.size else 0.0
         ),
         "mean_consecutive_stable_cycle_count": (
             float(consecutive_stable_cycle_count.mean()) if consecutive_stable_cycle_count.size else 0.0
@@ -1161,6 +1194,9 @@ def main() -> None:
                     reward_terms = info.get("reward_terms")
                     if not isinstance(reward_terms, dict):
                         reward_terms = {}
+                    applied_action = None
+                    if info.get("applied_action") is not None:
+                        applied_action = np.asarray(info["applied_action"], dtype=float).reshape(-1)
                     if (
                         selected_apex_target_xy is not None
                         and contact_ball_position_x is not None
@@ -1191,6 +1227,29 @@ def main() -> None:
                         "contact_apex_progress_term": reward_terms.get("contact_apex_progress_term"),
                         "contact_apex_recovery_progress_term": reward_terms.get(
                             "contact_apex_recovery_progress_term"
+                        ),
+                        "contact_apex_progress_easy_next_ball_gate": info.get(
+                            "contact_apex_progress_easy_next_ball_gate"
+                        ),
+                        "contact_lateral_stability_term": reward_terms.get("contact_lateral_stability_term"),
+                        "applied_action_norm": info.get("applied_action_norm"),
+                        "applied_action_normalized_norm": info.get("applied_action_normalized_norm"),
+                        "applied_position_action_norm": info.get("applied_position_action_norm"),
+                        "applied_tilt_action_norm": info.get("applied_tilt_action_norm"),
+                        "applied_action_0_radial": (
+                            None if applied_action is None or applied_action.size <= 0 else float(applied_action[0])
+                        ),
+                        "applied_action_1_tangent": (
+                            None if applied_action is None or applied_action.size <= 1 else float(applied_action[1])
+                        ),
+                        "applied_action_2_z": (
+                            None if applied_action is None or applied_action.size <= 2 else float(applied_action[2])
+                        ),
+                        "applied_action_3_tilt_pitch": (
+                            None if applied_action is None or applied_action.size <= 3 else float(applied_action[3])
+                        ),
+                        "applied_action_4_tilt_roll": (
+                            None if applied_action is None or applied_action.size <= 4 else float(applied_action[4])
                         ),
                         "contact_ball_position_x": contact_ball_position_x,
                         "contact_ball_position_y": contact_ball_position_y,
