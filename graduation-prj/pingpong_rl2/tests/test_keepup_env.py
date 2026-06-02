@@ -1391,6 +1391,80 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         )
         self.assertEqual(env._stable_contact_term(low_contact_trace, next_intercept_metrics), 0.0)
 
+    def test_stable_cycle_observed_requires_useful_height_and_easy_next_intercept(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            stable_cycle_min_easy_next_ball_score=0.45,
+            target_ball_height=0.30,
+            height_tolerance=0.10,
+        )
+        env.reset(ball_height=env.ball_height)
+        target_velocity_z = float(np.sqrt(2.0 * abs(env._gravity_z()) * 0.30))
+        contact_trace = {
+            "contact_ball_height_above_racket": 0.0,
+            "contact_ball_velocity_x": 0.0,
+            "contact_ball_velocity_y": 0.0,
+            "contact_ball_velocity_z": target_velocity_z,
+        }
+
+        self.assertTrue(
+            env._stable_cycle_observed(
+                success_reason="useful_keepup_bounce",
+                contact_event=True,
+                contact_trace=contact_trace,
+                next_intercept_metrics={"reachable": True, "easy_next_ball_score": 0.50},
+            )
+        )
+        self.assertFalse(
+            env._stable_cycle_observed(
+                success_reason="useful_keepup_bounce",
+                contact_event=True,
+                contact_trace=contact_trace,
+                next_intercept_metrics={"reachable": True, "easy_next_ball_score": 0.40},
+            )
+        )
+        self.assertFalse(
+            env._stable_cycle_observed(
+                success_reason=None,
+                contact_event=True,
+                contact_trace=contact_trace,
+                next_intercept_metrics={"reachable": True, "easy_next_ball_score": 0.50},
+            )
+        )
+
+    def test_stable_cycle_state_and_reward_scale_with_streak(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            stable_cycle_reward_weight=0.8,
+            stable_cycle_reward_cap=3,
+        )
+        env.reset(ball_height=env.ball_height)
+
+        env._update_stable_cycle_state(contact_event=True, stable_cycle_observed=True)
+        self.assertEqual(env.stable_cycle_count, 1)
+        self.assertEqual(env._consecutive_stable_cycle_count, 1)
+        self.assertAlmostEqual(
+            env._stable_cycle_term(stable_cycle_observed=True, consecutive_stable_cycle_count=1),
+            0.8,
+        )
+
+        env._update_stable_cycle_state(contact_event=True, stable_cycle_observed=True)
+        self.assertEqual(env.stable_cycle_count, 2)
+        self.assertEqual(env._consecutive_stable_cycle_count, 2)
+        self.assertAlmostEqual(
+            env._stable_cycle_term(stable_cycle_observed=True, consecutive_stable_cycle_count=2),
+            1.2,
+        )
+
+        env._update_stable_cycle_state(contact_event=True, stable_cycle_observed=False)
+        self.assertEqual(env.stable_cycle_count, 2)
+        self.assertEqual(env._consecutive_stable_cycle_count, 0)
+        self.assertEqual(env._stable_cycle_term(stable_cycle_observed=False), 0.0)
+
     def test_apex_gate_removes_easy_next_ball_reward_from_low_nonuseful_contact(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",

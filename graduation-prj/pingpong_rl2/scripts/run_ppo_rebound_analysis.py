@@ -361,6 +361,8 @@ def summarize_contacts(
         summary = {
             "total_contacts": 0,
             "useful_contact_rate": 0.0,
+            "stable_cycle_contact_rate": 0.0,
+            "useful_contact_stable_cycle_rate": 0.0,
             "mean_ball_lateral_speed": 0.0,
             "mean_ball_lateral_to_vertical_ratio": 0.0,
             "mean_projected_contact_apex_height_above_racket": 0.0,
@@ -394,6 +396,8 @@ def summarize_contacts(
             "useful_contact_mean_contact_tangential_relative_speed": 0.0,
             "mean_contact_tangential_relative_ratio": 0.0,
             "useful_contact_mean_contact_tangential_relative_ratio": 0.0,
+            "mean_consecutive_stable_cycle_count": 0.0,
+            "max_consecutive_stable_cycle_count": 0,
             "selected_apex_target": selected_apex_target,
             "next_intercept_target_source": "controller_anchor",
         }
@@ -418,6 +422,7 @@ def summarize_contacts(
         return float(sum(values) / len(values))
 
     useful_rows = [row for row in contact_rows if bool(row.get("is_useful_contact", False))]
+    stable_cycle_rows = [row for row in contact_rows if bool(row.get("stable_cycle_observed", False))]
     ball_lateral_speed = float_series("ball_lateral_speed", contact_rows)
     ball_lateral_ratio = float_series("ball_lateral_to_vertical_ratio", contact_rows)
     useful_lateral_speed = float_series("ball_lateral_speed", useful_rows)
@@ -446,6 +451,7 @@ def summarize_contacts(
     useful_tangential_relative_speed = float_series("contact_tangential_relative_speed", useful_rows)
     tangential_relative_ratio = float_series("contact_tangential_relative_ratio", contact_rows)
     useful_tangential_relative_ratio = float_series("contact_tangential_relative_ratio", useful_rows)
+    consecutive_stable_cycle_count = float_series("consecutive_stable_cycle_count", contact_rows)
     upward_rows = [
         row
         for row in contact_rows
@@ -463,6 +469,8 @@ def summarize_contacts(
     summary = {
         "total_contacts": len(contact_rows),
         "useful_contact_rate": len(useful_rows) / len(contact_rows),
+        "stable_cycle_contact_rate": len(stable_cycle_rows) / len(contact_rows),
+        "useful_contact_stable_cycle_rate": true_rate("stable_cycle_observed", useful_rows),
         "selected_apex_target": selected_apex_target,
         "next_intercept_target_source": "controller_anchor",
         "mean_ball_lateral_speed": float(ball_lateral_speed.mean()) if ball_lateral_speed.size else 0.0,
@@ -555,6 +563,12 @@ def summarize_contacts(
         ),
         "useful_contact_mean_contact_tangential_relative_ratio": (
             float(useful_tangential_relative_ratio.mean()) if useful_tangential_relative_ratio.size else 0.0
+        ),
+        "mean_consecutive_stable_cycle_count": (
+            float(consecutive_stable_cycle_count.mean()) if consecutive_stable_cycle_count.size else 0.0
+        ),
+        "max_consecutive_stable_cycle_count": (
+            int(consecutive_stable_cycle_count.max()) if consecutive_stable_cycle_count.size else 0
         ),
     }
     if compare_apex_targets:
@@ -1015,6 +1029,7 @@ def main() -> None:
     contact_rows: list[dict[str, object]] = []
     returns: list[float] = []
     useful_bounces: list[int] = []
+    stable_cycles: list[int] = []
     failure_counts: Counter[str] = Counter()
     robot_body_contact_counts: Counter[str] = Counter()
 
@@ -1125,6 +1140,9 @@ def main() -> None:
                         racket_velocity=racket_velocity,
                         racket_face_normal=racket_face_normal,
                     )
+                    reward_terms = info.get("reward_terms")
+                    if not isinstance(reward_terms, dict):
+                        reward_terms = {}
                     if (
                         selected_apex_target_xy is not None
                         and contact_ball_position_x is not None
@@ -1147,6 +1165,11 @@ def main() -> None:
                         "contact_index": contact_count,
                         "success_reason": info.get("success_reason"),
                         "is_useful_contact": info.get("success_reason") == "useful_keepup_bounce",
+                        "stable_cycle_observed": info.get("stable_cycle_observed"),
+                        "stable_cycle_count": info.get("stable_cycle_count"),
+                        "consecutive_stable_cycle_count": info.get("consecutive_stable_cycle_count"),
+                        "stable_contact_term": reward_terms.get("stable_contact_term"),
+                        "stable_cycle_term": reward_terms.get("stable_cycle_term"),
                         "contact_ball_position_x": contact_ball_position_x,
                         "contact_ball_position_y": contact_ball_position_y,
                         "contact_ball_position_z": contact_ball_position_z,
@@ -1307,6 +1330,7 @@ def main() -> None:
                     break
 
             useful_bounce_count = int(info.get("successful_bounce_count", 0))
+            stable_cycle_count = int(info.get("stable_cycle_count", useful_bounce_count))
             failure_reason = info.get("failure_reason")
             if failure_reason is None:
                 failure_reason = "time_limit" if bool(info.get("truncated", False)) else "none"
@@ -1316,6 +1340,7 @@ def main() -> None:
                 robot_body_contact_counts[str(robot_body_contact_name or "unknown")] += 1
             returns.append(episode_return)
             useful_bounces.append(useful_bounce_count)
+            stable_cycles.append(stable_cycle_count)
             episode_rows.append(
                 {
                     "episode": episode,
@@ -1324,6 +1349,7 @@ def main() -> None:
                     "contact_count": contact_count,
                     "first_contact_step": first_contact_step,
                     "useful_bounces": useful_bounce_count,
+                    "stable_cycles": stable_cycle_count,
                     "failure_reason": failure_reason,
                     "robot_body_contact_name": robot_body_contact_name,
                 }
@@ -1337,6 +1363,7 @@ def main() -> None:
 
     returns_array = np.asarray(returns, dtype=float)
     bounce_array = np.asarray(useful_bounces, dtype=float)
+    stable_cycle_array = np.asarray(stable_cycles, dtype=float)
     summary = {
         "model_path": str(model_path.resolve()),
         "run_name": run_name,
@@ -1345,6 +1372,8 @@ def main() -> None:
         "mean_return": float(returns_array.mean()) if returns_array.size else 0.0,
         "mean_useful_bounces": float(bounce_array.mean()) if bounce_array.size else 0.0,
         "max_useful_bounces": int(bounce_array.max()) if bounce_array.size else 0,
+        "mean_stable_cycles": float(stable_cycle_array.mean()) if stable_cycle_array.size else 0.0,
+        "max_stable_cycles": int(stable_cycle_array.max()) if stable_cycle_array.size else 0,
         "episodes_with_one_or_more_useful_bounces": int(np.count_nonzero(bounce_array >= 1.0)) if bounce_array.size else 0,
         "one_or_more_useful_bounce_rate": (
             float(np.count_nonzero(bounce_array >= 1.0) / bounce_array.size) if bounce_array.size else 0.0
@@ -1352,6 +1381,31 @@ def main() -> None:
         "episodes_with_two_or_more_useful_bounces": int(np.count_nonzero(bounce_array >= 2.0)) if bounce_array.size else 0,
         "two_or_more_useful_bounce_rate": (
             float(np.count_nonzero(bounce_array >= 2.0) / bounce_array.size) if bounce_array.size else 0.0
+        ),
+        "episodes_with_three_or_more_useful_bounces": int(np.count_nonzero(bounce_array >= 3.0)) if bounce_array.size else 0,
+        "three_or_more_useful_bounce_rate": (
+            float(np.count_nonzero(bounce_array >= 3.0) / bounce_array.size) if bounce_array.size else 0.0
+        ),
+        "episodes_with_one_or_more_stable_cycles": (
+            int(np.count_nonzero(stable_cycle_array >= 1.0)) if stable_cycle_array.size else 0
+        ),
+        "one_or_more_stable_cycle_rate": (
+            float(np.count_nonzero(stable_cycle_array >= 1.0) / stable_cycle_array.size)
+            if stable_cycle_array.size else 0.0
+        ),
+        "episodes_with_two_or_more_stable_cycles": (
+            int(np.count_nonzero(stable_cycle_array >= 2.0)) if stable_cycle_array.size else 0
+        ),
+        "two_or_more_stable_cycle_rate": (
+            float(np.count_nonzero(stable_cycle_array >= 2.0) / stable_cycle_array.size)
+            if stable_cycle_array.size else 0.0
+        ),
+        "episodes_with_three_or_more_stable_cycles": (
+            int(np.count_nonzero(stable_cycle_array >= 3.0)) if stable_cycle_array.size else 0
+        ),
+        "three_or_more_stable_cycle_rate": (
+            float(np.count_nonzero(stable_cycle_array >= 3.0) / stable_cycle_array.size)
+            if stable_cycle_array.size else 0.0
         ),
         "failure_counts": dict(failure_counts),
         "robot_body_contact_counts": dict(robot_body_contact_counts),

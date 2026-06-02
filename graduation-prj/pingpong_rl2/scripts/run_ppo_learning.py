@@ -294,8 +294,8 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "scene_path": "assets/scene.xml",
     "n_envs": 4,
     "batch_size": 512,
-    "checkpoint_interval": 0,
-    "checkpoint_eval_episodes": 20,
+    "checkpoint_interval": 100_000,
+    "checkpoint_eval_episodes": 40,
     "early_stop_patience_evals": 0,
     "ball_height": 0.34,
     "target_ball_height": 0.30,
@@ -309,8 +309,8 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_base_tilt_residual": None,
     "controller_orientation_gain": 1.10,
     "controller_max_orientation_step": 0.24,
-    "controller_velocity_feedback_gain": 0.40,
-    "controller_max_velocity_step": 0.060,
+    "controller_velocity_feedback_gain": 0.45,
+    "controller_max_velocity_step": 0.065,
     "controller_nullspace_posture_gain": 0.20,
     "controller_nullspace_posture_max_step": 0.010,
     "controller_body_clearance_gain": 0.75,
@@ -324,14 +324,14 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "contact_frame_planner_max_intercept_time": 0.60,
     "contact_frame_strike_hold_time": 0.05,
     "contact_frame_strike_hold_min_readiness": 0.60,
-    "contact_frame_base_strike_z_boost": 0.026,
+    "contact_frame_base_strike_z_boost": 0.028,
     "contact_frame_base_strike_z_offset": 0.010,
-    "contact_frame_apex_lift_gain": 0.09,
-    "contact_frame_apex_lift_max": 0.085,
+    "contact_frame_apex_lift_gain": 0.10,
+    "contact_frame_apex_lift_max": 0.095,
     "contact_frame_velocity_lead_gain": 0.04,
     "contact_frame_velocity_lead_max": 0.025,
     "contact_frame_velocity_target_gain": 1.00,
-    "contact_frame_velocity_target_max": 2.6,
+    "contact_frame_velocity_target_max": 2.7,
     "contact_frame_followthrough_max": 0.055,
     "contact_frame_trajectory_tilt_gain": 1.0,
     "contact_frame_trajectory_tilt_limit": (0.08, 0.08),
@@ -344,25 +344,36 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "min_easy_next_ball_score_for_success": 0.45,
     "gate_nonuseful_easy_next_ball_by_apex": True,
     "terminate_on_low_apex_contact": True,
-    "low_apex_contact_height_threshold": 0.18,
-    "low_apex_contact_grace_count": 2,
+    "low_apex_contact_height_threshold": 0.20,
+    "low_apex_contact_grace_count": 1,
     "easy_next_ball_reward_weight": 1.00,
-    "next_intercept_xy_error_penalty_weight": 0.90,
-    "post_contact_lateral_velocity_penalty_weight": 0.35,
+    "next_intercept_xy_error_penalty_weight": 1.00,
+    "post_contact_lateral_velocity_penalty_weight": 0.45,
     "contact_xy_error_penalty_weight": 0.25,
     "contact_racket_lateral_velocity_penalty_weight": 0.30,
     "contact_racket_lateral_velocity_tolerance": 0.18,
     "max_contact_racket_lateral_speed_for_success": 0.45,
     "nonuseful_contact_penalty_weight": 0.75,
-    "contact_apex_under_target_penalty_weight": 0.65,
-    "contact_apex_progress_reward_weight": 0.55,
-    "stable_contact_reward_weight": 1.20,
+    "contact_apex_under_target_penalty_weight": 0.80,
+    "contact_apex_progress_reward_weight": 0.90,
+    "stable_contact_reward_weight": 1.40,
+    "stable_cycle_reward_weight": 0.80,
+    "stable_cycle_reward_cap": 4,
+    "stable_cycle_min_easy_next_ball_score": 0.45,
     "trajectory_match_reward_weight": 0.55,
     "trajectory_error_penalty_weight": 0.55,
     "reward_contact_quality_on_any_upward_contact": True,
-    "bootstrap_heuristic_episodes": 0,
-    "bootstrap_epochs": 0,
-    "bootstrap_followup_epochs": 0,
+    "bootstrap_heuristic_episodes": 80,
+    "bootstrap_min_useful_bounces": 1,
+    "bootstrap_max_samples": 3_000,
+    "bootstrap_epochs": 20,
+    "bootstrap_batch_size": 256,
+    "bootstrap_learning_rate": 5.0e-5,
+    "bootstrap_sample_mode": "post_success",
+    "bootstrap_followup_epochs": 10,
+    "bootstrap_followup_sample_mode": "post_success_reachable",
+    "bootstrap_followup_min_useful_bounces": 2,
+    "bootstrap_followup_learning_rate": 3.0e-5,
 }
 
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
@@ -540,6 +551,9 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_apex_under_target_penalty_weight": None,
     "contact_apex_progress_reward_weight": None,
     "stable_contact_reward_weight": None,
+    "stable_cycle_reward_weight": None,
+    "stable_cycle_reward_cap": 4,
+    "stable_cycle_min_easy_next_ball_score": None,
     "log_std_init": None,
     "zero_init_action_mean": False,
 }
@@ -915,6 +929,24 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Reward scale for contacts that combine target apex height with an easy next descending intercept.",
+    )
+    parser.add_argument(
+        "--stable-cycle-reward-weight",
+        type=float,
+        default=None,
+        help="Additional reward scale for consecutive useful contacts that keep target apex and an easy next intercept.",
+    )
+    parser.add_argument(
+        "--stable-cycle-reward-cap",
+        type=int,
+        default=4,
+        help="Maximum consecutive stable-cycle count used to scale --stable-cycle-reward-weight.",
+    )
+    parser.add_argument(
+        "--stable-cycle-min-easy-next-ball-score",
+        type=float,
+        default=None,
+        help="Minimum easy_next_ball_score required before a useful contact counts as a stable cycle.",
     )
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
@@ -1353,6 +1385,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_apex_progress_reward_weight"] = args.contact_apex_progress_reward_weight
     if args.stable_contact_reward_weight is not None:
         env_kwargs["stable_contact_reward_weight"] = args.stable_contact_reward_weight
+    if args.stable_cycle_reward_weight is not None:
+        env_kwargs["stable_cycle_reward_weight"] = args.stable_cycle_reward_weight
+    if args.stable_cycle_reward_cap != 4 or args.stable_cycle_reward_weight is not None:
+        env_kwargs["stable_cycle_reward_cap"] = args.stable_cycle_reward_cap
+    if args.stable_cycle_min_easy_next_ball_score is not None:
+        env_kwargs["stable_cycle_min_easy_next_ball_score"] = args.stable_cycle_min_easy_next_ball_score
     if args.post_contact_return_assist_weight is not None:
         env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
     if args.post_contact_return_max_intercept_time is not None:
@@ -1412,6 +1450,7 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
     env = PingPongKeepUpGymEnv(**env_kwargs)
     returns: list[float] = []
     useful_bounces: list[int] = []
+    stable_cycles: list[int] = []
     failure_counts: Counter[str] = Counter()
     for episode_index in range(episodes):
         observation, _ = env.reset(seed=seed + episode_index)
@@ -1425,6 +1464,7 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
                 break
         returns.append(episode_return)
         useful_bounces.append(int(info.get("successful_bounce_count", 0)))
+        stable_cycles.append(int(info.get("stable_cycle_count", info.get("successful_bounce_count", 0))))
         failure_reason = info.get("failure_reason")
         if failure_reason is None:
             failure_reason = "time_limit" if bool(info.get("truncated", False)) else "none"
@@ -1432,9 +1472,19 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
     env.close()
     returns_array = np.asarray(returns, dtype=float)
     bounce_array = np.asarray(useful_bounces, dtype=float)
+    stable_cycle_array = np.asarray(stable_cycles, dtype=float)
     one_or_more_useful = int(np.count_nonzero(bounce_array >= 1.0)) if bounce_array.size else 0
     two_or_more_useful = int(np.count_nonzero(bounce_array >= 2.0)) if bounce_array.size else 0
     three_or_more_useful = int(np.count_nonzero(bounce_array >= 3.0)) if bounce_array.size else 0
+    one_or_more_stable_cycles = (
+        int(np.count_nonzero(stable_cycle_array >= 1.0)) if stable_cycle_array.size else 0
+    )
+    two_or_more_stable_cycles = (
+        int(np.count_nonzero(stable_cycle_array >= 2.0)) if stable_cycle_array.size else 0
+    )
+    three_or_more_stable_cycles = (
+        int(np.count_nonzero(stable_cycle_array >= 3.0)) if stable_cycle_array.size else 0
+    )
     ball_out_of_bounds_count = int(failure_counts.get("ball_out_of_bounds", 0))
     floor_contact_count = int(failure_counts.get("floor_contact", 0))
     robot_body_contact_count = int(failure_counts.get("robot_body_contact", 0))
@@ -1444,12 +1494,20 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
         "mean_return": float(returns_array.mean()) if returns_array.size else 0.0,
         "mean_useful_bounces": float(bounce_array.mean()) if bounce_array.size else 0.0,
         "max_useful_bounces": int(bounce_array.max()) if bounce_array.size else 0,
+        "mean_stable_cycles": float(stable_cycle_array.mean()) if stable_cycle_array.size else 0.0,
+        "max_stable_cycles": int(stable_cycle_array.max()) if stable_cycle_array.size else 0,
         "episodes_with_one_or_more_useful_bounces": one_or_more_useful,
         "one_or_more_useful_bounce_rate": (one_or_more_useful / episodes) if episodes > 0 else 0.0,
         "episodes_with_two_or_more_useful_bounces": two_or_more_useful,
         "two_or_more_useful_bounce_rate": (two_or_more_useful / episodes) if episodes > 0 else 0.0,
         "episodes_with_three_or_more_useful_bounces": three_or_more_useful,
         "three_or_more_useful_bounce_rate": (three_or_more_useful / episodes) if episodes > 0 else 0.0,
+        "episodes_with_one_or_more_stable_cycles": one_or_more_stable_cycles,
+        "one_or_more_stable_cycle_rate": (one_or_more_stable_cycles / episodes) if episodes > 0 else 0.0,
+        "episodes_with_two_or_more_stable_cycles": two_or_more_stable_cycles,
+        "two_or_more_stable_cycle_rate": (two_or_more_stable_cycles / episodes) if episodes > 0 else 0.0,
+        "episodes_with_three_or_more_stable_cycles": three_or_more_stable_cycles,
+        "three_or_more_stable_cycle_rate": (three_or_more_stable_cycles / episodes) if episodes > 0 else 0.0,
         "ball_out_of_bounds_rate": (ball_out_of_bounds_count / episodes) if episodes > 0 else 0.0,
         "floor_contact_rate": (floor_contact_count / episodes) if episodes > 0 else 0.0,
         "robot_body_contact_rate": (robot_body_contact_count / episodes) if episodes > 0 else 0.0,
@@ -1463,6 +1521,10 @@ def evaluation_sort_key(evaluation: dict[str, object]) -> tuple[float, ...]:
     if not isinstance(failure_counts, dict):
         failure_counts = {}
     return (
+        float(evaluation.get("three_or_more_stable_cycle_rate", 0.0)),
+        float(evaluation.get("two_or_more_stable_cycle_rate", 0.0)),
+        float(evaluation.get("mean_stable_cycles", 0.0)),
+        int(evaluation.get("max_stable_cycles", 0)),
         float(evaluation.get("three_or_more_useful_bounce_rate", 0.0)),
         -float(failure_counts.get("robot_body_contact", 0)),
         -float(failure_counts.get("floor_contact", 0)),
@@ -1745,6 +1807,7 @@ def save_periodic_checkpoints(
 
 def main() -> None:
     args = parse_args()
+    resolved_preset = apply_env_preset(args)
     if args.smoke:
         args.total_timesteps = SMOKE_PPO_TOTAL_TIMESTEPS
         args.n_steps = SMOKE_PPO_N_STEPS
@@ -1758,7 +1821,10 @@ def main() -> None:
             args.eval_episodes = 2
         if args.bootstrap_heuristic_episodes > 12:
             args.bootstrap_heuristic_episodes = 12
-    resolved_preset = apply_env_preset(args)
+        if args.bootstrap_epochs > 2:
+            args.bootstrap_epochs = 2
+        if args.bootstrap_followup_epochs > 1:
+            args.bootstrap_followup_epochs = 1
     resolved_run_name = resolve_requested_run_name(
         args.run_name,
         args.run_version,
@@ -1994,8 +2060,12 @@ def main() -> None:
         f"mean_return={evaluation['mean_return']:.3f} "
         f"mean_useful_bounces={evaluation['mean_useful_bounces']:.3f} "
         f"max_useful_bounces={evaluation['max_useful_bounces']} "
+        f"mean_stable_cycles={evaluation['mean_stable_cycles']:.3f} "
+        f"max_stable_cycles={evaluation['max_stable_cycles']} "
         f"two_or_more_rate={evaluation['two_or_more_useful_bounce_rate']:.3f} "
-        f"three_or_more_rate={evaluation['three_or_more_useful_bounce_rate']:.3f}"
+        f"three_or_more_rate={evaluation['three_or_more_useful_bounce_rate']:.3f} "
+        f"stable_two_or_more_rate={evaluation['two_or_more_stable_cycle_rate']:.3f} "
+        f"stable_three_or_more_rate={evaluation['three_or_more_stable_cycle_rate']:.3f}"
     )
 
 

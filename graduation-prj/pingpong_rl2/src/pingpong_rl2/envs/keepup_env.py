@@ -259,6 +259,9 @@ class PingPongKeepUpEnv:
         contact_apex_under_target_penalty_weight: float = 0.0,
         contact_apex_progress_reward_weight: float = 0.0,
         stable_contact_reward_weight: float = 0.0,
+        stable_cycle_reward_weight: float = 0.0,
+        stable_cycle_reward_cap: int = 4,
+        stable_cycle_min_easy_next_ball_score: float | None = None,
     ) -> None:
         if sim is not None and scene_path is not None:
             raise ValueError("scene_path can only be provided when sim is None.")
@@ -454,6 +457,13 @@ class PingPongKeepUpEnv:
         self.contact_apex_under_target_penalty_weight = float(contact_apex_under_target_penalty_weight)
         self.contact_apex_progress_reward_weight = float(contact_apex_progress_reward_weight)
         self.stable_contact_reward_weight = float(stable_contact_reward_weight)
+        self.stable_cycle_reward_weight = float(stable_cycle_reward_weight)
+        self.stable_cycle_reward_cap = int(stable_cycle_reward_cap)
+        self.stable_cycle_min_easy_next_ball_score = (
+            None
+            if stable_cycle_min_easy_next_ball_score is None
+            else float(stable_cycle_min_easy_next_ball_score)
+        )
         if self.action_mode not in _ACTION_MODES:
             raise ValueError(f"action_mode must be one of {_ACTION_MODES}, got {self.action_mode!r}.")
         if self.contact_oracle_mode not in _CONTACT_ORACLE_MODES:
@@ -929,6 +939,19 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 f"stable_contact_reward_weight must be non-negative, got {self.stable_contact_reward_weight}."
             )
+        if self.stable_cycle_reward_weight < 0.0:
+            raise ValueError(
+                f"stable_cycle_reward_weight must be non-negative, got {self.stable_cycle_reward_weight}."
+            )
+        if self.stable_cycle_reward_cap < 1:
+            raise ValueError(f"stable_cycle_reward_cap must be positive, got {self.stable_cycle_reward_cap}.")
+        if self.stable_cycle_min_easy_next_ball_score is not None and not np.isfinite(
+            self.stable_cycle_min_easy_next_ball_score
+        ):
+            raise ValueError(
+                "stable_cycle_min_easy_next_ball_score must be finite when provided, got "
+                f"{self.stable_cycle_min_easy_next_ball_score}."
+            )
         if self.strike_tilt_ramp_xy_tolerance < 0.0:
             raise ValueError(
                 "strike_tilt_ramp_xy_tolerance must be non-negative, got "
@@ -1026,6 +1049,8 @@ class PingPongKeepUpEnv:
         self.step_count = 0
         self.contact_count = 0
         self.successful_bounce_count = 0
+        self.stable_cycle_count = 0
+        self._consecutive_stable_cycle_count = 0
         self._consecutive_low_apex_contact_count = 0
         self._last_contact_step: int | None = None
         self._contact_active_previous_step = False
@@ -1113,6 +1138,8 @@ class PingPongKeepUpEnv:
         self.step_count = 0
         self.contact_count = 0
         self.successful_bounce_count = 0
+        self.stable_cycle_count = 0
+        self._consecutive_stable_cycle_count = 0
         self._consecutive_low_apex_contact_count = 0
         self._last_contact_step = None
         self._contact_active_previous_step = False
@@ -1122,6 +1149,8 @@ class PingPongKeepUpEnv:
         info: dict[str, object] = {
             "contact_count": self.contact_count,
             "successful_bounce_count": self.successful_bounce_count,
+            "stable_cycle_count": self.stable_cycle_count,
+            "consecutive_stable_cycle_count": self._consecutive_stable_cycle_count,
             "step_count": self.step_count,
             "target_position": self.controller.target_position,
             "target_tilt": self.controller.target_tilt,
@@ -1215,6 +1244,16 @@ class PingPongKeepUpEnv:
         if failure_reason is None and self.terminate_on_nonuseful_contact and contact_event and success_reason is None:
             failure_reason = "nonuseful_contact"
         next_intercept_metrics = self._next_intercept_metrics()
+        stable_cycle_observed = self._stable_cycle_observed(
+            success_reason=success_reason,
+            contact_event=contact_event,
+            contact_trace=contact_trace,
+            next_intercept_metrics=next_intercept_metrics,
+        )
+        self._update_stable_cycle_state(
+            contact_event=contact_event,
+            stable_cycle_observed=stable_cycle_observed,
+        )
         phase_name = self._phase_name()
 
         reward_terms = self._reward_terms(
@@ -1225,6 +1264,8 @@ class PingPongKeepUpEnv:
             applied_action,
             contact_trace,
             outgoing_trajectory_metrics,
+            stable_cycle_observed=stable_cycle_observed,
+            consecutive_stable_cycle_count=self._consecutive_stable_cycle_count,
         )
         reward = float(sum(reward_terms.values()))
         terminated = failure_reason is not None
@@ -1240,6 +1281,10 @@ class PingPongKeepUpEnv:
             "low_apex_contact_failure": low_apex_contact_failure,
             "low_apex_contact_height_threshold": self._low_apex_contact_height_threshold(),
             "consecutive_low_apex_contact_count": self._consecutive_low_apex_contact_count,
+            "stable_cycle_observed": stable_cycle_observed,
+            "stable_cycle_count": self.stable_cycle_count,
+            "consecutive_stable_cycle_count": self._consecutive_stable_cycle_count,
+            "stable_cycle_min_easy_next_ball_score": self.stable_cycle_min_easy_next_ball_score,
             "episode_success_reason": episode_success_reason,
             "reward_terms": reward_terms,
             "contact_event_during_step": contact_event,
@@ -1541,6 +1586,9 @@ class PingPongKeepUpEnv:
             "contact_apex_under_target_penalty_weight": self.contact_apex_under_target_penalty_weight,
             "contact_apex_progress_reward_weight": self.contact_apex_progress_reward_weight,
             "stable_contact_reward_weight": self.stable_contact_reward_weight,
+            "stable_cycle_reward_weight": self.stable_cycle_reward_weight,
+            "stable_cycle_reward_cap": self.stable_cycle_reward_cap,
+            "stable_cycle_min_easy_next_ball_score": self.stable_cycle_min_easy_next_ball_score,
         }
 
     def close(self) -> None:
@@ -2327,6 +2375,63 @@ class PingPongKeepUpEnv:
         easy_score = max(float(next_intercept_metrics["easy_next_ball_score"]), 0.0)
         return float(self.stable_contact_reward_weight * height_score * easy_score)
 
+    def _stable_cycle_observed(
+        self,
+        *,
+        success_reason: str | None,
+        contact_event: bool,
+        contact_trace: dict[str, object] | None,
+        next_intercept_metrics: dict[str, object],
+    ) -> bool:
+        if not contact_event or success_reason is None:
+            return False
+        projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
+        target_apex = self._target_ball_height_above_racket()
+        if projected_apex + 1.0e-6 < target_apex:
+            return False
+        if abs(projected_apex - target_apex) > self.height_tolerance:
+            return False
+        if not bool(next_intercept_metrics["reachable"]):
+            return False
+        min_easy_score = self.stable_cycle_min_easy_next_ball_score
+        if min_easy_score is not None:
+            if float(next_intercept_metrics["easy_next_ball_score"]) < min_easy_score:
+                return False
+        return True
+
+    def _update_stable_cycle_state(
+        self,
+        *,
+        contact_event: bool,
+        stable_cycle_observed: bool,
+    ) -> None:
+        if not contact_event:
+            return
+        if stable_cycle_observed:
+            self.stable_cycle_count += 1
+            self._consecutive_stable_cycle_count += 1
+            return
+        self._consecutive_stable_cycle_count = 0
+
+    def _stable_cycle_term(
+        self,
+        *,
+        stable_cycle_observed: bool,
+        consecutive_stable_cycle_count: int | None = None,
+    ) -> float:
+        if self.stable_cycle_reward_weight <= 0.0 or not stable_cycle_observed:
+            return 0.0
+        count = (
+            self._consecutive_stable_cycle_count
+            if consecutive_stable_cycle_count is None
+            else int(consecutive_stable_cycle_count)
+        )
+        if count <= 0:
+            return 0.0
+        capped_count = min(count, self.stable_cycle_reward_cap)
+        streak_scale = 1.0 + 0.5 * float(capped_count - 1)
+        return float(self.stable_cycle_reward_weight * streak_scale)
+
     def _normalized_tilt_magnitude(self) -> float:
         if self.action_mode not in ("position_tilt", "position_strike", "position_strike_tilt", "position_strike_tilt_lift", "position_contact_frame"):
             return 0.0
@@ -2416,6 +2521,9 @@ class PingPongKeepUpEnv:
         applied_action: np.ndarray,
         contact_trace: dict[str, object],
         outgoing_trajectory_metrics: dict[str, object] | None = None,
+        *,
+        stable_cycle_observed: bool = False,
+        consecutive_stable_cycle_count: int | None = None,
     ) -> dict[str, float]:
         if outgoing_trajectory_metrics is None:
             outgoing_trajectory_metrics = self._contact_outgoing_trajectory_metrics(contact_trace)
@@ -2437,6 +2545,7 @@ class PingPongKeepUpEnv:
             "contact_apex_under_target_penalty": 0.0,
             "contact_apex_progress_term": 0.0,
             "stable_contact_term": 0.0,
+            "stable_cycle_term": 0.0,
             "outgoing_x_term": 0.0,
             "failure_penalty": 0.0,
             "contact_frame_action_penalty": 0.0,
@@ -2492,6 +2601,10 @@ class PingPongKeepUpEnv:
                         contact_trace,
                         next_intercept_metrics,
                     )
+                reward_terms["stable_cycle_term"] = self._stable_cycle_term(
+                    stable_cycle_observed=stable_cycle_observed,
+                    consecutive_stable_cycle_count=consecutive_stable_cycle_count,
+                )
                 if self.next_intercept_xy_error_penalty_weight > 0.0:
                     if next_intercept_metrics is None:
                         next_intercept_metrics = self._next_intercept_metrics()

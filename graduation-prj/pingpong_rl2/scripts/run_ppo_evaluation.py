@@ -74,6 +74,7 @@ def main() -> None:
     returns: list[float] = []
     contact_counts: list[int] = []
     useful_bounces: list[int] = []
+    stable_cycles: list[int] = []
     failure_counts: Counter[str] = Counter()
     summaries: list[dict[str, object]] = []
 
@@ -95,23 +96,27 @@ def main() -> None:
                 failure_reason = "time_limit" if bool(info.get("truncated", False)) else "none"
             contact_count = int(info.get("contact_count", 0))
             useful_bounce_count = int(info.get("successful_bounce_count", 0))
+            stable_cycle_count = int(info.get("stable_cycle_count", useful_bounce_count))
             failure_counts[str(failure_reason)] += 1
             returns.append(episode_return)
             contact_counts.append(contact_count)
             useful_bounces.append(useful_bounce_count)
+            stable_cycles.append(stable_cycle_count)
             episode_summary = {
                 "episode": episode,
                 "return": episode_return,
                 "steps": step_count,
                 "contact_count": contact_count,
                 "useful_bounces": useful_bounce_count,
+                "stable_cycles": stable_cycle_count,
                 "failure_reason": failure_reason,
             }
             summaries.append(episode_summary)
             print(
                 f"episode={episode} steps={step_count} return={episode_return:.3f} "
                 f"contacts={contact_count} "
-                f"useful_bounces={useful_bounce_count} failure_reason={failure_reason}"
+                f"useful_bounces={useful_bounce_count} "
+                f"stable_cycles={stable_cycle_count} failure_reason={failure_reason}"
             )
     finally:
         env.close()
@@ -119,6 +124,7 @@ def main() -> None:
     returns_array = np.asarray(returns, dtype=float)
     contact_array = np.asarray(contact_counts, dtype=float)
     bounce_array = np.asarray(useful_bounces, dtype=float)
+    stable_cycle_array = np.asarray(stable_cycles, dtype=float)
     summary = {
         "model_path": str(model_path.resolve()),
         "run_name": run_name,
@@ -129,9 +135,20 @@ def main() -> None:
         "max_contacts": int(contact_array.max()) if contact_array.size else 0,
         "mean_useful_bounces": float(bounce_array.mean()) if bounce_array.size else 0.0,
         "max_useful_bounces": int(bounce_array.max()) if bounce_array.size else 0,
+        "mean_stable_cycles": float(stable_cycle_array.mean()) if stable_cycle_array.size else 0.0,
+        "max_stable_cycles": int(stable_cycle_array.max()) if stable_cycle_array.size else 0,
         "one_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 1.0)) if bounce_array.size else 0.0,
         "two_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 2.0)) if bounce_array.size else 0.0,
         "three_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 3.0)) if bounce_array.size else 0.0,
+        "one_or_more_stable_cycle_rate": (
+            float(np.mean(stable_cycle_array >= 1.0)) if stable_cycle_array.size else 0.0
+        ),
+        "two_or_more_stable_cycle_rate": (
+            float(np.mean(stable_cycle_array >= 2.0)) if stable_cycle_array.size else 0.0
+        ),
+        "three_or_more_stable_cycle_rate": (
+            float(np.mean(stable_cycle_array >= 3.0)) if stable_cycle_array.size else 0.0
+        ),
         "failure_counts": dict(failure_counts),
         "episodes_detail": summaries,
     }
