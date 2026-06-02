@@ -5,6 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import numpy as np
+
+from scripts.run_ppo_learning import scaled_action_log_std
 from pingpong_rl2.utils.ppo_runs import load_env_config_for_model, resolve_env_kwargs_for_model
 
 
@@ -54,6 +57,16 @@ class PpoRunsPathResolutionTests(unittest.TestCase):
 
         self.assertAlmostEqual(env_kwargs["ball_height"], 0.42)
         self.assertAlmostEqual(env_kwargs["target_ball_height"], 0.25)
+
+    def test_scaled_action_log_std_uses_action_limit_ratio_and_clamps(self) -> None:
+        log_std = scaled_action_log_std(
+            action_high=[0.02, 0.006, 0.75],
+            ratio=0.35,
+            min_std=0.0015,
+            max_std=0.08,
+        )
+
+        self.assertTrue(np.allclose(np.exp(log_std), np.array([0.007, 0.0021, 0.08])))
 
 
 if __name__ == "__main__":

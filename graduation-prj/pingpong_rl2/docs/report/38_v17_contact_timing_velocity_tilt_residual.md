@@ -81,6 +81,7 @@ PYTHONPATH=src conda run -n mujoco_env python -m py_compile ...
 PYTHONPATH=src conda run -n mujoco_env python -m unittest tests.test_keepup_env
 PYTHONPATH=src conda run -n mujoco_env python -m unittest tests.test_ppo_runs tests.test_keepup_contract_features tests.test_vector_env tests.test_scene_load
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py --preset contact_frame_self_rally_v17_candidate --smoke ...
+PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_rebound_analysis.py --model-path artifacts/tmp/tmp_cfvtr_smoke_codex/tmp_cfvtr_smoke_codex_model.zip --episodes 2 ...
 git diff --check
 ```
 
@@ -91,6 +92,8 @@ git diff --check
 - v17 preset env 생성 OK
 - v17 action space shape: `(11,)`
 - PPO smoke 학습/저장 OK
+- rebound analysis smoke OK
+- contact CSV 새 컬럼 확인 OK
 - whitespace check OK
 
 스모크 평가의 `mean_useful_bounces=0.0`은 정상 판단 대상이 아니다. 1024 timestep만 돌려 학습 경로가 깨지지 않는지 확인한 값이다.

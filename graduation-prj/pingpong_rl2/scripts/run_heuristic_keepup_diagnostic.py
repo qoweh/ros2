@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
             "position_contact_frame",
             "position_contact_frame_velocity_residual",
             "position_contact_frame_velocity_tilt_residual",
+            "position_contact_frame_velocity_tilt_lateral_residual",
         ),
     )
     parser.add_argument("--episodes", type=int, default=20)

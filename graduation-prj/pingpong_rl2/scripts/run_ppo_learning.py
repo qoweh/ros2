@@ -6,6 +6,7 @@ import sys
 from collections import Counter
 from math import ceil
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 from stable_baselines3 import PPO
@@ -411,6 +412,21 @@ _ENV_PRESETS["contact_frame_self_rally_v17_candidate"] = {
     "contact_frame_action_penalty_weight": 0.10,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v18_candidate"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v17_candidate"],
+    "action_mode": "position_contact_frame_velocity_tilt_lateral_residual",
+    "log_std_init": -2.5,
+    "scale_log_std_by_action_limit": True,
+    "action_std_limit_ratio": 0.35,
+    "action_std_min": 0.0015,
+    "action_std_max": 0.08,
+    "contact_frame_racket_xy_action_limit": 0.35,
+    "tilt_action_limit": 0.008,
+    "contact_frame_action_penalty_weight": 0.10,
+    "post_contact_lateral_velocity_penalty_weight": 0.90,
+    "contact_lateral_stability_reward_weight": 0.55,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -547,6 +563,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_velocity_scale_action_limit": None,
     "contact_frame_outgoing_xy_action_limit": None,
     "contact_frame_racket_vz_action_limit": None,
+    "contact_frame_racket_xy_action_limit": None,
     "contact_frame_tilt_scale_action_limit": None,
     "contact_frame_intercept_velocity_gain": None,
     "contact_frame_intercept_velocity_max": None,
@@ -605,6 +622,10 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "stable_cycle_reward_cap": 4,
     "stable_cycle_min_easy_next_ball_score": None,
     "log_std_init": None,
+    "scale_log_std_by_action_limit": False,
+    "action_std_limit_ratio": None,
+    "action_std_min": None,
+    "action_std_max": None,
     "zero_init_action_mean": False,
 }
 
@@ -739,6 +760,7 @@ def parse_args() -> argparse.Namespace:
             "position_contact_frame",
             "position_contact_frame_velocity_residual",
             "position_contact_frame_velocity_tilt_residual",
+            "position_contact_frame_velocity_tilt_lateral_residual",
         ),
     )
     parser.add_argument(
@@ -896,6 +918,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-velocity-scale-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-outgoing-xy-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-racket-vz-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-racket-xy-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-tilt-scale-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
@@ -1197,6 +1220,29 @@ def parse_args() -> argparse.Namespace:
         help="Optional initial log std for PPO Gaussian actions. Useful for small residual action spaces.",
     )
     parser.add_argument(
+        "--scale-log-std-by-action-limit",
+        action="store_true",
+        help="Initialize PPO log std per action dimension from the environment action limits.",
+    )
+    parser.add_argument(
+        "--action-std-limit-ratio",
+        type=float,
+        default=None,
+        help="Std/action-limit ratio used with --scale-log-std-by-action-limit.",
+    )
+    parser.add_argument(
+        "--action-std-min",
+        type=float,
+        default=None,
+        help="Minimum per-dimension action std used with --scale-log-std-by-action-limit.",
+    )
+    parser.add_argument(
+        "--action-std-max",
+        type=float,
+        default=None,
+        help="Maximum per-dimension action std used with --scale-log-std-by-action-limit.",
+    )
+    parser.add_argument(
         "--zero-init-action-mean",
         action="store_true",
         help="Initialize the PPO action mean head to zero for residual action spaces.",
@@ -1278,6 +1324,7 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
         "position_contact_frame",
         "position_contact_frame_velocity_residual",
         "position_contact_frame_velocity_tilt_residual",
+        "position_contact_frame_velocity_tilt_lateral_residual",
     ):
         if args.tracking_during_contact_scale is None:
             args.tracking_during_contact_scale = 0.0
@@ -1313,6 +1360,7 @@ def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
             "position_contact_frame",
             "position_contact_frame_velocity_residual",
             "position_contact_frame_velocity_tilt_residual",
+            "position_contact_frame_velocity_tilt_lateral_residual",
         )
         or args.tilt_action_limit is None
         or args.target_tilt_limit is None
@@ -1427,6 +1475,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_outgoing_xy_action_limit"] = args.contact_frame_outgoing_xy_action_limit
     if args.contact_frame_racket_vz_action_limit is not None:
         env_kwargs["contact_frame_racket_vz_action_limit"] = args.contact_frame_racket_vz_action_limit
+    if args.contact_frame_racket_xy_action_limit is not None:
+        env_kwargs["contact_frame_racket_xy_action_limit"] = args.contact_frame_racket_xy_action_limit
     if args.contact_frame_tilt_scale_action_limit is not None:
         env_kwargs["contact_frame_tilt_scale_action_limit"] = args.contact_frame_tilt_scale_action_limit
     if args.contact_frame_intercept_velocity_gain is not None:
@@ -1723,12 +1773,14 @@ def collect_heuristic_bootstrap_dataset(
         "position_contact_frame",
         "position_contact_frame_velocity_residual",
         "position_contact_frame_velocity_tilt_residual",
+        "position_contact_frame_velocity_tilt_lateral_residual",
     }:
         raise ValueError(
             "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', "
             "'position_strike_tilt_lift', 'position_contact_frame', or "
             "'position_contact_frame_velocity_residual', or "
-            "'position_contact_frame_velocity_tilt_residual'."
+            "'position_contact_frame_velocity_tilt_residual', or "
+            "'position_contact_frame_velocity_tilt_lateral_residual'."
         )
     if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
         raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")
@@ -1975,6 +2027,68 @@ def save_periodic_checkpoints(
     return checkpoint_dir, checkpoint_history, best_checkpoint_record, completed_timesteps, stopped_early
 
 
+def scaled_action_log_std(
+    *,
+    action_high: Sequence[float],
+    ratio: float,
+    min_std: float | None,
+    max_std: float | None,
+) -> np.ndarray:
+    if ratio <= 0.0:
+        raise ValueError(f"action-std-limit-ratio must be positive, got {ratio}.")
+    if min_std is not None and min_std <= 0.0:
+        raise ValueError(f"action-std-min must be positive when provided, got {min_std}.")
+    if max_std is not None and max_std <= 0.0:
+        raise ValueError(f"action-std-max must be positive when provided, got {max_std}.")
+    if min_std is not None and max_std is not None and min_std > max_std:
+        raise ValueError(f"action-std-min must be <= action-std-max, got {min_std} > {max_std}.")
+
+    high = np.asarray(action_high, dtype=float)
+    if high.ndim != 1 or high.size == 0:
+        raise ValueError(f"action_high must be a non-empty 1D vector, got shape {high.shape}.")
+    if not np.all(np.isfinite(high)) or np.any(high <= 0.0):
+        raise ValueError(f"action_high must contain positive finite limits, got {high}.")
+
+    std = high * ratio
+    if min_std is not None:
+        std = np.maximum(std, float(min_std))
+    if max_std is not None:
+        std = np.minimum(std, float(max_std))
+    return np.log(std)
+
+
+def initialize_scaled_policy_log_std(
+    *,
+    model: PPO,
+    ratio: float | None,
+    min_std: float | None,
+    max_std: float | None,
+) -> dict[str, object]:
+    resolved_ratio = 0.35 if ratio is None else float(ratio)
+    log_std = scaled_action_log_std(
+        action_high=model.action_space.high,
+        ratio=resolved_ratio,
+        min_std=min_std,
+        max_std=max_std,
+    )
+    if not hasattr(model.policy, "log_std"):
+        raise ValueError("Selected PPO policy does not expose log_std for scaled initialization.")
+    if tuple(model.policy.log_std.shape) != tuple(log_std.shape):
+        raise ValueError(
+            "Policy log_std shape does not match action space: "
+            f"{tuple(model.policy.log_std.shape)} vs {tuple(log_std.shape)}."
+        )
+    with th.no_grad():
+        model.policy.log_std.copy_(th.as_tensor(log_std, dtype=model.policy.log_std.dtype, device=model.device))
+    return {
+        "ratio": resolved_ratio,
+        "min_std": min_std,
+        "max_std": max_std,
+        "log_std": log_std.tolist(),
+        "std": np.exp(log_std).tolist(),
+    }
+
+
 def main() -> None:
     args = parse_args()
     resolved_preset = apply_env_preset(args)
@@ -2018,6 +2132,7 @@ def main() -> None:
     monitor_path = build_session_monitor_path(run_dir)
     monitored_env = VecMonitor(venv=vec_env, filename=str(monitor_path))
 
+    scaled_log_std_summary: dict[str, object] | None = None
     if starting_checkpoint is None:
         policy_kwargs = None if args.log_std_init is None else {"log_std_init": float(args.log_std_init)}
         model = PPO(
@@ -2037,6 +2152,13 @@ def main() -> None:
             device=args.device,
             policy_kwargs=policy_kwargs,
         )
+        if args.scale_log_std_by_action_limit:
+            scaled_log_std_summary = initialize_scaled_policy_log_std(
+                model=model,
+                ratio=args.action_std_limit_ratio,
+                min_std=args.action_std_min,
+                max_std=args.action_std_max,
+            )
         if args.zero_init_action_mean:
             th.nn.init.zeros_(model.policy.action_net.weight)
             th.nn.init.zeros_(model.policy.action_net.bias)
@@ -2165,12 +2287,17 @@ def main() -> None:
             "seed": args.seed,
             "device": args.device,
             "log_std_init": args.log_std_init,
+            "scale_log_std_by_action_limit": args.scale_log_std_by_action_limit,
+            "action_std_limit_ratio": args.action_std_limit_ratio,
+            "action_std_min": args.action_std_min,
+            "action_std_max": args.action_std_max,
             "zero_init_action_mean": args.zero_init_action_mean,
             "checkpoint_interval": args.checkpoint_interval,
             "checkpoint_eval_episodes": args.checkpoint_eval_episodes,
             "early_stop_patience_evals": args.early_stop_patience_evals,
             **env_kwargs,
         },
+        "scaled_log_std_initialization": scaled_log_std_summary,
         "env_config": resolved_env_config,
         "checkpointing": {
             "checkpoint_dir": str(checkpoint_dir.resolve()),

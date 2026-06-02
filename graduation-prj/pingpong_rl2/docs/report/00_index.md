@@ -80,3 +80,5 @@
   - `pmk_cf_self_rally_v16` 최신 모델의 best/final 분석, 8D action 사용량, contact timing/velocity 병목, v17 구조 수정 방향을 정리한 보고서
 - `38_v17_contact_timing_velocity_tilt_residual.md`
   - `position_contact_frame_velocity_tilt_residual` 11D action mode, configurable strike plane, direct racket z velocity residual, tilt primitive scale, v17 preset, 검증 결과와 v17 학습/분석 명령을 정리한 보고서
+- `39_v17_action_scale_and_v18_lateral_residual.md`
+  - `pmk_cf_self_rally_v17` 1.5M 결과, 11D action limit/saturation, PPO action std와 작은 residual bound의 mismatch, `position_contact_frame_velocity_tilt_lateral_residual` 13D v18 mode, per-axis action std 초기화, 검증 결과와 v18 학습/분석 명령을 정리한 보고서

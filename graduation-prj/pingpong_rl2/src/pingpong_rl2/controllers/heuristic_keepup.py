@@ -11,8 +11,15 @@ if TYPE_CHECKING:
 _CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES = (
     "position_contact_frame_velocity_residual",
     "position_contact_frame_velocity_tilt_residual",
+    "position_contact_frame_velocity_tilt_lateral_residual",
 )
-_CONTACT_FRAME_TILT_SCALE_ACTION_MODES = ("position_contact_frame_velocity_tilt_residual",)
+_CONTACT_FRAME_TILT_SCALE_ACTION_MODES = (
+    "position_contact_frame_velocity_tilt_residual",
+    "position_contact_frame_velocity_tilt_lateral_residual",
+)
+_CONTACT_FRAME_LATERAL_VELOCITY_RESIDUAL_ACTION_MODES = (
+    "position_contact_frame_velocity_tilt_lateral_residual",
+)
 _CONTACT_FRAME_ACTION_MODES = (
     "position_contact_frame",
     *_CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES,
@@ -164,4 +171,6 @@ class HeuristicKeepUpPolicy:
                 action = np.concatenate([action, np.zeros(3, dtype=float)])
             if env.action_mode in _CONTACT_FRAME_TILT_SCALE_ACTION_MODES:
                 action = np.concatenate([action, np.zeros(3, dtype=float)])
+            if env.action_mode in _CONTACT_FRAME_LATERAL_VELOCITY_RESIDUAL_ACTION_MODES:
+                action = np.concatenate([action, np.zeros(2, dtype=float)])
         return np.clip(action, env.action_low, env.action_high)
