@@ -93,6 +93,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-racket-vz-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-racket-xy-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-tilt-scale-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-target-apex-z-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-strike-plane-z-action-limit", type=float, default=None)
     parser.add_argument("--tracking-strike-plane-offset", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
@@ -1047,6 +1049,10 @@ def main() -> None:
         env_kwargs["contact_frame_racket_xy_action_limit"] = args.contact_frame_racket_xy_action_limit
     if args.contact_frame_tilt_scale_action_limit is not None:
         env_kwargs["contact_frame_tilt_scale_action_limit"] = args.contact_frame_tilt_scale_action_limit
+    if args.contact_frame_target_apex_z_action_limit is not None:
+        env_kwargs["contact_frame_target_apex_z_action_limit"] = args.contact_frame_target_apex_z_action_limit
+    if args.contact_frame_strike_plane_z_action_limit is not None:
+        env_kwargs["contact_frame_strike_plane_z_action_limit"] = args.contact_frame_strike_plane_z_action_limit
     if args.tracking_strike_plane_offset is not None:
         env_kwargs["tracking_strike_plane_offset"] = args.tracking_strike_plane_offset
     if args.contact_frame_intercept_velocity_gain is not None:
@@ -1344,6 +1350,12 @@ def main() -> None:
                         "applied_action_12_racket_vy_residual": (
                             None if applied_action is None or applied_action.size <= 12 else float(applied_action[12])
                         ),
+                        "applied_action_13_target_apex_z_residual": (
+                            None if applied_action is None or applied_action.size <= 13 else float(applied_action[13])
+                        ),
+                        "applied_action_14_strike_plane_z_residual": (
+                            None if applied_action is None or applied_action.size <= 14 else float(applied_action[14])
+                        ),
                         "contact_frame_vz_scale": info.get("contact_frame_vz_scale"),
                         "contact_frame_outgoing_x_residual_action": info.get(
                             "contact_frame_outgoing_x_residual_action"
@@ -1362,6 +1374,12 @@ def main() -> None:
                         ),
                         "contact_frame_trajectory_tilt_scale": info.get("contact_frame_trajectory_tilt_scale"),
                         "contact_frame_centering_tilt_scale": info.get("contact_frame_centering_tilt_scale"),
+                        "contact_frame_target_apex_z_residual_action": info.get(
+                            "contact_frame_target_apex_z_residual_action"
+                        ),
+                        "contact_frame_strike_plane_z_residual_action": info.get(
+                            "contact_frame_strike_plane_z_residual_action"
+                        ),
                         "tracking_strike_plane_offset": info.get("tracking_strike_plane_offset"),
                         "contact_ball_position_x": contact_ball_position_x,
                         "contact_ball_position_y": contact_ball_position_y,
@@ -1510,6 +1528,10 @@ def main() -> None:
                             None
                             if info.get("contact_frame_planner_contact_target_xy") is None
                             else float(info["contact_frame_planner_contact_target_xy"][1])
+                        ),
+                        "contact_frame_planner_target_apex_z": info.get("contact_frame_planner_target_apex_z"),
+                        "contact_frame_planner_resolved_target_apex_z": info.get(
+                            "contact_frame_planner_resolved_target_apex_z"
                         ),
                         "contact_frame_planner_desired_velocity_x": (
                             None

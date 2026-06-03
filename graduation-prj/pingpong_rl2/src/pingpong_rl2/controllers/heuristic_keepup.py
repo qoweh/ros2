@@ -12,13 +12,19 @@ _CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES = (
     "position_contact_frame_velocity_residual",
     "position_contact_frame_velocity_tilt_residual",
     "position_contact_frame_velocity_tilt_lateral_residual",
+    "position_contact_frame_velocity_tilt_lateral_apex_residual",
 )
 _CONTACT_FRAME_TILT_SCALE_ACTION_MODES = (
     "position_contact_frame_velocity_tilt_residual",
     "position_contact_frame_velocity_tilt_lateral_residual",
+    "position_contact_frame_velocity_tilt_lateral_apex_residual",
 )
 _CONTACT_FRAME_LATERAL_VELOCITY_RESIDUAL_ACTION_MODES = (
     "position_contact_frame_velocity_tilt_lateral_residual",
+    "position_contact_frame_velocity_tilt_lateral_apex_residual",
+)
+_CONTACT_FRAME_APEX_TIMING_RESIDUAL_ACTION_MODES = (
+    "position_contact_frame_velocity_tilt_lateral_apex_residual",
 )
 _CONTACT_FRAME_ACTION_MODES = (
     "position_contact_frame",
@@ -172,5 +178,7 @@ class HeuristicKeepUpPolicy:
             if env.action_mode in _CONTACT_FRAME_TILT_SCALE_ACTION_MODES:
                 action = np.concatenate([action, np.zeros(3, dtype=float)])
             if env.action_mode in _CONTACT_FRAME_LATERAL_VELOCITY_RESIDUAL_ACTION_MODES:
+                action = np.concatenate([action, np.zeros(2, dtype=float)])
+            if env.action_mode in _CONTACT_FRAME_APEX_TIMING_RESIDUAL_ACTION_MODES:
                 action = np.concatenate([action, np.zeros(2, dtype=float)])
         return np.clip(action, env.action_low, env.action_high)

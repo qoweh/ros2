@@ -463,6 +463,19 @@ _ENV_PRESETS["contact_frame_self_rally_v20_boundary_brake"] = {
     "contact_frame_low_apex_recovery_velocity_max": 0.60,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v21_apex_timing_residual"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v19_anti_low_loop"],
+    "action_mode": "position_contact_frame_velocity_tilt_lateral_apex_residual",
+    "contact_frame_target_apex_z_action_limit": 0.08,
+    "contact_frame_strike_plane_z_action_limit": 0.025,
+    "contact_apex_under_target_penalty_weight": 1.25,
+    "trajectory_error_penalty_weight": 0.85,
+    "contact_frame_low_apex_recovery_lift_gain": 0.028,
+    "contact_frame_low_apex_recovery_lift_max": 0.055,
+    "contact_frame_low_apex_recovery_velocity_gain": 0.34,
+    "contact_frame_low_apex_recovery_velocity_max": 0.55,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -601,6 +614,8 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_racket_vz_action_limit": None,
     "contact_frame_racket_xy_action_limit": None,
     "contact_frame_tilt_scale_action_limit": None,
+    "contact_frame_target_apex_z_action_limit": None,
+    "contact_frame_strike_plane_z_action_limit": None,
     "contact_frame_intercept_velocity_gain": None,
     "contact_frame_intercept_velocity_max": None,
     "contact_frame_intercept_velocity_time_floor": None,
@@ -807,6 +822,7 @@ def parse_args() -> argparse.Namespace:
             "position_contact_frame_velocity_residual",
             "position_contact_frame_velocity_tilt_residual",
             "position_contact_frame_velocity_tilt_lateral_residual",
+            "position_contact_frame_velocity_tilt_lateral_apex_residual",
         ),
     )
     parser.add_argument(
@@ -966,6 +982,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-racket-vz-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-racket-xy-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-tilt-scale-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-target-apex-z-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-strike-plane-z-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
@@ -1406,6 +1424,7 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
         "position_contact_frame_velocity_residual",
         "position_contact_frame_velocity_tilt_residual",
         "position_contact_frame_velocity_tilt_lateral_residual",
+        "position_contact_frame_velocity_tilt_lateral_apex_residual",
     ):
         if args.tracking_during_contact_scale is None:
             args.tracking_during_contact_scale = 0.0
@@ -1442,6 +1461,7 @@ def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
             "position_contact_frame_velocity_residual",
             "position_contact_frame_velocity_tilt_residual",
             "position_contact_frame_velocity_tilt_lateral_residual",
+            "position_contact_frame_velocity_tilt_lateral_apex_residual",
         )
         or args.tilt_action_limit is None
         or args.target_tilt_limit is None
@@ -1560,6 +1580,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_racket_xy_action_limit"] = args.contact_frame_racket_xy_action_limit
     if args.contact_frame_tilt_scale_action_limit is not None:
         env_kwargs["contact_frame_tilt_scale_action_limit"] = args.contact_frame_tilt_scale_action_limit
+    if args.contact_frame_target_apex_z_action_limit is not None:
+        env_kwargs["contact_frame_target_apex_z_action_limit"] = args.contact_frame_target_apex_z_action_limit
+    if args.contact_frame_strike_plane_z_action_limit is not None:
+        env_kwargs["contact_frame_strike_plane_z_action_limit"] = args.contact_frame_strike_plane_z_action_limit
     if args.contact_frame_intercept_velocity_gain is not None:
         env_kwargs["contact_frame_intercept_velocity_gain"] = args.contact_frame_intercept_velocity_gain
     if args.contact_frame_intercept_velocity_max is not None:
@@ -1875,13 +1899,15 @@ def collect_heuristic_bootstrap_dataset(
         "position_contact_frame_velocity_residual",
         "position_contact_frame_velocity_tilt_residual",
         "position_contact_frame_velocity_tilt_lateral_residual",
+        "position_contact_frame_velocity_tilt_lateral_apex_residual",
     }:
         raise ValueError(
             "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', "
             "'position_strike_tilt_lift', 'position_contact_frame', or "
             "'position_contact_frame_velocity_residual', or "
             "'position_contact_frame_velocity_tilt_residual', or "
-            "'position_contact_frame_velocity_tilt_lateral_residual'."
+            "'position_contact_frame_velocity_tilt_lateral_residual', or "
+            "'position_contact_frame_velocity_tilt_lateral_apex_residual'."
         )
     if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
         raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")

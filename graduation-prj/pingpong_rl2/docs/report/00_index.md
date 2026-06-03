@@ -86,3 +86,7 @@
   - `pmk_cf_self_rally_v18` 1M 결과, v17 action saturation/std 문제 해결 여부, 낮은 통통 루프 원인, height-qualified stability reward, apex potential shaping, v19 preset, 검증 결과와 v19 학습/분석 명령을 정리한 보고서
 - `41_v19_boundary_out_and_v20_brake.md`
   - `pmk_cf_self_rally_v19` 분석, `time_limit` 의미, `low_apex_contact` 증가 해석, `ball_out_of_bounds` episode 공통 패턴, planner contact offset/lateral brake 기반 v20 preset과 학습 명령을 정리한 보고서
+- `42_v19_presentation_readiness_and_future_roadmap.md`
+  - v19의 졸업작품 발표 가능성, v20 기대치, 임의 시작 위치 일반화 가능성, curriculum/goal-conditioned/RPL/HER 등 향후 개선 후보를 정리한 보고서
+- `43_v20_review_and_v21_apex_timing_residual.md`
+  - `pmk_cf_self_rally_v20` 분석, v19/v20 비교, v20 terminal low-apex 악화 해석, 15D `target_apex_z`/`strike_plane_z` residual 기반 v21 preset과 학습/분석 명령을 정리한 보고서
