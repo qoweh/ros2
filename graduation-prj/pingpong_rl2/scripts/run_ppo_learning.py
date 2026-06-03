@@ -721,8 +721,75 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
 }
 
 
-def parse_args() -> argparse.Namespace:
+_CONFIG_PATH_DESTS = {"output_dir", "resume_from", "scene_path"}
+
+
+def explicit_cli_destinations(parser: argparse.ArgumentParser, argv: Sequence[str]) -> set[str]:
+    option_destinations: dict[str, str] = {}
+    for action in parser._actions:
+        for option_string in action.option_strings:
+            option_destinations[option_string] = action.dest
+
+    destinations: set[str] = set()
+    for token in argv:
+        if not token.startswith("--"):
+            continue
+        option_string = token.split("=", 1)[0]
+        destination = option_destinations.get(option_string)
+        if destination is not None:
+            destinations.add(destination)
+    return destinations
+
+
+def load_training_config(path: Path) -> dict[str, object]:
+    resolved_path = resolve_input_path(path)
+    if not resolved_path.is_file():
+        raise FileNotFoundError(f"Training config file not found: {resolved_path}")
+    data = json.loads(resolved_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"Training config must be a JSON object, got {type(data).__name__}.")
+    args_data = data.get("args", data)
+    if not isinstance(args_data, dict):
+        raise ValueError("Training config 'args' field must be a JSON object when provided.")
+    return dict(args_data)
+
+
+def apply_training_config(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    explicit_destinations: set[str],
+) -> None:
+    if args.config_file is None:
+        return
+
+    config_values = load_training_config(Path(args.config_file))
+    valid_destinations = {action.dest for action in parser._actions}
+    for raw_key, value in config_values.items():
+        if not isinstance(raw_key, str):
+            raise ValueError(f"Training config keys must be strings, got {raw_key!r}.")
+        destination = raw_key.lstrip("-").replace("-", "_")
+        if destination == "config_file":
+            continue
+        if destination not in valid_destinations:
+            raise ValueError(f"Unknown training config key: {raw_key!r}.")
+        if destination in explicit_destinations:
+            continue
+        if destination in _CONFIG_PATH_DESTS and value is not None:
+            value = Path(str(value))
+        setattr(args, destination, value)
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train the minimal pingpong_rl2 PPO baseline.")
+    parser.add_argument(
+        "--config-file",
+        type=Path,
+        default=None,
+        help=(
+            "Optional JSON config file using argparse destination names. "
+            "CLI values override config-file values, and presets are applied after the config is loaded."
+        ),
+    )
     parser.add_argument(
         "--preset",
         type=str,
@@ -1379,12 +1446,17 @@ def parse_args() -> argparse.Namespace:
         help="Initialize the PPO action mean head to zero for residual action spaces.",
     )
     parser.add_argument("--smoke", action="store_true")
-    return parser.parse_args()
+    raw_argv = tuple(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(raw_argv)
+    apply_training_config(args, parser, explicit_cli_destinations(parser, raw_argv))
+    return args
 
 
 def apply_env_preset(args: argparse.Namespace) -> str:
     if args.preset is None:
         return "manual"
+    if args.preset not in _ENV_PRESETS:
+        raise ValueError(f"Unknown preset: {args.preset!r}.")
 
     preset_values = _ENV_PRESETS[args.preset]
     for arg_name, preset_value in preset_values.items():
@@ -2470,6 +2542,7 @@ def main() -> None:
         "monitor_path": str(monitor_path.resolve()),
         "completed_timesteps": completed_timesteps,
         "config": {
+            "config_file": None if args.config_file is None else str(resolve_input_path(args.config_file)),
             "preset": resolved_preset,
             "run_version": args.run_version,
             "resolved_tilt_profile": resolved_tilt_profile,
@@ -2491,6 +2564,7 @@ def main() -> None:
             "action_std_min": args.action_std_min,
             "action_std_max": args.action_std_max,
             "zero_init_action_mean": args.zero_init_action_mean,
+            "eval_episodes": args.eval_episodes,
             "checkpoint_interval": args.checkpoint_interval,
             "checkpoint_eval_episodes": args.checkpoint_eval_episodes,
             "early_stop_patience_evals": args.early_stop_patience_evals,

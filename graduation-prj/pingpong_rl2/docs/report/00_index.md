@@ -96,3 +96,5 @@
   - `pmk_cf_self_rally_v22` 분석, 15D action/log_std 사용량, `ball_out_of_bounds`의 outward racket velocity 원인, v23 outward timing guard와 cleanup 결과, 학습/분석 명령을 정리한 보고서
 - `46_v23_v24_review_and_v25_30_bounce_horizon.md`
   - `pmk_cf_self_rally_v23/v24` 비교, 30 useful bounce 목표의 horizon/checkpoint metric 병목, v25 long-horizon preset과 학습/분석 명령을 정리한 보고서
+- `47_run_ppo_learning_preset_config_reference.md`
+  - `run_ppo_learning.py`의 preset/config/default 인자 동작, v25 핵심 설정, 설정파일 기반 실행과 cleanup 판단을 정리한 보고서
