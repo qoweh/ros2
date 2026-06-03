@@ -2,7 +2,7 @@
 
 ## 한줄 결론
 
-`run_ppo_learning.py`에서 `--preset`은 단순 별칭이 아니라 self-rally 환경, action space, reward, PPO hyperparameter, checkpoint/evaluation 기준을 한 번에 고정하는 실험 설정이다. preset을 넣지 않으면 기본값은 아주 초기 `position` baseline이라 현재 목표인 탁구공 self-rally와 다르다. 앞으로는 긴 CLI 대신 `--config-file`로 실행 인자를 묶고, 실제 환경/reward 값은 preset에 남기는 방식을 권장한다.
+`run_ppo_learning.py`에서 `--preset`은 단순 별칭이 아니라 self-rally 환경, action space, reward, PPO hyperparameter, checkpoint/evaluation 기준을 한 번에 고정하는 실험 설정이다. preset을 넣지 않으면 기본값은 아주 초기 `position` baseline이라 현재 목표인 탁구공 self-rally와 다르다. 앞으로는 긴 CLI 대신 `--config-file`로 실행 인자를 묶고, 드문 일회성 변경은 `--set KEY=VALUE`로 처리한다.
 
 ## 실행 순서
 
@@ -18,15 +18,19 @@ JSON 파일의 `args` 객체 또는 top-level key를 argparse destination 이름
 
 preset은 `_ENV_PRESETS`에 저장된 dict다. preset-managed 인자가 아직 기본값이면 preset 값으로 바꾼다. 이미 다른 값으로 바뀌어 있으면 충돌로 보고 에러를 낸다. 이 동작은 "의도치 않은 혼합 실험"을 막기 위한 것이다.
 
-4. `--smoke`가 있으면 학습량을 강제로 줄인다.
+4. `--set KEY=VALUE` override를 적용한다.
+
+`--set`은 preset 적용 후 실행된다. 따라서 `--set bootstrap_heuristic_episodes=0`처럼 preset 값을 확실히 덮어쓸 수 있다. 값은 JSON으로 파싱되므로 숫자, bool, list를 직접 넣을 수 있다.
+
+5. `--smoke`가 있으면 학습량을 강제로 줄인다.
 
 `total_timesteps=1024`, `n_steps=64`, `batch_size=64`, `n_envs<=2`, eval/checkpoint episode는 최대 2로 줄인다. smoke는 성능 평가가 아니라 preset/env/model load가 깨지지 않는지 확인하는 용도다.
 
-5. run directory와 시작 모델을 결정한다.
+6. run directory와 시작 모델을 결정한다.
 
 `--resume-from`이 있으면 그 checkpoint에서 시작한다. 없고 run directory 안에 `<run_name>_model.zip`이 있으면 자동 resume한다. `--reset-model`은 기존 checkpoint가 있어도 새 모델로 시작한다.
 
-6. env kwargs를 만든 뒤 PPO를 학습한다.
+7. env kwargs를 만든 뒤 PPO를 학습한다.
 
 `env_kwargs_from_args()`가 argparse 값을 `PingPongKeepUpGymEnv` 생성자 인자로 바꾼다. 학습 후에는 model, checkpoint history, training summary JSON을 저장한다.
 
@@ -86,6 +90,18 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
 
 주의: 위 v25 config를 그대로 다시 실행하면 `pmk_cf_self_rally_v25` run directory에 다시 저장될 수 있다.
 
+드문 override 예시:
+
+```bash
+PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
+  --config-file configs/pmk_cf_self_rally_v25_long_horizon_30_bounce.json \
+  --run-version smoke_check \
+  --smoke \
+  --set bootstrap_heuristic_episodes=0 \
+  --set bootstrap_epochs=0 \
+  --set bootstrap_followup_epochs=0
+```
+
 ## 주요 기본값
 
 아무 preset/config도 넣지 않았을 때의 argparse 기본값이다.
@@ -93,6 +109,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
 | 인자 | 기본값 | 역할 |
 | --- | ---: | --- |
 | `config_file` | `None` | JSON 설정파일 경로 |
+| `set` | `[]` | preset/config 값을 덮는 generic override |
 | `preset` | `None` | 실험 preset 선택. 없으면 manual baseline |
 | `run_name` | `None` | run base name. 없으면 action mode별 기본 이름 사용 |
 | `run_version` | `None` | `<run_name>_<version>` suffix |
@@ -202,11 +219,15 @@ v25 15D action bound:
 ## 정리/리팩토링 결과
 
 - `run_ppo_learning.py`에 `--config-file`을 추가했다.
+- `run_ppo_learning.py`에 `--set KEY=VALUE`를 추가했다.
+  - 개별 low-use CLI를 더 늘리지 않고 일회성 override를 처리한다.
+  - `--set`은 preset 뒤에 적용되어 preset 값을 확실히 덮어쓴다.
+  - JSON list와 Python tuple이 같은 값인데 충돌하는 문제를 `values_equal()`로 보정했다.
 - `configs/` directory를 만들고 v25 재현 config를 추가했다.
-- 학습 summary의 `config`에 `config_file`과 `eval_episodes`를 기록하도록 보강했다.
+- 학습 summary의 `config`에 `config_file`, `config_overrides`, `eval_episodes`를 기록하도록 보강했다.
 - 생성물인 `__pycache__`/`.pyc`는 정리했다.
 - tracked script/source 파일은 삭제하지 않았다. `run_material_sanity.py`, `run_contact_feasibility_map.py`, `run_heuristic_keepup_diagnostic.py` 같은 파일은 자주 실행하지 않더라도 물성 검증, contact upper-bound, heuristic baseline 재현에 쓰이는 실험 도구라서 졸작 발표 전 삭제 리스크가 더 크다.
-- low-use CLI 인자도 즉시 삭제하지 않았다. 과거 report와 모델 재현 명령이 이 인자들을 참조하기 때문이다. 대신 새 실험은 config file + preset으로 실행해서 실제로 만지는 표면을 줄이는 방향으로 정리했다.
+- 기존 low-use CLI 인자는 과거 report와 모델 재현 명령 때문에 완전 삭제하지 않았다. 대신 새 실험 경로는 config file + preset + `--set`으로 고정해서 실제로 만지는 표면을 줄였다.
 
 ## 발표 때 설명 포인트
 
@@ -214,3 +235,4 @@ v25 15D action bound:
 - "v25 성능 향상"은 긴 horizon, 30회 기준 checkpoint, v23 resume 안정성의 조합이다.
 - PPO hyperparameter는 큰 탐색이 아니라 resume fine-tuning용으로 보수적이다.
 - 환경/reward/action 설정은 preset이 고정하고, config file은 실행 편의와 재현성을 담당한다.
+- 드문 값 변경은 `--set`으로 남겨서 CLI 인자 추가를 멈춘다.

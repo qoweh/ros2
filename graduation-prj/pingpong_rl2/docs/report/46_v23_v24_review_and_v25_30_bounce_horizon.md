@@ -102,6 +102,9 @@ v25 low-apex episode는 `27/100`이고 mean useful `14.15`다. 일부는 useful 
   - 긴 CLI 대신 JSON 설정파일에서 실행 인자를 읽는다.
   - CLI로 직접 넣은 값은 config file보다 우선한다.
   - preset 자체의 env 값은 계속 코드 preset에 고정해 실험 재현성을 유지한다.
+- `run_ppo_learning.py`에 `--set KEY=VALUE` 추가
+  - 드문 일회성 override는 개별 CLI 인자를 계속 늘리지 않고 generic override로 처리한다.
+  - `--set`은 preset 적용 후 실행되므로 preset 값을 확실히 덮어쓴다.
 - `configs/pmk_cf_self_rally_v25_long_horizon_30_bounce.json` 추가
   - v25 재현용 실행 설정
   - 새 실험에 그대로 쓰면 v25 run directory를 덮을 수 있으므로 `run_version`을 바꿔서 사용한다.
@@ -122,19 +125,20 @@ PYTHONPATH=src conda run -n mujoco_env python -m py_compile \
 ```bash
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
   --config-file configs/pmk_cf_self_rally_v25_long_horizon_30_bounce.json \
-  --run-version config_smoke \
-  --output-dir artifacts/tmp/tmp_v25_config_file_check \
+  --run-version config_set_summary_smoke \
+  --output-dir artifacts/tmp/tmp_v25_config_set_summary_check \
   --total-timesteps 64 \
   --smoke \
-  --bootstrap-heuristic-episodes 0 \
-  --bootstrap-followup-epochs 0
+  --set bootstrap_heuristic_episodes=0 \
+  --set bootstrap_epochs=0 \
+  --set bootstrap_followup_epochs=0
 ```
 
 결과:
 
 - config file load 정상
 - resolved preset: `contact_frame_self_rally_v25_long_horizon_30_bounce`
-- resolved run: `pmk_cf_self_rally_config_smoke`
+- resolved run: `pmk_cf_self_rally_config_set_summary_smoke`
 - `max_episode_steps=1800`
 - smoke eval mean useful `24.0`
 - smoke eval max useful `26`
@@ -149,8 +153,9 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
   --resume-from artifacts/ppo_runs/pmk_cf_self_rally_v23/pmk_cf_self_rally_v23_model.zip \
   --total-timesteps 64 \
   --smoke \
-  --bootstrap-heuristic-episodes 0 \
-  --bootstrap-followup-epochs 0 \
+  --set bootstrap_heuristic_episodes=0 \
+  --set bootstrap_epochs=0 \
+  --set bootstrap_followup_epochs=0 \
   --output-dir artifacts/tmp/tmp_v25_long_horizon_check_codex
 ```
 
@@ -225,4 +230,4 @@ jq '{mean_useful_bounces,max_useful_bounces,ten_or_more_useful_bounce_rate,twent
 
 ## preset 사용 여부
 
-학습에서는 `--preset` 또는 `--config-file`이 사실상 필요하다. preset 없이 수십 개 인자를 수동으로 넣으면 실수하기 쉽고, 기본값은 현재 self-rally 설정과 다르다. `--config-file`은 실행 인자를 줄이는 용도이고, 실제 환경/reward/action 설정은 여전히 preset이 담당한다.
+학습에서는 `--preset` 또는 `--config-file`이 사실상 필요하다. preset 없이 수십 개 인자를 수동으로 넣으면 실수하기 쉽고, 기본값은 현재 self-rally 설정과 다르다. `--config-file`은 실행 인자를 줄이는 용도이고, 실제 환경/reward/action 설정은 여전히 preset이 담당한다. 드문 값 변경은 `--set KEY=VALUE`로 남긴다.

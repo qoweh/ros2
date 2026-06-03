@@ -26,7 +26,6 @@ from pingpong_rl2.defaults import (
     DEFAULT_PPO_GAMMA,
     DEFAULT_PPO_LEARNING_RATE,
     DEFAULT_PPO_N_STEPS,
-    DEFAULT_PPO_RUN_NAME,
     DEFAULT_PPO_TOTAL_TIMESTEPS,
     DEFAULT_RESET_BALL_HEIGHT_RANGE,
     DEFAULT_RESET_VELOCITY_XY_RANGE,
@@ -35,7 +34,6 @@ from pingpong_rl2.defaults import (
     DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
     SMOKE_PPO_BATCH_SIZE,
     SMOKE_PPO_N_STEPS,
-    SMOKE_PPO_RUN_NAME,
     SMOKE_PPO_TOTAL_TIMESTEPS,
 )
 from pingpong_rl2.envs import PingPongKeepUpGymEnv
@@ -724,6 +722,23 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
 _CONFIG_PATH_DESTS = {"output_dir", "resume_from", "scene_path"}
 
 
+def normalize_config_key(raw_key: str) -> str:
+    return raw_key.lstrip("-").replace("-", "_")
+
+
+def parse_config_scalar(raw_value: str) -> object:
+    try:
+        return json.loads(raw_value)
+    except json.JSONDecodeError:
+        return raw_value
+
+
+def values_equal(left: object, right: object) -> bool:
+    if isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
+        return len(left) == len(right) and all(values_equal(a, b) for a, b in zip(left, right))
+    return left == right
+
+
 def explicit_cli_destinations(parser: argparse.ArgumentParser, argv: Sequence[str]) -> set[str]:
     option_destinations: dict[str, str] = {}
     for action in parser._actions:
@@ -763,17 +778,34 @@ def apply_training_config(
         return
 
     config_values = load_training_config(Path(args.config_file))
-    valid_destinations = {action.dest for action in parser._actions}
+    valid_destinations = {action.dest for action in parser._actions} | set(_PRESET_MANAGED_ARG_DEFAULTS)
     for raw_key, value in config_values.items():
         if not isinstance(raw_key, str):
             raise ValueError(f"Training config keys must be strings, got {raw_key!r}.")
-        destination = raw_key.lstrip("-").replace("-", "_")
+        destination = normalize_config_key(raw_key)
         if destination == "config_file":
             continue
         if destination not in valid_destinations:
             raise ValueError(f"Unknown training config key: {raw_key!r}.")
         if destination in explicit_destinations:
             continue
+        if destination in _CONFIG_PATH_DESTS and value is not None:
+            value = Path(str(value))
+        setattr(args, destination, value)
+
+
+def apply_config_overrides(args: argparse.Namespace, overrides: Sequence[str]) -> None:
+    valid_destinations = set(vars(args)) | set(_PRESET_MANAGED_ARG_DEFAULTS)
+    for override in overrides:
+        if "=" not in override:
+            raise ValueError(f"--set expects KEY=VALUE, got {override!r}.")
+        raw_key, raw_value = override.split("=", 1)
+        destination = normalize_config_key(raw_key)
+        if destination in {"config_file", "config_overrides", "preset"}:
+            raise ValueError(f"--set cannot override {raw_key!r}; pass it as a normal CLI/config value.")
+        if destination not in valid_destinations:
+            raise ValueError(f"Unknown --set key: {raw_key!r}.")
+        value = parse_config_scalar(raw_value)
         if destination in _CONFIG_PATH_DESTS and value is not None:
             value = Path(str(value))
         setattr(args, destination, value)
@@ -788,6 +820,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "Optional JSON config file using argparse destination names. "
             "CLI values override config-file values, and presets are applied after the config is loaded."
+        ),
+    )
+    parser.add_argument(
+        "--set",
+        dest="config_overrides",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help=(
+            "Override any config/preset-managed key. VALUE is parsed as JSON when possible, "
+            "so lists can be passed as --set reset_velocity_z_range='[-0.01,0.01]'."
         ),
     )
     parser.add_argument(
@@ -1462,10 +1505,10 @@ def apply_env_preset(args: argparse.Namespace) -> str:
     for arg_name, preset_value in preset_values.items():
         current_value = getattr(args, arg_name)
         default_value = _PRESET_MANAGED_ARG_DEFAULTS[arg_name]
-        if current_value == default_value:
+        if values_equal(current_value, default_value):
             setattr(args, arg_name, preset_value)
             continue
-        if current_value != preset_value:
+        if not values_equal(current_value, preset_value):
             raise ValueError(
                 f"--preset {args.preset!r} conflicts with explicit --{arg_name.replace('_', '-')}={current_value!r}."
             )
@@ -2363,6 +2406,7 @@ def initialize_scaled_policy_log_std(
 def main() -> None:
     args = parse_args()
     resolved_preset = apply_env_preset(args)
+    apply_config_overrides(args, args.config_overrides)
     if args.smoke:
         args.total_timesteps = SMOKE_PPO_TOTAL_TIMESTEPS
         args.n_steps = SMOKE_PPO_N_STEPS
@@ -2543,6 +2587,7 @@ def main() -> None:
         "completed_timesteps": completed_timesteps,
         "config": {
             "config_file": None if args.config_file is None else str(resolve_input_path(args.config_file)),
+            "config_overrides": list(args.config_overrides),
             "preset": resolved_preset,
             "run_version": args.run_version,
             "resolved_tilt_profile": resolved_tilt_profile,
@@ -2564,6 +2609,17 @@ def main() -> None:
             "action_std_min": args.action_std_min,
             "action_std_max": args.action_std_max,
             "zero_init_action_mean": args.zero_init_action_mean,
+            "bootstrap_heuristic_episodes": args.bootstrap_heuristic_episodes,
+            "bootstrap_min_useful_bounces": args.bootstrap_min_useful_bounces,
+            "bootstrap_max_samples": args.bootstrap_max_samples,
+            "bootstrap_epochs": args.bootstrap_epochs,
+            "bootstrap_batch_size": args.bootstrap_batch_size,
+            "bootstrap_learning_rate": args.bootstrap_learning_rate,
+            "bootstrap_sample_mode": args.bootstrap_sample_mode,
+            "bootstrap_followup_epochs": args.bootstrap_followup_epochs,
+            "bootstrap_followup_sample_mode": args.bootstrap_followup_sample_mode,
+            "bootstrap_followup_min_useful_bounces": args.bootstrap_followup_min_useful_bounces,
+            "bootstrap_followup_learning_rate": args.bootstrap_followup_learning_rate,
             "eval_episodes": args.eval_episodes,
             "checkpoint_interval": args.checkpoint_interval,
             "checkpoint_eval_episodes": args.checkpoint_eval_episodes,

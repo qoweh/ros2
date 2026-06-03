@@ -6,9 +6,9 @@
 
 - env-side assist는 실험으로만 넣고, 현재 winner만 preset으로 고정한다.
 - heuristic keep-up policy는 기본 학습 경로에 직접 섞지 않되, 구조 gate가 통과한 뒤에는 actor bootstrap warm-start 용도로만 제한적으로 사용한다.
-- curriculum을 기본 꺼 둔다.
-- 현재 주력 action은 `position_strike`다.
-- reward는 strike-window alignment, useful contact, apex quality, failure penalty만 남긴다.
+- 현재 주력 action은 `position_contact_frame_velocity_tilt_lateral_apex_residual` 15D residual이다.
+- 현재 주력 preset은 `contact_frame_self_rally_v25_long_horizon_30_bounce`다.
+- 학습 실행은 긴 CLI 대신 `configs/*.json` 설정파일과 `--set KEY=VALUE` override를 우선 사용한다.
 
 ## 디렉터리
 
@@ -20,17 +20,56 @@
 
 ## 주요 스크립트
 
-- `python pingpong_rl2/scripts/run_bounce_sanity.py`
-- `python pingpong_rl2/scripts/run_heuristic_keepup_diagnostic.py --episodes 20 --analysis-name <name>`
-- `python pingpong_rl2/scripts/run_ppo_learning.py --preset final_candidate --run-name <name> --run-version <version> --reset-model`
-- `python pingpong_rl2/scripts/run_ppo_learning.py --preset phase_contract_candidate --run-name <name> --run-version <version> --reset-model`
-- `python pingpong_rl2/scripts/run_ppo_learning.py --preset followup_strike_candidate --run-name <name> --run-version <version> --reset-model`
-- `python pingpong_rl2/scripts/run_ppo_learning.py --preset followup_strike_candidate --run-name <name> --run-version <version> --reset-model --bootstrap-heuristic-episodes 40 --bootstrap-epochs 5 --bootstrap-max-samples 4000`
-- `python pingpong_rl2/scripts/run_ppo_evaluation.py --model-path <zip>`
-- `python pingpong_rl2/scripts/run_ppo_rebound_analysis.py --model-path <zip> --episodes 50 --analysis-name <name>`
-- `python pingpong_rl2/scripts/run_viewer.py --run-name clean_tnp_return_assist --run-version v1 --best-model --episodes 5`
-- `python pingpong_rl2/scripts/run_viewer.py --mode heuristic --episodes 3`
-- `python pingpong_rl2/scripts/benchmark_vector_env.py --n-envs 4`
+현재 v25 재현 학습:
+
+```bash
+PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
+  --config-file configs/pmk_cf_self_rally_v25_long_horizon_30_bounce.json
+```
+
+새 실험은 `run_version`만 바꿔서 실행한다.
+
+```bash
+PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
+  --config-file configs/pmk_cf_self_rally_v25_long_horizon_30_bounce.json \
+  --run-version v26
+```
+
+드문 일회성 override는 개별 CLI 인자보다 `--set`을 사용한다.
+
+```bash
+PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
+  --config-file configs/pmk_cf_self_rally_v25_long_horizon_30_bounce.json \
+  --run-version smoke_check \
+  --smoke \
+  --set bootstrap_heuristic_episodes=0 \
+  --set bootstrap_epochs=0 \
+  --set bootstrap_followup_epochs=0
+```
+
+분석과 viewer:
+
+```bash
+PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_rebound_analysis.py \
+  --run-name pmk_cf_self_rally \
+  --run-version v25 \
+  --episodes 100 \
+  --seed 251 \
+  --analysis-name pmk_cf_self_rally_v25_final_contact_diagnosis
+
+PYTHONPATH=src conda run -n mujoco_env python scripts/run_viewer.py \
+  --run-name pmk_cf_self_rally \
+  --run-version v25 \
+  --best-model \
+  --episodes 5
+```
+
+보조 도구:
+
+- `scripts/run_material_sanity.py`: MuJoCo 공/라켓 물성 sanity check
+- `scripts/run_contact_feasibility_map.py`: scripted contact upper-bound/feasibility sweep
+- `scripts/run_heuristic_keepup_diagnostic.py`: PPO 없이 heuristic baseline 확인
+- `scripts/benchmark_vector_env.py`: vector env throughput 확인
 
 학습 재개 규칙:
 
@@ -39,29 +78,10 @@
 - 같은 이름으로 처음부터 다시 시작하려면 `--reset-model`을 사용한다.
 - 다른 체크포인트를 이어받으려면 `--resume-from <zip>`을 사용한다.
 
-## 현재 baseline 범위
-
-현재 active candidate는 `position_strike` 기반 control 설정이다.
-
-- `strike_tilt_ramp_pitch=-0.03`
-- `strike_tilt_ramp_xy_tolerance=0.04`
-- `post_contact_return_assist_weight=0.5`
-- `post_contact_return_max_intercept_time=0.6`
-- velocity-domain observation은 기본으로 넣지 않는다.
-- reward-side inward-return shaping은 기본 세트에 넣지 않는다.
-
-## keep-up rethink follow-up
-
-- `phase_contract_candidate` preset은 기존 `final_candidate` control stack 위에 `phase/contact/next-intercept` observation과 `next_intercept_reachable_bonus_weight=0.2`를 얹는 새 실험 preset이다.
-- `followup_strike_candidate` preset은 위 contract에 더해 첫 useful bounce 이후 inward follow-up tilt contract를 유지해서 second-strike geometry를 직접 바꾸는 preset이다.
-- `run_heuristic_keepup_diagnostic.py`는 PPO 없이 scripted diagnostic baseline을 돌려서 현재 환경/제어가 반복 keep-up을 허용하는지 먼저 확인한다.
-- `run_viewer.py --mode heuristic`는 같은 baseline을 MuJoCo viewer에서 바로 재생한다.
-- `run_ppo_learning.py`의 `--bootstrap-*` 옵션은 heuristic rollout 중 useful bounce가 나온 episode만 모아 actor를 supervised warm-start한 뒤 PPO를 시작한다. 현재 결과상 이 경로는 first useful bounce 안정화에는 유효하지만, second-strike quality는 follow-up checkpoint selection과 함께 봐야 한다.
-- `run_ppo_learning.py`는 추가로 `--bootstrap-sample-mode`와 `--bootstrap-followup-*` 실험 옵션을 지원한다. 이들은 post-success / multi-bounce heuristic sample만 따로 bootstrap하는 연구용 경로이며, 현재 50-episode 기준으로는 기본 bootstrap보다 우위가 확인되지 않아 기본값으로 승격하지 않는다.
-
 ## 현재 판단
 
-- centered upward useful second strike를 여는 핵심 구조 변경은 `followup_strike_target_tilt=(-0.03, 0.0)` 기반 follow-up strike contract다.
-- heuristic bootstrap은 PPO가 이 구조를 더 빨리 배우게 해 준다.
-- 현재 가장 목표지향적인 training schedule은 `followup_strike_bootstrap_v1_best_model.zip` 같은 plain-bootstrap best checkpoint에서 시작해, 같은 `followup_strike_candidate` contract 아래 PPO를 이어학습하는 staged resume 경로다.
-- 이 staged 방향의 현재 기준 run은 `followup_bootstrap_resume_contract_v1_best`이며, 50-episode 기준 `two+ rate`를 유지하면서 contract-only run보다 `mean useful bounces`, `one+ rate`, useful-contact reachable rate, easy-next-ball score가 모두 좋아졌다.
+- 현재 발표 후보는 `pmk_cf_self_rally_v25`다.
+- 100 episode rebound analysis 기준 mean useful bounce `28.51`, max `51`, `30+ useful bounce rate=0.61`이다.
+- `time_limit` episode는 평균 useful `37.37`로, 실패라기보다 episode horizon 끝까지 버틴 성공 케이스에 가깝다.
+- 남은 개선 포인트는 초중반 `low_apex_contact`와 긴 episode 말기의 드문 `ball_out_of_bounds`다.
+- 시연은 final model과 `pmk_cf_self_rally_v25_best_model.zip`을 viewer로 비교해 더 안정적인 쪽을 쓰는 것이 좋다.
