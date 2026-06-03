@@ -49,10 +49,6 @@ class PingPongSim:
         return self._home_joint_targets.copy()
 
     @property
-    def home_gripper_target(self) -> float:
-        return float(self._home_ctrl[7])
-
-    @property
     def joint_positions(self) -> np.ndarray:
         return self.data.qpos[:7].copy()
 
@@ -78,10 +74,6 @@ class PingPongSim:
             self.racket_site_id,
         )
         return self._racket_jacobian @ self.data.qvel
-
-    @property
-    def racket_grip_position(self) -> np.ndarray:
-        return self.data.xpos[self.racket_body_id].copy()
 
     @property
     def racket_face_normal(self) -> np.ndarray:
@@ -318,26 +310,6 @@ class PingPongSim:
         if np.linalg.norm(self.ball_velocity) > max_ball_speed:
             return "ball_speed_limit"
         return None
-
-    def reset_if_failed(
-        self,
-        ball_height: float | None = None,
-        x_bounds: tuple[float, float] = (0.0, 1.35),
-        y_bounds: tuple[float, float] = (-0.6, 0.6),
-        z_bounds: tuple[float, float] = (-0.05, 2.0),
-        max_ball_speed: float = 8.0,
-    ) -> str | None:
-        reason = self.failure_reason(
-            x_bounds=x_bounds,
-            y_bounds=y_bounds,
-            z_bounds=z_bounds,
-            max_ball_speed=max_ball_speed,
-        )
-        if reason is None:
-            return None
-
-        self.reset(ball_height=self._default_ball_height if ball_height is None else float(ball_height))
-        return reason
 
     def step(
         self,

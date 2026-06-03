@@ -1687,6 +1687,34 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertAlmostEqual(float(brake_velocity[1]), 0.0)
         self.assertAlmostEqual(float(brake_velocity[2]), 0.0)
 
+    def test_contact_racket_outward_velocity_penalty_ignores_inward_sweep(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            next_intercept_success_radius=0.03,
+            contact_racket_outward_velocity_penalty_weight=0.8,
+            contact_racket_outward_velocity_tolerance=0.05,
+        )
+        env.reset(ball_height=env.ball_height)
+        target_xy = env._keepup_target_xy()
+        outward_trace = {
+            "contact_ball_position_x": float(target_xy[0] + 0.10),
+            "contact_ball_position_y": float(target_xy[1]),
+            "contact_ball_position_z": float(env.sim.racket_position[2]),
+            "contact_racket_velocity_x": 0.15,
+            "contact_racket_velocity_y": 0.0,
+            "contact_racket_velocity_z": 0.0,
+        }
+        inward_trace = {**outward_trace, "contact_racket_velocity_x": -0.15}
+        near_center_trace = {**outward_trace, "contact_ball_position_x": float(target_xy[0] + 0.01)}
+
+        self.assertAlmostEqual(env._contact_racket_outward_speed(outward_trace), 0.15)
+        self.assertAlmostEqual(env._contact_racket_outward_velocity_penalty_term(outward_trace), -1.6)
+        self.assertEqual(env._contact_racket_outward_speed(inward_trace), 0.0)
+        self.assertEqual(env._contact_racket_outward_velocity_penalty_term(inward_trace), 0.0)
+        self.assertEqual(env._contact_racket_outward_velocity_penalty_term(near_center_trace), 0.0)
+
     def test_body_clearance_active_after_any_recent_contact_while_ball_is_close(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",

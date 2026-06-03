@@ -306,6 +306,8 @@ class PingPongKeepUpEnv:
         contact_xy_error_penalty_weight: float = 0.0,
         contact_racket_lateral_velocity_penalty_weight: float = 0.0,
         contact_racket_lateral_velocity_tolerance: float = 0.20,
+        contact_racket_outward_velocity_penalty_weight: float = 0.0,
+        contact_racket_outward_velocity_tolerance: float = 0.04,
         max_contact_racket_lateral_speed_for_success: float | None = None,
         nonuseful_contact_penalty_weight: float = 0.0,
         contact_apex_under_target_penalty_weight: float = 0.0,
@@ -528,6 +530,10 @@ class PingPongKeepUpEnv:
         self.contact_xy_error_penalty_weight = float(contact_xy_error_penalty_weight)
         self.contact_racket_lateral_velocity_penalty_weight = float(contact_racket_lateral_velocity_penalty_weight)
         self.contact_racket_lateral_velocity_tolerance = float(contact_racket_lateral_velocity_tolerance)
+        self.contact_racket_outward_velocity_penalty_weight = float(
+            contact_racket_outward_velocity_penalty_weight
+        )
+        self.contact_racket_outward_velocity_tolerance = float(contact_racket_outward_velocity_tolerance)
         self.max_contact_racket_lateral_speed_for_success = (
             None
             if max_contact_racket_lateral_speed_for_success is None
@@ -1023,6 +1029,16 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 "contact_frame_lateral_brake_radius must be positive, got "
                 f"{self.contact_frame_lateral_brake_radius}."
+            )
+        if self.contact_racket_outward_velocity_penalty_weight < 0.0:
+            raise ValueError(
+                "contact_racket_outward_velocity_penalty_weight must be non-negative, got "
+                f"{self.contact_racket_outward_velocity_penalty_weight}."
+            )
+        if self.contact_racket_outward_velocity_tolerance < 0.0:
+            raise ValueError(
+                "contact_racket_outward_velocity_tolerance must be non-negative, got "
+                f"{self.contact_racket_outward_velocity_tolerance}."
             )
         if self.contact_frame_trajectory_tilt_gain < 0.0:
             raise ValueError(
@@ -1828,6 +1844,7 @@ class PingPongKeepUpEnv:
             "contact_racket_velocity_x": contact_trace.get("contact_racket_velocity_x"),
             "contact_racket_velocity_y": contact_trace.get("contact_racket_velocity_y"),
             "contact_racket_lateral_speed": self._contact_racket_lateral_speed(contact_trace),
+            "contact_racket_outward_speed": self._contact_racket_outward_speed(contact_trace),
             "racket_velocity_z": float(self.sim.racket_velocity[2]),
             "contact_ball_velocity_z": contact_trace.get("contact_ball_velocity_z"),
             "contact_racket_velocity_z": contact_trace.get("contact_racket_velocity_z"),
@@ -2007,6 +2024,10 @@ class PingPongKeepUpEnv:
             "contact_xy_error_penalty_weight": self.contact_xy_error_penalty_weight,
             "contact_racket_lateral_velocity_penalty_weight": self.contact_racket_lateral_velocity_penalty_weight,
             "contact_racket_lateral_velocity_tolerance": self.contact_racket_lateral_velocity_tolerance,
+            "contact_racket_outward_velocity_penalty_weight": (
+                self.contact_racket_outward_velocity_penalty_weight
+            ),
+            "contact_racket_outward_velocity_tolerance": self.contact_racket_outward_velocity_tolerance,
             "max_contact_racket_lateral_speed_for_success": self.max_contact_racket_lateral_speed_for_success,
             "nonuseful_contact_penalty_weight": self.nonuseful_contact_penalty_weight,
             "contact_apex_under_target_penalty_weight": self.contact_apex_under_target_penalty_weight,
@@ -2233,6 +2254,31 @@ class PingPongKeepUpEnv:
         if velocity_x is None or velocity_y is None:
             return float(np.linalg.norm(self.sim.racket_velocity[:2]))
         return float(np.linalg.norm(np.array([float(velocity_x), float(velocity_y)], dtype=float)))
+
+    def _contact_racket_outward_speed(self, contact_trace: dict[str, object] | None) -> float:
+        if contact_trace is None:
+            return 0.0
+        velocity = self._contact_vector(contact_trace, "contact_racket_velocity")
+        contact_position = self._contact_vector(contact_trace, "contact_ball_position")
+        if velocity is None or contact_position is None:
+            return 0.0
+        outward_xy = contact_position[:2] - self._keepup_target_xy()
+        outward_distance = float(np.linalg.norm(outward_xy))
+        if outward_distance <= max(self.next_intercept_success_radius, 1.0e-6):
+            return 0.0
+        outward_direction = outward_xy / outward_distance
+        return max(float(np.dot(velocity[:2], outward_direction)), 0.0)
+
+    def _contact_racket_outward_velocity_penalty_term(self, contact_trace: dict[str, object] | None) -> float:
+        if self.contact_racket_outward_velocity_penalty_weight <= 0.0:
+            return 0.0
+        outward_speed = self._contact_racket_outward_speed(contact_trace)
+        excess_outward_speed = max(outward_speed - self.contact_racket_outward_velocity_tolerance, 0.0)
+        normalized_outward_speed = min(
+            excess_outward_speed / max(self.contact_racket_outward_velocity_tolerance, 1.0e-6),
+            4.0,
+        )
+        return -self.contact_racket_outward_velocity_penalty_weight * normalized_outward_speed
 
     def _resolved_outgoing_ball_velocity(self, contact_trace: dict[str, object] | None) -> tuple[np.ndarray | None, str | None]:
         if contact_trace is None:
@@ -3215,6 +3261,7 @@ class PingPongKeepUpEnv:
             "post_contact_lateral_velocity_penalty": 0.0,
             "contact_xy_error_penalty": 0.0,
             "contact_racket_lateral_velocity_penalty": 0.0,
+            "contact_racket_outward_velocity_penalty": 0.0,
             "nonuseful_contact_penalty": 0.0,
             "contact_apex_under_target_penalty": 0.0,
             "contact_apex_progress_term": 0.0,
@@ -3345,6 +3392,9 @@ class PingPongKeepUpEnv:
                     reward_terms["contact_racket_lateral_velocity_penalty"] = (
                         -self.contact_racket_lateral_velocity_penalty_weight * normalized_lateral_speed
                     )
+                reward_terms["contact_racket_outward_velocity_penalty"] = (
+                    self._contact_racket_outward_velocity_penalty_term(contact_trace)
+                )
                 reward_terms["contact_apex_under_target_penalty"] = (
                     self._contact_apex_under_target_penalty_term(contact_trace)
                 )

@@ -147,6 +147,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--next-intercept-xy-error-penalty-weight", type=float, default=None)
     parser.add_argument("--post-contact-lateral-velocity-penalty-weight", type=float, default=None)
     parser.add_argument("--contact-xy-error-penalty-weight", type=float, default=None)
+    parser.add_argument("--contact-racket-outward-velocity-penalty-weight", type=float, default=None)
+    parser.add_argument("--contact-racket-outward-velocity-tolerance", type=float, default=None)
     parser.add_argument("--nonuseful-contact-penalty-weight", type=float, default=None)
     parser.add_argument("--contact-apex-potential-reward-weight", type=float, default=None)
     parser.add_argument("--contact-apex-potential-gamma", type=float, default=None)
@@ -418,6 +420,9 @@ def summarize_contacts(
             "mean_contact_apex_potential_term": 0.0,
             "mean_contact_frame_lateral_brake_speed": 0.0,
             "max_contact_frame_lateral_brake_speed": 0.0,
+            "mean_contact_racket_outward_speed": 0.0,
+            "max_contact_racket_outward_speed": 0.0,
+            "mean_contact_racket_outward_velocity_penalty": 0.0,
             "mean_contact_lateral_stability_term": 0.0,
             "useful_contact_mean_contact_lateral_stability_term": 0.0,
             "mean_applied_action_normalized_norm": 0.0,
@@ -493,6 +498,8 @@ def summarize_contacts(
         if lateral_brake_x.size and lateral_brake_y.size and lateral_brake_x.size == lateral_brake_y.size
         else np.asarray([], dtype=float)
     )
+    racket_outward_speed = float_series("contact_racket_outward_speed", contact_rows)
+    racket_outward_velocity_penalty = float_series("contact_racket_outward_velocity_penalty", contact_rows)
     lateral_stability_term = float_series("contact_lateral_stability_term", contact_rows)
     useful_lateral_stability_term = float_series("contact_lateral_stability_term", useful_rows)
     action_normalized_norm = float_series("applied_action_normalized_norm", contact_rows)
@@ -558,6 +565,15 @@ def summarize_contacts(
         ),
         "max_contact_frame_lateral_brake_speed": (
             float(lateral_brake_speed.max()) if lateral_brake_speed.size else 0.0
+        ),
+        "mean_contact_racket_outward_speed": (
+            float(racket_outward_speed.mean()) if racket_outward_speed.size else 0.0
+        ),
+        "max_contact_racket_outward_speed": (
+            float(racket_outward_speed.max()) if racket_outward_speed.size else 0.0
+        ),
+        "mean_contact_racket_outward_velocity_penalty": (
+            float(racket_outward_velocity_penalty.mean()) if racket_outward_velocity_penalty.size else 0.0
         ),
         "useful_contact_mean_ball_lateral_speed": (
             float(useful_lateral_speed.mean()) if useful_lateral_speed.size else 0.0
@@ -1125,6 +1141,12 @@ def main() -> None:
         )
     if args.contact_xy_error_penalty_weight is not None:
         env_kwargs["contact_xy_error_penalty_weight"] = args.contact_xy_error_penalty_weight
+    if args.contact_racket_outward_velocity_penalty_weight is not None:
+        env_kwargs["contact_racket_outward_velocity_penalty_weight"] = (
+            args.contact_racket_outward_velocity_penalty_weight
+        )
+    if args.contact_racket_outward_velocity_tolerance is not None:
+        env_kwargs["contact_racket_outward_velocity_tolerance"] = args.contact_racket_outward_velocity_tolerance
     if args.nonuseful_contact_penalty_weight is not None:
         env_kwargs["nonuseful_contact_penalty_weight"] = args.nonuseful_contact_penalty_weight
     if args.contact_apex_potential_reward_weight is not None:
@@ -1307,6 +1329,9 @@ def main() -> None:
                             "contact_apex_progress_easy_next_ball_gate"
                         ),
                         "contact_lateral_stability_term": reward_terms.get("contact_lateral_stability_term"),
+                        "contact_racket_outward_velocity_penalty": reward_terms.get(
+                            "contact_racket_outward_velocity_penalty"
+                        ),
                         "applied_action_norm": info.get("applied_action_norm"),
                         "applied_action_normalized_norm": info.get("applied_action_normalized_norm"),
                         "applied_position_action_norm": info.get("applied_position_action_norm"),
@@ -1443,6 +1468,7 @@ def main() -> None:
                         "racket_velocity_y": info.get("contact_racket_velocity_y"),
                         "racket_velocity_z": info.get("contact_racket_velocity_z"),
                         "racket_lateral_speed": info.get("contact_racket_lateral_speed"),
+                        "contact_racket_outward_speed": info.get("contact_racket_outward_speed"),
                         "racket_speed_norm": info.get("contact_racket_speed_norm"),
                         "target_velocity_x": (
                             None if info.get("target_velocity") is None else float(info["target_velocity"][0])

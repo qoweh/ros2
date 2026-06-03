@@ -485,6 +485,16 @@ _ENV_PRESETS["contact_frame_self_rally_v22_low_stable_window"] = {
     "stable_contact_min_apex_ratio": 0.70,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v23_outward_timing_guard"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v22_low_stable_window"],
+    "contact_racket_outward_velocity_penalty_weight": 0.85,
+    "contact_racket_outward_velocity_tolerance": 0.04,
+    "contact_frame_lateral_brake_gain": 0.65,
+    "contact_frame_lateral_brake_max": 0.25,
+    "contact_frame_lateral_brake_radius": 0.12,
+    "contact_racket_lateral_velocity_penalty_weight": 0.55,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -672,6 +682,8 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_xy_error_penalty_weight": None,
     "contact_racket_lateral_velocity_penalty_weight": None,
     "contact_racket_lateral_velocity_tolerance": None,
+    "contact_racket_outward_velocity_penalty_weight": None,
+    "contact_racket_outward_velocity_tolerance": None,
     "max_contact_racket_lateral_speed_for_success": None,
     "nonuseful_contact_penalty_weight": None,
     "contact_apex_under_target_penalty_weight": None,
@@ -1077,6 +1089,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-xy-error-penalty-weight", type=float, default=None)
     parser.add_argument("--contact-racket-lateral-velocity-penalty-weight", type=float, default=None)
     parser.add_argument("--contact-racket-lateral-velocity-tolerance", type=float, default=None)
+    parser.add_argument("--contact-racket-outward-velocity-penalty-weight", type=float, default=None)
+    parser.add_argument("--contact-racket-outward-velocity-tolerance", type=float, default=None)
     parser.add_argument("--max-contact-racket-lateral-speed-for-success", type=float, default=None)
     parser.add_argument("--nonuseful-contact-penalty-weight", type=float, default=None)
     parser.add_argument(
@@ -1687,6 +1701,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         )
     if args.contact_racket_lateral_velocity_tolerance is not None:
         env_kwargs["contact_racket_lateral_velocity_tolerance"] = args.contact_racket_lateral_velocity_tolerance
+    if args.contact_racket_outward_velocity_penalty_weight is not None:
+        env_kwargs["contact_racket_outward_velocity_penalty_weight"] = (
+            args.contact_racket_outward_velocity_penalty_weight
+        )
+    if args.contact_racket_outward_velocity_tolerance is not None:
+        env_kwargs["contact_racket_outward_velocity_tolerance"] = args.contact_racket_outward_velocity_tolerance
     if args.max_contact_racket_lateral_speed_for_success is not None:
         env_kwargs["max_contact_racket_lateral_speed_for_success"] = (
             args.max_contact_racket_lateral_speed_for_success

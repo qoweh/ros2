@@ -92,3 +92,5 @@
   - `pmk_cf_self_rally_v20` 분석, v19/v20 비교, v20 terminal low-apex 악화 해석, 15D `target_apex_z`/`strike_plane_z` residual 기반 v21 preset과 학습/분석 명령을 정리한 보고서
 - `44_v21_low_apex_review_and_v22_low_stable_window.md`
   - `pmk_cf_self_rally_v21` 분석, `low_apex_contact` 판정 기준, 낮은 안정 루프가 useful로 과소평가되던 문제, v22 low-stable height window 수정과 학습/분석 명령을 정리한 보고서
+- `45_v22_review_and_v23_outward_timing_guard.md`
+  - `pmk_cf_self_rally_v22` 분석, 15D action/log_std 사용량, `ball_out_of_bounds`의 outward racket velocity 원인, v23 outward timing guard와 cleanup 결과, 학습/분석 명령을 정리한 보고서
