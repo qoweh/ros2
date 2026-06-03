@@ -107,6 +107,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-planner-min-intercept-time", type=float, default=None)
     parser.add_argument("--contact-frame-planner-max-intercept-time", type=float, default=None)
     parser.add_argument("--contact-frame-planner-target-apex-z-offset", type=float, default=None)
+    parser.add_argument("--contact-frame-planner-contact-offset-ratio", type=float, default=None)
+    parser.add_argument("--contact-frame-planner-contact-offset-max", type=float, default=None)
+    parser.add_argument("--contact-frame-lateral-brake-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-lateral-brake-max", type=float, default=None)
+    parser.add_argument("--contact-frame-lateral-brake-radius", type=float, default=None)
     parser.add_argument("--controller-velocity-gain", type=float, default=None)
     parser.add_argument("--controller-velocity-feedback-gain", type=float, default=None)
     parser.add_argument("--controller-max-velocity-step", type=float, default=None)
@@ -409,6 +414,8 @@ def summarize_contacts(
             "useful_contact_mean_contact_tangential_relative_ratio": 0.0,
             "mean_contact_apex_progress_easy_next_ball_gate": 0.0,
             "mean_contact_apex_potential_term": 0.0,
+            "mean_contact_frame_lateral_brake_speed": 0.0,
+            "max_contact_frame_lateral_brake_speed": 0.0,
             "mean_contact_lateral_stability_term": 0.0,
             "useful_contact_mean_contact_lateral_stability_term": 0.0,
             "mean_applied_action_normalized_norm": 0.0,
@@ -477,6 +484,13 @@ def summarize_contacts(
     recovery_progress_term = float_series("contact_apex_recovery_progress_term", contact_rows)
     apex_potential_term = float_series("contact_apex_potential_term", contact_rows)
     apex_progress_gate = float_series("contact_apex_progress_easy_next_ball_gate", contact_rows)
+    lateral_brake_x = float_series("contact_frame_lateral_brake_velocity_x", contact_rows)
+    lateral_brake_y = float_series("contact_frame_lateral_brake_velocity_y", contact_rows)
+    lateral_brake_speed = (
+        np.sqrt(lateral_brake_x * lateral_brake_x + lateral_brake_y * lateral_brake_y)
+        if lateral_brake_x.size and lateral_brake_y.size and lateral_brake_x.size == lateral_brake_y.size
+        else np.asarray([], dtype=float)
+    )
     lateral_stability_term = float_series("contact_lateral_stability_term", contact_rows)
     useful_lateral_stability_term = float_series("contact_lateral_stability_term", useful_rows)
     action_normalized_norm = float_series("applied_action_normalized_norm", contact_rows)
@@ -536,6 +550,12 @@ def summarize_contacts(
         ),
         "mean_contact_apex_recovery_progress_term": (
             float(recovery_progress_term.mean()) if recovery_progress_term.size else 0.0
+        ),
+        "mean_contact_frame_lateral_brake_speed": (
+            float(lateral_brake_speed.mean()) if lateral_brake_speed.size else 0.0
+        ),
+        "max_contact_frame_lateral_brake_speed": (
+            float(lateral_brake_speed.max()) if lateral_brake_speed.size else 0.0
         ),
         "useful_contact_mean_ball_lateral_speed": (
             float(useful_lateral_speed.mean()) if useful_lateral_speed.size else 0.0
@@ -1045,6 +1065,16 @@ def main() -> None:
         env_kwargs["contact_frame_planner_max_intercept_time"] = args.contact_frame_planner_max_intercept_time
     if args.contact_frame_planner_target_apex_z_offset is not None:
         env_kwargs["contact_frame_planner_target_apex_z_offset"] = args.contact_frame_planner_target_apex_z_offset
+    if args.contact_frame_planner_contact_offset_ratio is not None:
+        env_kwargs["contact_frame_planner_contact_offset_ratio"] = args.contact_frame_planner_contact_offset_ratio
+    if args.contact_frame_planner_contact_offset_max is not None:
+        env_kwargs["contact_frame_planner_contact_offset_max"] = args.contact_frame_planner_contact_offset_max
+    if args.contact_frame_lateral_brake_gain is not None:
+        env_kwargs["contact_frame_lateral_brake_gain"] = args.contact_frame_lateral_brake_gain
+    if args.contact_frame_lateral_brake_max is not None:
+        env_kwargs["contact_frame_lateral_brake_max"] = args.contact_frame_lateral_brake_max
+    if args.contact_frame_lateral_brake_radius is not None:
+        env_kwargs["contact_frame_lateral_brake_radius"] = args.contact_frame_lateral_brake_radius
     if args.controller_velocity_gain is not None:
         env_kwargs["controller_velocity_gain"] = args.controller_velocity_gain
     if args.controller_velocity_feedback_gain is not None:
@@ -1435,6 +1465,16 @@ def main() -> None:
                             if info.get("contact_frame_intercept_velocity_target") is None
                             else float(info["contact_frame_intercept_velocity_target"][2])
                         ),
+                        "contact_frame_lateral_brake_velocity_x": (
+                            None
+                            if info.get("contact_frame_lateral_brake_velocity") is None
+                            else float(info["contact_frame_lateral_brake_velocity"][0])
+                        ),
+                        "contact_frame_lateral_brake_velocity_y": (
+                            None
+                            if info.get("contact_frame_lateral_brake_velocity") is None
+                            else float(info["contact_frame_lateral_brake_velocity"][1])
+                        ),
                         "contact_frame_planner_active": info.get("contact_frame_planner_active"),
                         "contact_frame_strike_hold_active": info.get("contact_frame_strike_hold_active"),
                         "controller_body_clearance_active": info.get("controller_body_clearance_active"),
@@ -1460,6 +1500,16 @@ def main() -> None:
                             None
                             if info.get("contact_frame_planner_contact_position") is None
                             else float(info["contact_frame_planner_contact_position"][2])
+                        ),
+                        "contact_frame_planner_contact_target_x": (
+                            None
+                            if info.get("contact_frame_planner_contact_target_xy") is None
+                            else float(info["contact_frame_planner_contact_target_xy"][0])
+                        ),
+                        "contact_frame_planner_contact_target_y": (
+                            None
+                            if info.get("contact_frame_planner_contact_target_xy") is None
+                            else float(info["contact_frame_planner_contact_target_xy"][1])
                         ),
                         "contact_frame_planner_desired_velocity_x": (
                             None

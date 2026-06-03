@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import PropertyMock, patch
 
 import numpy as np
 
@@ -1450,6 +1451,32 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertTrue(env._contact_frame_plan_active)
         np.testing.assert_allclose(target_position[:2], env._contact_frame_plan_contact_position[:2])
 
+    def test_contact_frame_planner_contact_offset_biases_target_toward_anchor(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_planner_enabled=True,
+            contact_frame_planner_contact_offset_ratio=1.0,
+            contact_frame_planner_contact_offset_max=0.03,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        ball_position = anchor_position + np.array([0.12, 0.0, 0.20])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        env._update_contact_frame_plan()
+
+        target_position = env._contact_frame_action_target_position(np.zeros(3, dtype=float))
+        planned_contact_xy = env._contact_frame_plan_contact_position[:2]
+
+        self.assertTrue(env._contact_frame_plan_active)
+        self.assertLess(float(target_position[0]), float(planned_contact_xy[0]))
+        self.assertAlmostEqual(float(target_position[1]), float(planned_contact_xy[1]))
+        self.assertLess(
+            float(np.linalg.norm(target_position[:2] - env._keepup_target_xy())),
+            float(np.linalg.norm(planned_contact_xy - env._keepup_target_xy())),
+        )
+
     def test_contact_frame_strike_hold_freezes_final_contact_position(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",
@@ -1488,6 +1515,28 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         target_velocity = env._contact_frame_velocity_target(env.sim.racket_position + np.array([0.04, 0.0, 0.0]))
 
         self.assertTrue(np.allclose(target_velocity, np.zeros(3, dtype=float)))
+
+    def test_contact_frame_lateral_brake_pushes_against_outward_racket_velocity(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_lateral_brake_gain=1.0,
+            contact_frame_lateral_brake_max=0.4,
+            contact_frame_lateral_brake_radius=0.12,
+        )
+        env.reset(ball_height=env.ball_height)
+        anchor_position = env._controller_anchor_position()
+        env.sim.spawn_ball(anchor_position + np.array([0.10, 0.0, 0.20]), velocity=(0.0, 0.0, -1.0))
+        target_position = anchor_position + np.array([0.12, 0.0, 0.0])
+
+        with patch.object(type(env.sim), "racket_velocity", new_callable=PropertyMock) as racket_velocity:
+            racket_velocity.return_value = np.array([0.3, 0.0, 0.0])
+            brake_velocity = env._contact_frame_lateral_brake_velocity(target_position)
+
+        self.assertLess(float(brake_velocity[0]), 0.0)
+        self.assertAlmostEqual(float(brake_velocity[1]), 0.0)
+        self.assertAlmostEqual(float(brake_velocity[2]), 0.0)
 
     def test_body_clearance_active_after_any_recent_contact_while_ball_is_close(self) -> None:
         env = PingPongKeepUpEnv(

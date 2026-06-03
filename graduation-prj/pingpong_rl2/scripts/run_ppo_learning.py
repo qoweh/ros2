@@ -443,6 +443,26 @@ _ENV_PRESETS["contact_frame_self_rally_v19_anti_low_loop"] = {
     "stable_cycle_reward_cap": 5,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v20_boundary_brake"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v19_anti_low_loop"],
+    "contact_frame_planner_contact_offset_ratio": 0.35,
+    "contact_frame_planner_contact_offset_max": 0.030,
+    "contact_frame_lateral_brake_gain": 1.25,
+    "contact_frame_lateral_brake_max": 0.45,
+    "contact_frame_lateral_brake_radius": 0.12,
+    "contact_racket_lateral_velocity_penalty_weight": 0.80,
+    "contact_racket_lateral_velocity_tolerance": 0.12,
+    "max_contact_racket_lateral_speed_for_success": 0.35,
+    "next_intercept_xy_error_penalty_weight": 1.60,
+    "post_contact_lateral_velocity_penalty_weight": 1.05,
+    "trajectory_error_penalty_weight": 0.95,
+    "contact_apex_under_target_penalty_weight": 1.35,
+    "contact_frame_low_apex_recovery_lift_gain": 0.032,
+    "contact_frame_low_apex_recovery_lift_max": 0.060,
+    "contact_frame_low_apex_recovery_velocity_gain": 0.38,
+    "contact_frame_low_apex_recovery_velocity_max": 0.60,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -589,11 +609,16 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_planner_min_intercept_time": None,
     "contact_frame_planner_max_intercept_time": None,
     "contact_frame_planner_target_apex_z_offset": None,
+    "contact_frame_planner_contact_offset_ratio": None,
+    "contact_frame_planner_contact_offset_max": None,
     "contact_frame_strike_hold_time": None,
     "contact_frame_strike_hold_min_readiness": None,
     "contact_frame_followthrough_gain": None,
     "contact_frame_followthrough_time": None,
     "contact_frame_followthrough_max": None,
+    "contact_frame_lateral_brake_gain": None,
+    "contact_frame_lateral_brake_max": None,
+    "contact_frame_lateral_brake_radius": None,
     "contact_frame_trajectory_tilt_gain": None,
     "contact_frame_trajectory_tilt_limit": None,
     "contact_frame_trajectory_tilt_deadband": None,
@@ -959,11 +984,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contact-frame-planner-min-intercept-time", type=float, default=None)
     parser.add_argument("--contact-frame-planner-max-intercept-time", type=float, default=None)
     parser.add_argument("--contact-frame-planner-target-apex-z-offset", type=float, default=None)
+    parser.add_argument("--contact-frame-planner-contact-offset-ratio", type=float, default=None)
+    parser.add_argument("--contact-frame-planner-contact-offset-max", type=float, default=None)
     parser.add_argument("--contact-frame-strike-hold-time", type=float, default=None)
     parser.add_argument("--contact-frame-strike-hold-min-readiness", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-gain", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-time", type=float, default=None)
     parser.add_argument("--contact-frame-followthrough-max", type=float, default=None)
+    parser.add_argument("--contact-frame-lateral-brake-gain", type=float, default=None)
+    parser.add_argument("--contact-frame-lateral-brake-max", type=float, default=None)
+    parser.add_argument("--contact-frame-lateral-brake-radius", type=float, default=None)
     parser.add_argument("--contact-frame-trajectory-tilt-gain", type=float, default=None)
     parser.add_argument(
         "--contact-frame-trajectory-tilt-limit",
@@ -1546,6 +1576,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_planner_max_intercept_time"] = args.contact_frame_planner_max_intercept_time
     if args.contact_frame_planner_target_apex_z_offset is not None:
         env_kwargs["contact_frame_planner_target_apex_z_offset"] = args.contact_frame_planner_target_apex_z_offset
+    if args.contact_frame_planner_contact_offset_ratio is not None:
+        env_kwargs["contact_frame_planner_contact_offset_ratio"] = args.contact_frame_planner_contact_offset_ratio
+    if args.contact_frame_planner_contact_offset_max is not None:
+        env_kwargs["contact_frame_planner_contact_offset_max"] = args.contact_frame_planner_contact_offset_max
     if args.contact_frame_strike_hold_time is not None:
         env_kwargs["contact_frame_strike_hold_time"] = args.contact_frame_strike_hold_time
     if args.contact_frame_strike_hold_min_readiness is not None:
@@ -1556,6 +1590,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_followthrough_time"] = args.contact_frame_followthrough_time
     if args.contact_frame_followthrough_max is not None:
         env_kwargs["contact_frame_followthrough_max"] = args.contact_frame_followthrough_max
+    if args.contact_frame_lateral_brake_gain is not None:
+        env_kwargs["contact_frame_lateral_brake_gain"] = args.contact_frame_lateral_brake_gain
+    if args.contact_frame_lateral_brake_max is not None:
+        env_kwargs["contact_frame_lateral_brake_max"] = args.contact_frame_lateral_brake_max
+    if args.contact_frame_lateral_brake_radius is not None:
+        env_kwargs["contact_frame_lateral_brake_radius"] = args.contact_frame_lateral_brake_radius
     if args.contact_frame_trajectory_tilt_gain is not None:
         env_kwargs["contact_frame_trajectory_tilt_gain"] = args.contact_frame_trajectory_tilt_gain
     if args.contact_frame_trajectory_tilt_limit is not None:

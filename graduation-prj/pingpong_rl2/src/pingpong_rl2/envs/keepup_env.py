@@ -274,11 +274,16 @@ class PingPongKeepUpEnv:
         contact_frame_planner_min_intercept_time: float = 0.03,
         contact_frame_planner_max_intercept_time: float = 0.60,
         contact_frame_planner_target_apex_z_offset: float = 0.0,
+        contact_frame_planner_contact_offset_ratio: float = 0.0,
+        contact_frame_planner_contact_offset_max: float = 0.0,
         contact_frame_strike_hold_time: float = 0.0,
         contact_frame_strike_hold_min_readiness: float = 0.65,
         contact_frame_followthrough_gain: float = 0.0,
         contact_frame_followthrough_time: float = 0.06,
         contact_frame_followthrough_max: float = 0.0,
+        contact_frame_lateral_brake_gain: float = 0.0,
+        contact_frame_lateral_brake_max: float = 0.0,
+        contact_frame_lateral_brake_radius: float = 0.12,
         contact_frame_trajectory_tilt_gain: float = 0.0,
         contact_frame_trajectory_tilt_limit: Sequence[float] | None = None,
         contact_frame_trajectory_tilt_deadband: float = 0.0,
@@ -479,11 +484,16 @@ class PingPongKeepUpEnv:
         self.contact_frame_planner_min_intercept_time = float(contact_frame_planner_min_intercept_time)
         self.contact_frame_planner_max_intercept_time = float(contact_frame_planner_max_intercept_time)
         self.contact_frame_planner_target_apex_z_offset = float(contact_frame_planner_target_apex_z_offset)
+        self.contact_frame_planner_contact_offset_ratio = float(contact_frame_planner_contact_offset_ratio)
+        self.contact_frame_planner_contact_offset_max = float(contact_frame_planner_contact_offset_max)
         self.contact_frame_strike_hold_time = float(contact_frame_strike_hold_time)
         self.contact_frame_strike_hold_min_readiness = float(contact_frame_strike_hold_min_readiness)
         self.contact_frame_followthrough_gain = float(contact_frame_followthrough_gain)
         self.contact_frame_followthrough_time = float(contact_frame_followthrough_time)
         self.contact_frame_followthrough_max = float(contact_frame_followthrough_max)
+        self.contact_frame_lateral_brake_gain = float(contact_frame_lateral_brake_gain)
+        self.contact_frame_lateral_brake_max = float(contact_frame_lateral_brake_max)
+        self.contact_frame_lateral_brake_radius = float(contact_frame_lateral_brake_radius)
         self.contact_frame_trajectory_tilt_gain = float(contact_frame_trajectory_tilt_gain)
         self.contact_frame_trajectory_tilt_limit = (
             None
@@ -935,6 +945,16 @@ class PingPongKeepUpEnv:
                 "contact_frame_planner_target_apex_z_offset must be finite, got "
                 f"{self.contact_frame_planner_target_apex_z_offset}."
             )
+        if self.contact_frame_planner_contact_offset_ratio < 0.0:
+            raise ValueError(
+                "contact_frame_planner_contact_offset_ratio must be non-negative, got "
+                f"{self.contact_frame_planner_contact_offset_ratio}."
+            )
+        if self.contact_frame_planner_contact_offset_max < 0.0:
+            raise ValueError(
+                "contact_frame_planner_contact_offset_max must be non-negative, got "
+                f"{self.contact_frame_planner_contact_offset_max}."
+            )
         if self.contact_frame_strike_hold_time < 0.0:
             raise ValueError(
                 f"contact_frame_strike_hold_time must be non-negative, got {self.contact_frame_strike_hold_time}."
@@ -958,6 +978,21 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 "contact_frame_followthrough_max must be non-negative, got "
                 f"{self.contact_frame_followthrough_max}."
+            )
+        if self.contact_frame_lateral_brake_gain < 0.0:
+            raise ValueError(
+                "contact_frame_lateral_brake_gain must be non-negative, got "
+                f"{self.contact_frame_lateral_brake_gain}."
+            )
+        if self.contact_frame_lateral_brake_max < 0.0:
+            raise ValueError(
+                "contact_frame_lateral_brake_max must be non-negative, got "
+                f"{self.contact_frame_lateral_brake_max}."
+            )
+        if self.contact_frame_lateral_brake_radius <= 0.0:
+            raise ValueError(
+                "contact_frame_lateral_brake_radius must be positive, got "
+                f"{self.contact_frame_lateral_brake_radius}."
             )
         if self.contact_frame_trajectory_tilt_gain < 0.0:
             raise ValueError(
@@ -1477,7 +1512,11 @@ class PingPongKeepUpEnv:
             self.controller.set_target_tilt(next_target_tilt)
         safe_target_position = self._guarded_target_position(requested_target_position)
         contact_frame_intercept_velocity_target = self._contact_frame_intercept_velocity_target(safe_target_position)
-        target_velocity = self._contact_frame_velocity_target(safe_target_position)
+        contact_frame_lateral_brake_velocity = self._contact_frame_lateral_brake_velocity(safe_target_position)
+        target_velocity = self._contact_frame_velocity_target(
+            safe_target_position,
+            lateral_brake_velocity=contact_frame_lateral_brake_velocity,
+        )
         self.controller.set_target_velocity(target_velocity if np.any(target_velocity) else None)
         self.controller.set_target_position(safe_target_position)
         self.controller.set_body_clearance_reference(
@@ -1635,11 +1674,17 @@ class PingPongKeepUpEnv:
             "contact_frame_controller_desired_velocity": self._contact_frame_controller_desired_velocity()[0],
             "contact_frame_velocity_target": self.controller.target_velocity,
             "contact_frame_intercept_velocity_target": contact_frame_intercept_velocity_target,
+            "contact_frame_lateral_brake_velocity": contact_frame_lateral_brake_velocity,
             "contact_frame_planner_active": self._contact_frame_plan_active,
             "contact_frame_strike_hold_active": self._contact_frame_strike_hold_active,
             "controller_body_clearance_active": self._controller_body_clearance_active(),
             "contact_frame_planner_contact_position": (
                 self._contact_frame_plan_contact_position.copy() if self._contact_frame_plan_active else None
+            ),
+            "contact_frame_planner_contact_target_xy": (
+                self._contact_frame_planner_contact_target_xy(self._contact_frame_plan_contact_position[:2])
+                if self._contact_frame_plan_active
+                else None
             ),
             "contact_frame_planner_intercept_time": (
                 self._contact_frame_plan_intercept_time if self._contact_frame_plan_active else None
@@ -1874,11 +1919,16 @@ class PingPongKeepUpEnv:
             "contact_frame_planner_min_intercept_time": self.contact_frame_planner_min_intercept_time,
             "contact_frame_planner_max_intercept_time": self.contact_frame_planner_max_intercept_time,
             "contact_frame_planner_target_apex_z_offset": self.contact_frame_planner_target_apex_z_offset,
+            "contact_frame_planner_contact_offset_ratio": self.contact_frame_planner_contact_offset_ratio,
+            "contact_frame_planner_contact_offset_max": self.contact_frame_planner_contact_offset_max,
             "contact_frame_strike_hold_time": self.contact_frame_strike_hold_time,
             "contact_frame_strike_hold_min_readiness": self.contact_frame_strike_hold_min_readiness,
             "contact_frame_followthrough_gain": self.contact_frame_followthrough_gain,
             "contact_frame_followthrough_time": self.contact_frame_followthrough_time,
             "contact_frame_followthrough_max": self.contact_frame_followthrough_max,
+            "contact_frame_lateral_brake_gain": self.contact_frame_lateral_brake_gain,
+            "contact_frame_lateral_brake_max": self.contact_frame_lateral_brake_max,
+            "contact_frame_lateral_brake_radius": self.contact_frame_lateral_brake_radius,
             "contact_frame_trajectory_tilt_gain": self.contact_frame_trajectory_tilt_gain,
             "contact_frame_trajectory_tilt_limit": (
                 None
@@ -3388,22 +3438,45 @@ class PingPongKeepUpEnv:
     def _followup_strike_contract_active(self) -> bool:
         return self.action_mode in _STRIKE_CONTRACT_ACTION_MODES and self.successful_bounce_count > 0
 
+    def _centered_contact_target_xy(
+        self,
+        contact_xy: Sequence[float],
+        *,
+        offset_ratio: float,
+        offset_max: float,
+    ) -> np.ndarray:
+        resolved_contact_xy = np.asarray(contact_xy, dtype=float)
+        if offset_ratio <= 0.0 or offset_max <= 0.0:
+            return resolved_contact_xy
+        anchor_xy = self._keepup_target_xy()
+        correction_xy = anchor_xy - resolved_contact_xy
+        correction_norm = float(np.linalg.norm(correction_xy))
+        if correction_norm <= 1.0e-9:
+            return resolved_contact_xy
+        offset_distance = min(
+            float(offset_max),
+            float(offset_ratio) * correction_norm,
+            0.75 * self.contact_centering_radius,
+        )
+        return resolved_contact_xy + offset_distance * correction_xy / correction_norm
+
     def _followup_strike_target_xy(self, predicted_intercept_xy: np.ndarray) -> np.ndarray:
         if not self._followup_strike_contract_active():
             return np.asarray(predicted_intercept_xy, dtype=float)
-        if self.followup_strike_contact_offset_ratio <= 0.0 or self.followup_strike_contact_offset_max <= 0.0:
-            return np.asarray(predicted_intercept_xy, dtype=float)
-        anchor_xy = self._keepup_target_xy()
-        correction_xy = anchor_xy - np.asarray(predicted_intercept_xy, dtype=float)
-        correction_norm = float(np.linalg.norm(correction_xy))
-        if correction_norm <= 1.0e-9:
-            return np.asarray(predicted_intercept_xy, dtype=float)
-        offset_distance = min(
-            self.followup_strike_contact_offset_max,
-            self.followup_strike_contact_offset_ratio * correction_norm,
-            0.75 * self.contact_centering_radius,
+        return self._centered_contact_target_xy(
+            predicted_intercept_xy,
+            offset_ratio=self.followup_strike_contact_offset_ratio,
+            offset_max=self.followup_strike_contact_offset_max,
         )
-        return np.asarray(predicted_intercept_xy, dtype=float) + offset_distance * correction_xy / correction_norm
+
+    def _contact_frame_planner_contact_target_xy(self, planned_contact_xy: Sequence[float]) -> np.ndarray:
+        if not self._contact_frame_plan_active:
+            return np.asarray(planned_contact_xy, dtype=float)
+        return self._centered_contact_target_xy(
+            planned_contact_xy,
+            offset_ratio=self.contact_frame_planner_contact_offset_ratio,
+            offset_max=self.contact_frame_planner_contact_offset_max,
+        )
 
     def _strike_contact_target_xy(self) -> np.ndarray:
         predicted_intercept_xy = self._predicted_intercept_xy()
@@ -3637,7 +3710,52 @@ class PingPongKeepUpEnv:
             reference_velocity = reference_velocity * (self.contact_frame_intercept_velocity_max / reference_speed)
         return reference_velocity
 
-    def _contact_frame_velocity_target(self, target_position: Sequence[float] | None = None) -> np.ndarray:
+    def _contact_frame_lateral_brake_velocity(self, target_position: Sequence[float] | None = None) -> np.ndarray:
+        if not self._contact_frame_action_mode():
+            return np.zeros(3, dtype=float)
+        if self.contact_frame_lateral_brake_gain <= 0.0 or self.contact_frame_lateral_brake_max <= 0.0:
+            return np.zeros(3, dtype=float)
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return np.zeros(3, dtype=float)
+
+        contact_xy = (
+            self._contact_frame_planned_contact_position()[:2]
+            if target_position is None
+            else np.asarray(target_position, dtype=float)[:2]
+        )
+        outward_xy = contact_xy - self._keepup_target_xy()
+        outward_distance = float(np.linalg.norm(outward_xy))
+        min_distance = float(self.next_intercept_success_radius)
+        if outward_distance <= min_distance:
+            return np.zeros(3, dtype=float)
+
+        outward_direction = outward_xy / outward_distance
+        racket_outward_speed = float(np.dot(self.sim.racket_velocity[:2], outward_direction))
+        if racket_outward_speed <= 0.0:
+            return np.zeros(3, dtype=float)
+
+        effective_radius = max(self.contact_frame_lateral_brake_radius, min_distance + 1.0e-6)
+        distance_scale = float(
+            np.clip(
+                (outward_distance - min_distance) / max(effective_radius - min_distance, 1.0e-6),
+                0.0,
+                1.0,
+            )
+        )
+        brake_speed = min(
+            self.contact_frame_lateral_brake_max,
+            self.contact_frame_lateral_brake_gain * racket_outward_speed * distance_scale,
+        )
+        brake_velocity = np.zeros(3, dtype=float)
+        brake_velocity[:2] = -outward_direction * brake_speed
+        return brake_velocity
+
+    def _contact_frame_velocity_target(
+        self,
+        target_position: Sequence[float] | None = None,
+        *,
+        lateral_brake_velocity: Sequence[float] | None = None,
+    ) -> np.ndarray:
         if not self._contact_frame_action_mode():
             return np.zeros(3, dtype=float)
         intercept_velocity = self._contact_frame_intercept_velocity_target(target_position)
@@ -3666,6 +3784,11 @@ class PingPongKeepUpEnv:
         target_velocity[:2] += self._contact_frame_racket_xy_residual()
         target_velocity[2] += self._contact_frame_racket_vz_residual()
         target_velocity[2] += self._contact_frame_low_apex_recovery_velocity()
+        target_velocity += (
+            self._contact_frame_lateral_brake_velocity(target_position)
+            if lateral_brake_velocity is None
+            else np.asarray(lateral_brake_velocity, dtype=float)
+        )
         target_speed = float(np.linalg.norm(target_velocity))
         max_speed = max(self.contact_frame_velocity_target_max, self.contact_frame_intercept_velocity_max)
         if target_speed > max_speed:
@@ -3863,7 +3986,7 @@ class PingPongKeepUpEnv:
             else self._predicted_contact_position()
         )
         base_contact_xy = (
-            contact_position[:2]
+            self._contact_frame_planner_contact_target_xy(contact_position[:2])
             if self._contact_frame_plan_active
             else self._strike_contact_target_xy()
         )
