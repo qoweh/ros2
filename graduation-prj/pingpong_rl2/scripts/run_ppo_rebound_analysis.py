@@ -1673,6 +1673,18 @@ def main() -> None:
         "three_or_more_useful_bounce_rate": (
             float(np.count_nonzero(bounce_array >= 3.0) / bounce_array.size) if bounce_array.size else 0.0
         ),
+        "episodes_with_ten_or_more_useful_bounces": int(np.count_nonzero(bounce_array >= 10.0)) if bounce_array.size else 0,
+        "ten_or_more_useful_bounce_rate": (
+            float(np.count_nonzero(bounce_array >= 10.0) / bounce_array.size) if bounce_array.size else 0.0
+        ),
+        "episodes_with_twenty_or_more_useful_bounces": int(np.count_nonzero(bounce_array >= 20.0)) if bounce_array.size else 0,
+        "twenty_or_more_useful_bounce_rate": (
+            float(np.count_nonzero(bounce_array >= 20.0) / bounce_array.size) if bounce_array.size else 0.0
+        ),
+        "episodes_with_thirty_or_more_useful_bounces": int(np.count_nonzero(bounce_array >= 30.0)) if bounce_array.size else 0,
+        "thirty_or_more_useful_bounce_rate": (
+            float(np.count_nonzero(bounce_array >= 30.0) / bounce_array.size) if bounce_array.size else 0.0
+        ),
         "episodes_with_one_or_more_stable_cycles": (
             int(np.count_nonzero(stable_cycle_array >= 1.0)) if stable_cycle_array.size else 0
         ),
@@ -1692,6 +1704,27 @@ def main() -> None:
         ),
         "three_or_more_stable_cycle_rate": (
             float(np.count_nonzero(stable_cycle_array >= 3.0) / stable_cycle_array.size)
+            if stable_cycle_array.size else 0.0
+        ),
+        "episodes_with_ten_or_more_stable_cycles": (
+            int(np.count_nonzero(stable_cycle_array >= 10.0)) if stable_cycle_array.size else 0
+        ),
+        "ten_or_more_stable_cycle_rate": (
+            float(np.count_nonzero(stable_cycle_array >= 10.0) / stable_cycle_array.size)
+            if stable_cycle_array.size else 0.0
+        ),
+        "episodes_with_twenty_or_more_stable_cycles": (
+            int(np.count_nonzero(stable_cycle_array >= 20.0)) if stable_cycle_array.size else 0
+        ),
+        "twenty_or_more_stable_cycle_rate": (
+            float(np.count_nonzero(stable_cycle_array >= 20.0) / stable_cycle_array.size)
+            if stable_cycle_array.size else 0.0
+        ),
+        "episodes_with_thirty_or_more_stable_cycles": (
+            int(np.count_nonzero(stable_cycle_array >= 30.0)) if stable_cycle_array.size else 0
+        ),
+        "thirty_or_more_stable_cycle_rate": (
+            float(np.count_nonzero(stable_cycle_array >= 30.0) / stable_cycle_array.size)
             if stable_cycle_array.size else 0.0
         ),
         "failure_counts": dict(failure_counts),

@@ -140,6 +140,9 @@ def main() -> None:
         "one_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 1.0)) if bounce_array.size else 0.0,
         "two_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 2.0)) if bounce_array.size else 0.0,
         "three_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 3.0)) if bounce_array.size else 0.0,
+        "ten_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 10.0)) if bounce_array.size else 0.0,
+        "twenty_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 20.0)) if bounce_array.size else 0.0,
+        "thirty_or_more_useful_bounce_rate": float(np.mean(bounce_array >= 30.0)) if bounce_array.size else 0.0,
         "one_or_more_stable_cycle_rate": (
             float(np.mean(stable_cycle_array >= 1.0)) if stable_cycle_array.size else 0.0
         ),
@@ -148,6 +151,15 @@ def main() -> None:
         ),
         "three_or_more_stable_cycle_rate": (
             float(np.mean(stable_cycle_array >= 3.0)) if stable_cycle_array.size else 0.0
+        ),
+        "ten_or_more_stable_cycle_rate": (
+            float(np.mean(stable_cycle_array >= 10.0)) if stable_cycle_array.size else 0.0
+        ),
+        "twenty_or_more_stable_cycle_rate": (
+            float(np.mean(stable_cycle_array >= 20.0)) if stable_cycle_array.size else 0.0
+        ),
+        "thirty_or_more_stable_cycle_rate": (
+            float(np.mean(stable_cycle_array >= 30.0)) if stable_cycle_array.size else 0.0
         ),
         "failure_counts": dict(failure_counts),
         "episodes_detail": summaries,

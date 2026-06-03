@@ -94,3 +94,5 @@
   - `pmk_cf_self_rally_v21` 분석, `low_apex_contact` 판정 기준, 낮은 안정 루프가 useful로 과소평가되던 문제, v22 low-stable height window 수정과 학습/분석 명령을 정리한 보고서
 - `45_v22_review_and_v23_outward_timing_guard.md`
   - `pmk_cf_self_rally_v22` 분석, 15D action/log_std 사용량, `ball_out_of_bounds`의 outward racket velocity 원인, v23 outward timing guard와 cleanup 결과, 학습/분석 명령을 정리한 보고서
+- `46_v23_v24_review_and_v25_30_bounce_horizon.md`
+  - `pmk_cf_self_rally_v23/v24` 비교, 30 useful bounce 목표의 horizon/checkpoint metric 병목, v25 long-horizon preset과 학습/분석 명령을 정리한 보고서

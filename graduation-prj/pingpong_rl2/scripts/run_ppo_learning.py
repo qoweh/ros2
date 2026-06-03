@@ -495,6 +495,14 @@ _ENV_PRESETS["contact_frame_self_rally_v23_outward_timing_guard"] = {
     "contact_racket_lateral_velocity_penalty_weight": 0.55,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v25_long_horizon_30_bounce"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v23_outward_timing_guard"],
+    "max_episode_steps": 1800,
+    "stable_cycle_reward_cap": 12,
+    "checkpoint_eval_episodes": 30,
+    "eval_episodes": 80,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -556,6 +564,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "checkpoint_interval": 10_000,
     "checkpoint_eval_episodes": 10,
     "early_stop_patience_evals": 0,
+    "max_episode_steps": DEFAULT_MAX_EPISODE_STEPS,
     "ball_height": DEFAULT_BALL_HEIGHT,
     "reset_ball_height_range": DEFAULT_RESET_BALL_HEIGHT_RANGE,
     "reset_xy_range": DEFAULT_RESET_XY_RANGE,
@@ -1840,6 +1849,9 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
     one_or_more_useful = int(np.count_nonzero(bounce_array >= 1.0)) if bounce_array.size else 0
     two_or_more_useful = int(np.count_nonzero(bounce_array >= 2.0)) if bounce_array.size else 0
     three_or_more_useful = int(np.count_nonzero(bounce_array >= 3.0)) if bounce_array.size else 0
+    ten_or_more_useful = int(np.count_nonzero(bounce_array >= 10.0)) if bounce_array.size else 0
+    twenty_or_more_useful = int(np.count_nonzero(bounce_array >= 20.0)) if bounce_array.size else 0
+    thirty_or_more_useful = int(np.count_nonzero(bounce_array >= 30.0)) if bounce_array.size else 0
     one_or_more_stable_cycles = (
         int(np.count_nonzero(stable_cycle_array >= 1.0)) if stable_cycle_array.size else 0
     )
@@ -1848,6 +1860,15 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
     )
     three_or_more_stable_cycles = (
         int(np.count_nonzero(stable_cycle_array >= 3.0)) if stable_cycle_array.size else 0
+    )
+    ten_or_more_stable_cycles = (
+        int(np.count_nonzero(stable_cycle_array >= 10.0)) if stable_cycle_array.size else 0
+    )
+    twenty_or_more_stable_cycles = (
+        int(np.count_nonzero(stable_cycle_array >= 20.0)) if stable_cycle_array.size else 0
+    )
+    thirty_or_more_stable_cycles = (
+        int(np.count_nonzero(stable_cycle_array >= 30.0)) if stable_cycle_array.size else 0
     )
     ball_out_of_bounds_count = int(failure_counts.get("ball_out_of_bounds", 0))
     floor_contact_count = int(failure_counts.get("floor_contact", 0))
@@ -1866,12 +1887,28 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
         "two_or_more_useful_bounce_rate": (two_or_more_useful / episodes) if episodes > 0 else 0.0,
         "episodes_with_three_or_more_useful_bounces": three_or_more_useful,
         "three_or_more_useful_bounce_rate": (three_or_more_useful / episodes) if episodes > 0 else 0.0,
+        "episodes_with_ten_or_more_useful_bounces": ten_or_more_useful,
+        "ten_or_more_useful_bounce_rate": (ten_or_more_useful / episodes) if episodes > 0 else 0.0,
+        "episodes_with_twenty_or_more_useful_bounces": twenty_or_more_useful,
+        "twenty_or_more_useful_bounce_rate": (twenty_or_more_useful / episodes) if episodes > 0 else 0.0,
+        "episodes_with_thirty_or_more_useful_bounces": thirty_or_more_useful,
+        "thirty_or_more_useful_bounce_rate": (thirty_or_more_useful / episodes) if episodes > 0 else 0.0,
         "episodes_with_one_or_more_stable_cycles": one_or_more_stable_cycles,
         "one_or_more_stable_cycle_rate": (one_or_more_stable_cycles / episodes) if episodes > 0 else 0.0,
         "episodes_with_two_or_more_stable_cycles": two_or_more_stable_cycles,
         "two_or_more_stable_cycle_rate": (two_or_more_stable_cycles / episodes) if episodes > 0 else 0.0,
         "episodes_with_three_or_more_stable_cycles": three_or_more_stable_cycles,
         "three_or_more_stable_cycle_rate": (three_or_more_stable_cycles / episodes) if episodes > 0 else 0.0,
+        "episodes_with_ten_or_more_stable_cycles": ten_or_more_stable_cycles,
+        "ten_or_more_stable_cycle_rate": (ten_or_more_stable_cycles / episodes) if episodes > 0 else 0.0,
+        "episodes_with_twenty_or_more_stable_cycles": twenty_or_more_stable_cycles,
+        "twenty_or_more_stable_cycle_rate": (
+            (twenty_or_more_stable_cycles / episodes) if episodes > 0 else 0.0
+        ),
+        "episodes_with_thirty_or_more_stable_cycles": thirty_or_more_stable_cycles,
+        "thirty_or_more_stable_cycle_rate": (
+            (thirty_or_more_stable_cycles / episodes) if episodes > 0 else 0.0
+        ),
         "ball_out_of_bounds_rate": (ball_out_of_bounds_count / episodes) if episodes > 0 else 0.0,
         "floor_contact_rate": (floor_contact_count / episodes) if episodes > 0 else 0.0,
         "robot_body_contact_rate": (robot_body_contact_count / episodes) if episodes > 0 else 0.0,
@@ -1885,6 +1922,12 @@ def evaluation_sort_key(evaluation: dict[str, object]) -> tuple[float, ...]:
     if not isinstance(failure_counts, dict):
         failure_counts = {}
     return (
+        float(evaluation.get("thirty_or_more_stable_cycle_rate", 0.0)),
+        float(evaluation.get("thirty_or_more_useful_bounce_rate", 0.0)),
+        float(evaluation.get("twenty_or_more_stable_cycle_rate", 0.0)),
+        float(evaluation.get("twenty_or_more_useful_bounce_rate", 0.0)),
+        float(evaluation.get("ten_or_more_stable_cycle_rate", 0.0)),
+        float(evaluation.get("ten_or_more_useful_bounce_rate", 0.0)),
         float(evaluation.get("three_or_more_stable_cycle_rate", 0.0)),
         float(evaluation.get("two_or_more_stable_cycle_rate", 0.0)),
         float(evaluation.get("mean_stable_cycles", 0.0)),
@@ -2517,8 +2560,11 @@ def main() -> None:
         f"max_stable_cycles={evaluation['max_stable_cycles']} "
         f"two_or_more_rate={evaluation['two_or_more_useful_bounce_rate']:.3f} "
         f"three_or_more_rate={evaluation['three_or_more_useful_bounce_rate']:.3f} "
+        f"ten_or_more_rate={evaluation['ten_or_more_useful_bounce_rate']:.3f} "
+        f"thirty_or_more_rate={evaluation['thirty_or_more_useful_bounce_rate']:.3f} "
         f"stable_two_or_more_rate={evaluation['two_or_more_stable_cycle_rate']:.3f} "
-        f"stable_three_or_more_rate={evaluation['three_or_more_stable_cycle_rate']:.3f}"
+        f"stable_three_or_more_rate={evaluation['three_or_more_stable_cycle_rate']:.3f} "
+        f"stable_thirty_or_more_rate={evaluation['thirty_or_more_stable_cycle_rate']:.3f}"
     )
 
 
