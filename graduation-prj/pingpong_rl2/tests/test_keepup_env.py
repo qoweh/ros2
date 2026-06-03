@@ -641,6 +641,55 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
 
         self.assertIsNone(success_reason)
 
+    def test_success_reason_accepts_lower_side_of_required_apex_window(self) -> None:
+        env = PingPongKeepUpEnv(
+            target_ball_height=0.30,
+            height_tolerance=0.10,
+            require_apex_height_window_for_success=True,
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+        )
+        env.reset(ball_height=env.ball_height)
+        gravity = abs(env._gravity_z())
+        contact_height_above_racket = 0.02
+
+        accepted_apex_height = 0.22
+        accepted_velocity_z = float(
+            np.sqrt(2.0 * gravity * (accepted_apex_height - contact_height_above_racket))
+        )
+        accepted_success_reason = env._success_reason(
+            failure_reason=None,
+            contact_trace={
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": accepted_velocity_z,
+                "contact_racket_velocity_z": 0.2,
+                "contact_xy_alignment_error": env.contact_centering_radius - 0.01,
+                "contact_ball_height_above_racket": contact_height_above_racket,
+            },
+            contact_event=True,
+        )
+
+        rejected_apex_height = 0.18
+        rejected_velocity_z = float(
+            np.sqrt(2.0 * gravity * (rejected_apex_height - contact_height_above_racket))
+        )
+        rejected_success_reason = env._success_reason(
+            failure_reason=None,
+            contact_trace={
+                "contact_ball_velocity_x": 0.0,
+                "contact_ball_velocity_y": 0.0,
+                "contact_ball_velocity_z": rejected_velocity_z,
+                "contact_racket_velocity_z": 0.2,
+                "contact_xy_alignment_error": env.contact_centering_radius - 0.01,
+                "contact_ball_height_above_racket": contact_height_above_racket,
+            },
+            contact_event=True,
+        )
+
+        self.assertEqual(accepted_success_reason, "useful_keepup_bounce")
+        self.assertIsNone(rejected_success_reason)
+
     def test_contact_apex_height_uses_anchor_reference_when_position_is_available(self) -> None:
         env = PingPongKeepUpEnv(
             target_ball_height=0.25,
@@ -2068,6 +2117,48 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
                 success_reason=None,
                 contact_event=True,
                 contact_trace=contact_trace,
+                next_intercept_metrics={"reachable": True, "easy_next_ball_score": 0.50},
+            )
+        )
+
+    def test_stable_cycle_observed_accepts_lower_side_of_required_apex_window(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            stable_cycle_min_easy_next_ball_score=0.45,
+            target_ball_height=0.30,
+            height_tolerance=0.10,
+            require_apex_height_window_for_success=True,
+        )
+        env.reset(ball_height=env.ball_height)
+        gravity = abs(env._gravity_z())
+        low_but_useful_velocity_z = float(np.sqrt(2.0 * gravity * 0.22))
+        too_low_velocity_z = float(np.sqrt(2.0 * gravity * 0.18))
+
+        self.assertTrue(
+            env._stable_cycle_observed(
+                success_reason="useful_keepup_bounce",
+                contact_event=True,
+                contact_trace={
+                    "contact_ball_height_above_racket": 0.0,
+                    "contact_ball_velocity_x": 0.0,
+                    "contact_ball_velocity_y": 0.0,
+                    "contact_ball_velocity_z": low_but_useful_velocity_z,
+                },
+                next_intercept_metrics={"reachable": True, "easy_next_ball_score": 0.50},
+            )
+        )
+        self.assertFalse(
+            env._stable_cycle_observed(
+                success_reason="useful_keepup_bounce",
+                contact_event=True,
+                contact_trace={
+                    "contact_ball_height_above_racket": 0.0,
+                    "contact_ball_velocity_x": 0.0,
+                    "contact_ball_velocity_y": 0.0,
+                    "contact_ball_velocity_z": too_low_velocity_z,
+                },
                 next_intercept_metrics={"reachable": True, "easy_next_ball_score": 0.50},
             )
         )

@@ -2585,6 +2585,24 @@ class PingPongKeepUpEnv:
     def _target_ball_height_above_racket(self) -> float:
         return self.target_ball_height
 
+    def _minimum_useful_apex_height(self) -> float:
+        if self.require_apex_height_window_for_success:
+            return float(max(self._target_ball_height_above_racket() - self.height_tolerance, 0.0))
+        return self._target_ball_height_above_racket()
+
+    def _maximum_useful_apex_height(self) -> float | None:
+        if not self.require_apex_height_window_for_success:
+            return None
+        return float(self._target_ball_height_above_racket() + self.height_tolerance)
+
+    def _apex_height_in_success_window(self, projected_apex_height: float) -> bool:
+        if projected_apex_height + 1.0e-6 < self._minimum_useful_apex_height():
+            return False
+        maximum_useful_apex_height = self._maximum_useful_apex_height()
+        if maximum_useful_apex_height is not None and projected_apex_height - 1.0e-6 > maximum_useful_apex_height:
+            return False
+        return True
+
     def _low_apex_contact_height_threshold(self) -> float:
         if self.low_apex_contact_height_threshold is not None:
             return self.low_apex_contact_height_threshold
@@ -2871,8 +2889,7 @@ class PingPongKeepUpEnv:
         if self.contact_apex_under_target_penalty_weight <= 0.0:
             return 0.0
         projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
-        target_apex = self._target_ball_height_above_racket()
-        under_target_gap = max(target_apex - projected_apex, 0.0)
+        under_target_gap = max(self._minimum_useful_apex_height() - projected_apex, 0.0)
         normalized_gap = min(under_target_gap / max(self.height_tolerance, 1.0e-6), 4.0)
         return float(-self.contact_apex_under_target_penalty_weight * normalized_gap)
 
@@ -2983,7 +3000,7 @@ class PingPongKeepUpEnv:
             return
         projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
         self._last_projected_contact_apex_height = projected_apex
-        self._last_contact_apex_shortfall = max(self._target_ball_height_above_racket() - projected_apex, 0.0)
+        self._last_contact_apex_shortfall = max(self._minimum_useful_apex_height() - projected_apex, 0.0)
 
     def _normalized_last_contact_apex_shortfall(self) -> float:
         if self._last_contact_apex_shortfall <= 0.0:
@@ -3046,10 +3063,7 @@ class PingPongKeepUpEnv:
         if not contact_event or success_reason is None:
             return False
         projected_apex = self._projected_contact_apex_height_above_racket(contact_trace)
-        target_apex = self._target_ball_height_above_racket()
-        if projected_apex + 1.0e-6 < target_apex:
-            return False
-        if abs(projected_apex - target_apex) > self.height_tolerance:
+        if not self._apex_height_in_success_window(projected_apex):
             return False
         if not bool(next_intercept_metrics["reachable"]):
             return False
@@ -3162,12 +3176,8 @@ class PingPongKeepUpEnv:
             if self._contact_racket_lateral_speed(contact_trace) > self.max_contact_racket_lateral_speed_for_success:
                 return None
         projected_apex_height = self._projected_contact_apex_height_above_racket(contact_trace)
-        target_apex_height = self._target_ball_height_above_racket()
-        if projected_apex_height + 1.0e-6 < target_apex_height:
+        if not self._apex_height_in_success_window(projected_apex_height):
             return None
-        if self.require_apex_height_window_for_success:
-            if abs(projected_apex_height - target_apex_height) > self.height_tolerance:
-                return None
         next_intercept_metrics = self._next_intercept_metrics()
         if self.require_reachable_next_intercept_for_success and not bool(next_intercept_metrics["reachable"]):
             return None

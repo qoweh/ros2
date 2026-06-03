@@ -476,6 +476,15 @@ _ENV_PRESETS["contact_frame_self_rally_v21_apex_timing_residual"] = {
     "contact_frame_low_apex_recovery_velocity_max": 0.55,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v22_low_stable_window"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v21_apex_timing_residual"],
+    "low_apex_contact_height_threshold": 0.14,
+    "low_apex_contact_grace_count": 3,
+    "contact_apex_under_target_penalty_weight": 0.65,
+    "contact_lateral_stability_min_apex_ratio": 0.70,
+    "stable_contact_min_apex_ratio": 0.70,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
