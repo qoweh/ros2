@@ -1664,6 +1664,7 @@ class PingPongKeepUpEnv:
         safe_target_position = self._guarded_target_position(requested_target_position)
         contact_frame_intercept_velocity_target = self._contact_frame_intercept_velocity_target(safe_target_position)
         contact_frame_lateral_brake_velocity = self._contact_frame_lateral_brake_velocity(safe_target_position)
+        contact_frame_tracking_xy_residual = self._contact_frame_tracking_xy_residual()
         target_velocity = self._contact_frame_velocity_target(
             safe_target_position,
             lateral_brake_velocity=contact_frame_lateral_brake_velocity,
@@ -1821,12 +1822,15 @@ class PingPongKeepUpEnv:
             "contact_frame_outgoing_y_residual_action": float(self._contact_frame_velocity_residual_action[2]),
             "contact_frame_racket_vz_residual_action": self._contact_frame_racket_vz_residual(),
             "contact_frame_racket_xy_residual_action": self._contact_frame_racket_xy_residual().copy(),
-            "contact_frame_tracking_xy_residual_action": self._contact_frame_tracking_xy_residual().copy(),
+            "contact_frame_tracking_xy_residual_action": contact_frame_tracking_xy_residual.copy(),
+            "contact_frame_tracking_xy_residual_command": self._contact_frame_tracking_xy_residual_action.copy(),
             "contact_frame_tilt_scale_residual_action": self._contact_frame_tilt_scale_residual_action.copy(),
             "contact_frame_racket_x_residual_action": float(self._contact_frame_racket_xy_residual()[0]),
             "contact_frame_racket_y_residual_action": float(self._contact_frame_racket_xy_residual()[1]),
-            "contact_frame_tracking_x_residual_action": float(self._contact_frame_tracking_xy_residual()[0]),
-            "contact_frame_tracking_y_residual_action": float(self._contact_frame_tracking_xy_residual()[1]),
+            "contact_frame_tracking_x_residual_action": float(contact_frame_tracking_xy_residual[0]),
+            "contact_frame_tracking_y_residual_action": float(contact_frame_tracking_xy_residual[1]),
+            "contact_frame_tracking_x_residual_command": float(self._contact_frame_tracking_xy_residual_action[0]),
+            "contact_frame_tracking_y_residual_command": float(self._contact_frame_tracking_xy_residual_action[1]),
             "contact_frame_target_apex_z_residual_action": self._contact_frame_target_apex_z_residual(),
             "contact_frame_strike_plane_z_residual_action": self._contact_frame_strike_plane_z_residual(),
             "contact_frame_trajectory_tilt_scale": self._contact_frame_trajectory_tilt_scale(),

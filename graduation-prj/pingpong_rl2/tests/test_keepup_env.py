@@ -1244,6 +1244,29 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertAlmostEqual(float(info["contact_frame_racket_x_residual_action"]), -0.18)
         self.assertAlmostEqual(float(info["contact_frame_racket_y_residual_action"]), 0.11)
 
+    def test_contact_frame_tracking_residual_step_info_exposes_target_velocity_residual(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_velocity_target_gain=0.0,
+            contact_frame_velocity_target_max=2.0,
+            contact_frame_tracking_xy_action_limit=0.8,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+        action = np.zeros(env.action_size, dtype=float)
+        action[15:17] = np.array([0.12, -0.09], dtype=float)
+
+        _, _, _, _, info = env.step(action)
+
+        self.assertTrue(np.allclose(info["contact_frame_tracking_xy_residual_command"], action[15:17]))
+        self.assertTrue(np.allclose(info["contact_frame_tracking_xy_residual_action"], action[15:17]))
+        self.assertAlmostEqual(float(info["contact_frame_tracking_x_residual_action"]), 0.12)
+        self.assertAlmostEqual(float(info["contact_frame_tracking_y_residual_action"]), -0.09)
+        self.assertTrue(np.allclose(info["contact_frame_velocity_target"][:2], action[15:17]))
+
     def test_contact_frame_apex_residual_increases_planned_desired_vertical_velocity(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame_velocity_tilt_lateral_apex_residual",

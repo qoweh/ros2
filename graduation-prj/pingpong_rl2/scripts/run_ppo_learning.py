@@ -587,6 +587,16 @@ _ENV_PRESETS["contact_frame_self_rally_v31_keep1_wider_xy"] = {
     "eval_episodes": 100,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v32_17d_v30_transfer"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v30_v26_wider_xy_stability"],
+    "action_mode": "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
+    "contact_frame_tracking_xy_action_limit": 0.18,
+    "learning_rate": 1.0e-5,
+    "n_epochs": 1,
+    "clip_range": 0.05,
+    "eval_episodes": 100,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,

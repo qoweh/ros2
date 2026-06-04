@@ -53,6 +53,7 @@ class TwoBallKeepUpEnv:
         apex_xy_tolerance: float = DEFAULT_APEX_XY_TOLERANCE,
         reset_xy_range: float = DEFAULT_RESET_XY_RANGE,
         reset_height_jitter: float = DEFAULT_RESET_HEIGHT_JITTER,
+        reset_base_heights: Sequence[float] = (0.40, 0.67),
         reset_velocity_xy_range: float = DEFAULT_RESET_VELOCITY_XY_RANGE,
         reset_velocity_z_range: Sequence[float] = DEFAULT_RESET_VELOCITY_Z_RANGE,
         reset_spin_range: float = DEFAULT_RESET_SPIN_RANGE,
@@ -66,11 +67,23 @@ class TwoBallKeepUpEnv:
         lateral_velocity_max: float = 1.15,
         tilt_gain: float = 1.15,
         tilt_limit: Sequence[float] = (0.28, 0.28),
+        min_useful_outgoing_vz: float = 0.35,
+        min_useful_racket_vz: float = 0.0,
         action_penalty_weight: float = 0.015,
         tracking_reward_weight: float = 0.08,
         contact_bonus: float = 2.0,
         useful_contact_bonus: float = 7.0,
         alternating_bonus: float = 1.0,
+        contact_apex_under_min_penalty_weight: float = 0.0,
+        contact_apex_progress_reward_weight: float = 0.0,
+        contact_apex_recovery_progress_reward_weight: float = 0.0,
+        contact_apex_potential_reward_weight: float = 0.0,
+        contact_apex_potential_gamma: float = 0.99,
+        contact_apex_potential_cap: float = 2.0,
+        low_apex_recovery_lift_gain: float = 0.0,
+        low_apex_recovery_lift_max: float = 0.0,
+        low_apex_recovery_velocity_gain: float = 0.0,
+        low_apex_recovery_velocity_max: float = 0.0,
         failure_penalty: float = -12.0,
         slot_xy_offsets: Sequence[Sequence[float]] = ((-0.035, -0.025), (0.035, 0.025)),
         x_bounds: Sequence[float] = (0.0, 1.35),
@@ -78,6 +91,13 @@ class TwoBallKeepUpEnv:
         z_bounds: Sequence[float] = (-0.05, 2.1),
         max_ball_speed: float = 8.0,
         terminate_on_ball_ball_contact: bool = True,
+        controller_position_gain: float = 1.25,
+        controller_orientation_gain: float = 0.42,
+        controller_max_position_step: float = 0.055,
+        controller_max_orientation_step: float = 0.13,
+        controller_velocity_gain: float = 1.0,
+        controller_velocity_feedback_gain: float = 0.25,
+        controller_max_velocity_step: float = 0.028,
         seed: int | None = None,
     ) -> None:
         self.sim = sim if sim is not None else TwoBallPingPongSim(scene_path=scene_path, control_dt=control_dt)
@@ -91,6 +111,7 @@ class TwoBallKeepUpEnv:
         self.apex_xy_tolerance = float(apex_xy_tolerance)
         self.reset_xy_range = float(reset_xy_range)
         self.reset_height_jitter = float(reset_height_jitter)
+        self.reset_base_heights = np.asarray(reset_base_heights, dtype=float)
         self.reset_velocity_xy_range = float(reset_velocity_xy_range)
         self.reset_velocity_z_range = tuple(float(value) for value in reset_velocity_z_range)
         self.reset_spin_range = float(reset_spin_range)
@@ -104,11 +125,23 @@ class TwoBallKeepUpEnv:
         self.lateral_velocity_max = float(lateral_velocity_max)
         self.tilt_gain = float(tilt_gain)
         self.tilt_limit = np.asarray(tilt_limit, dtype=float)
+        self.min_useful_outgoing_vz = float(min_useful_outgoing_vz)
+        self.min_useful_racket_vz = float(min_useful_racket_vz)
         self.action_penalty_weight = float(action_penalty_weight)
         self.tracking_reward_weight = float(tracking_reward_weight)
         self.contact_bonus = float(contact_bonus)
         self.useful_contact_bonus = float(useful_contact_bonus)
         self.alternating_bonus = float(alternating_bonus)
+        self.contact_apex_under_min_penalty_weight = float(contact_apex_under_min_penalty_weight)
+        self.contact_apex_progress_reward_weight = float(contact_apex_progress_reward_weight)
+        self.contact_apex_recovery_progress_reward_weight = float(contact_apex_recovery_progress_reward_weight)
+        self.contact_apex_potential_reward_weight = float(contact_apex_potential_reward_weight)
+        self.contact_apex_potential_gamma = float(contact_apex_potential_gamma)
+        self.contact_apex_potential_cap = float(contact_apex_potential_cap)
+        self.low_apex_recovery_lift_gain = float(low_apex_recovery_lift_gain)
+        self.low_apex_recovery_lift_max = float(low_apex_recovery_lift_max)
+        self.low_apex_recovery_velocity_gain = float(low_apex_recovery_velocity_gain)
+        self.low_apex_recovery_velocity_max = float(low_apex_recovery_velocity_max)
         self.failure_penalty = float(failure_penalty)
         self.slot_xy_offsets = np.asarray(slot_xy_offsets, dtype=float)
         self.x_bounds = (float(x_bounds[0]), float(x_bounds[1]))
@@ -116,12 +149,25 @@ class TwoBallKeepUpEnv:
         self.z_bounds = (float(z_bounds[0]), float(z_bounds[1]))
         self.max_ball_speed = float(max_ball_speed)
         self.terminate_on_ball_ball_contact = bool(terminate_on_ball_ball_contact)
+        self.controller_position_gain = float(controller_position_gain)
+        self.controller_orientation_gain = float(controller_orientation_gain)
+        self.controller_max_position_step = float(controller_max_position_step)
+        self.controller_max_orientation_step = float(controller_max_orientation_step)
+        self.controller_velocity_gain = float(controller_velocity_gain)
+        self.controller_velocity_feedback_gain = float(controller_velocity_feedback_gain)
+        self.controller_max_velocity_step = float(controller_max_velocity_step)
         self.rng = np.random.default_rng(seed)
 
         if self.slot_xy_offsets.shape != (self.sim.ball_count, 2):
             raise ValueError(f"slot_xy_offsets must have shape ({self.sim.ball_count}, 2).")
         if self.tilt_limit.shape != (2,):
             raise ValueError(f"tilt_limit must have shape (2,), got {self.tilt_limit.shape}.")
+        if self.reset_base_heights.shape != (self.sim.ball_count,):
+            raise ValueError(f"reset_base_heights must have shape ({self.sim.ball_count},).")
+        if self.min_useful_outgoing_vz < 0.0:
+            raise ValueError(f"min_useful_outgoing_vz must be non-negative, got {self.min_useful_outgoing_vz}.")
+        if self.contact_apex_potential_cap <= 0.0:
+            raise ValueError(f"contact_apex_potential_cap must be positive, got {self.contact_apex_potential_cap}.")
         if self.reset_velocity_z_range[0] > self.reset_velocity_z_range[1]:
             raise ValueError(f"reset_velocity_z_range must be sorted, got {self.reset_velocity_z_range}.")
         if not (0.0 < self.min_useful_apex_height <= self.target_apex_height <= self.max_useful_apex_height):
@@ -131,13 +177,13 @@ class TwoBallKeepUpEnv:
 
         self.controller = RacketCartesianController(
             self.sim,
-            position_gain=1.25,
-            orientation_gain=0.42,
-            max_position_step=0.055,
-            max_orientation_step=0.13,
-            velocity_gain=1.0,
-            velocity_feedback_gain=0.25,
-            max_velocity_step=0.028,
+            position_gain=self.controller_position_gain,
+            orientation_gain=self.controller_orientation_gain,
+            max_position_step=self.controller_max_position_step,
+            max_orientation_step=self.controller_max_orientation_step,
+            velocity_gain=self.controller_velocity_gain,
+            velocity_feedback_gain=self.controller_velocity_feedback_gain,
+            max_velocity_step=self.controller_max_velocity_step,
             target_offset_low=(-0.20, -0.20, -0.08),
             target_offset_high=(0.20, 0.20, 0.24),
             target_tilt_limit=self.tilt_limit,
@@ -161,6 +207,8 @@ class TwoBallKeepUpEnv:
         self._anchor_position = self.sim.racket_position.copy()
         self._previous_action = np.zeros(self.action_size, dtype=float)
         self._previous_racket_contacts = [False for _ in range(self.sim.ball_count)]
+        self._last_projected_apex_heights = np.full(self.sim.ball_count, np.nan, dtype=float)
+        self._last_contact_apex_shortfalls = np.zeros(self.sim.ball_count, dtype=float)
         self._last_hit_ball_index: int | None = None
         self._last_target_ball_index = 0
         self.elapsed_steps = 0
@@ -196,6 +244,8 @@ class TwoBallKeepUpEnv:
         self._anchor_position = self.sim.racket_position.copy()
         self._previous_action[:] = 0.0
         self._previous_racket_contacts = [False for _ in range(self.sim.ball_count)]
+        self._last_projected_apex_heights[:] = np.nan
+        self._last_contact_apex_shortfalls[:] = 0.0
         self._last_hit_ball_index = None
         self._last_target_ball_index = 0
         self.elapsed_steps = 0
@@ -207,11 +257,14 @@ class TwoBallKeepUpEnv:
     def _sample_reset_balls(self, options: dict[str, object]) -> tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray]]:
         xy_range = float(options.get("reset_xy_range", self.reset_xy_range))
         height_jitter = float(options.get("reset_height_jitter", self.reset_height_jitter))
+        base_heights = np.asarray(options.get("reset_base_heights", self.reset_base_heights), dtype=float)
         velocity_xy_range = float(options.get("reset_velocity_xy_range", self.reset_velocity_xy_range))
         velocity_z_range = tuple(options.get("reset_velocity_z_range", self.reset_velocity_z_range))
         spin_range = float(options.get("reset_spin_range", self.reset_spin_range))
+        if base_heights.shape != (self.sim.ball_count,):
+            raise ValueError(f"reset_base_heights must have shape ({self.sim.ball_count},).")
 
-        base_heights = np.array([0.40, 0.67], dtype=float)
+        base_heights = base_heights.copy()
         if bool(self.rng.integers(0, 2)):
             base_heights = base_heights[::-1]
 
@@ -316,6 +369,11 @@ class TwoBallKeepUpEnv:
             useful, metrics = self._contact_usefulness(event)
             self.contact_count += 1
             reward += self.contact_bonus
+            if float(metrics["outgoing_vz"]) > 0.0:
+                reward += self._contact_apex_progress_term(metrics)
+                reward += self._contact_apex_recovery_progress_term(ball_index, metrics)
+                reward += self._contact_apex_potential_term(ball_index, metrics)
+                reward += self._contact_apex_under_min_penalty_term(metrics)
             if useful:
                 self.useful_bounce_count += 1
                 height_score = float(metrics["height_score"])
@@ -333,6 +391,7 @@ class TwoBallKeepUpEnv:
                 **metrics,
             }
             contact_infos.append(contact_info)
+            self._update_contact_apex_memory(ball_index, metrics)
         return reward, contact_infos
 
     def _tracking_term(self, command: dict[str, object]) -> float:
@@ -350,6 +409,7 @@ class TwoBallKeepUpEnv:
         ball_index = int(event["ball_index"])
         velocity = np.asarray(event["contact_ball_velocity"], dtype=float)
         position = np.asarray(event["contact_ball_position"], dtype=float)
+        racket_velocity = np.asarray(event["contact_racket_velocity"], dtype=float)
         apex_height, apex_xy = self._projected_apex(position, velocity)
         slot_xy = self._slot_xy(ball_index)
         xy_error = float(np.linalg.norm(apex_xy - slot_xy))
@@ -357,7 +417,8 @@ class TwoBallKeepUpEnv:
         height_score = max(1.0 - height_error / max(self.max_useful_apex_height - self.min_useful_apex_height, 1.0e-6), 0.0)
         xy_score = max(1.0 - xy_error / max(self.apex_xy_tolerance, 1.0e-6), 0.0)
         useful = (
-            velocity[2] > 0.35
+            velocity[2] > self.min_useful_outgoing_vz
+            and racket_velocity[2] >= self.min_useful_racket_vz
             and self.min_useful_apex_height <= apex_height <= self.max_useful_apex_height
             and xy_error <= self.apex_xy_tolerance
         )
@@ -367,7 +428,60 @@ class TwoBallKeepUpEnv:
             "height_score": float(height_score),
             "xy_score": float(xy_score),
             "outgoing_vz": float(velocity[2]),
+            "contact_racket_vz": float(racket_velocity[2]),
         }
+
+    def _apex_height_tolerance(self) -> float:
+        return max(self.target_apex_height - self.min_useful_apex_height, 1.0e-6)
+
+    def _contact_apex_progress_term(self, metrics: dict[str, object]) -> float:
+        if self.contact_apex_progress_reward_weight <= 0.0:
+            return 0.0
+        apex_height = float(metrics["projected_apex_height"])
+        progress = np.clip(apex_height / max(self.target_apex_height, 1.0e-6), 0.0, 1.0)
+        return float(self.contact_apex_progress_reward_weight * progress)
+
+    def _contact_apex_recovery_progress_term(self, ball_index: int, metrics: dict[str, object]) -> float:
+        if self.contact_apex_recovery_progress_reward_weight <= 0.0:
+            return 0.0
+        previous_apex = float(self._last_projected_apex_heights[ball_index])
+        if not np.isfinite(previous_apex):
+            return 0.0
+        previous_shortfall = self.target_apex_height - previous_apex
+        if previous_shortfall <= 0.0:
+            return 0.0
+        improvement = float(metrics["projected_apex_height"]) - previous_apex
+        if improvement <= 0.0:
+            return 0.0
+        normalized_improvement = min(improvement / self._apex_height_tolerance(), 2.0)
+        return float(self.contact_apex_recovery_progress_reward_weight * normalized_improvement)
+
+    def _contact_apex_potential_score(self, apex_height: float) -> float:
+        shortfall = max(self.target_apex_height - apex_height, 0.0)
+        normalized_shortfall = min(shortfall / self._apex_height_tolerance(), self.contact_apex_potential_cap)
+        return float(max(1.0 - normalized_shortfall / self.contact_apex_potential_cap, 0.0))
+
+    def _contact_apex_potential_term(self, ball_index: int, metrics: dict[str, object]) -> float:
+        if self.contact_apex_potential_reward_weight <= 0.0:
+            return 0.0
+        previous_apex = float(self._last_projected_apex_heights[ball_index])
+        if not np.isfinite(previous_apex):
+            return 0.0
+        current_score = self._contact_apex_potential_score(float(metrics["projected_apex_height"]))
+        previous_score = self._contact_apex_potential_score(previous_apex)
+        return float(self.contact_apex_potential_reward_weight * (self.contact_apex_potential_gamma * current_score - previous_score))
+
+    def _contact_apex_under_min_penalty_term(self, metrics: dict[str, object]) -> float:
+        if self.contact_apex_under_min_penalty_weight <= 0.0:
+            return 0.0
+        shortfall = max(self.min_useful_apex_height - float(metrics["projected_apex_height"]), 0.0)
+        normalized_shortfall = min(shortfall / self._apex_height_tolerance(), 4.0)
+        return float(-self.contact_apex_under_min_penalty_weight * normalized_shortfall)
+
+    def _update_contact_apex_memory(self, ball_index: int, metrics: dict[str, object]) -> None:
+        apex_height = float(metrics["projected_apex_height"])
+        self._last_projected_apex_heights[ball_index] = apex_height
+        self._last_contact_apex_shortfalls[ball_index] = max(self.min_useful_apex_height - apex_height, 0.0)
 
     def _projected_apex(self, position: np.ndarray, velocity: np.ndarray) -> tuple[float, np.ndarray]:
         if velocity[2] <= 0.0:
@@ -440,7 +554,16 @@ class TwoBallKeepUpEnv:
         target_metrics: dict[str, object],
         action: np.ndarray,
     ) -> dict[str, object]:
-        strike_plane_z = self._anchor_position[2] + self.strike_plane_offset + float(action[2])
+        base_strike_plane_z = self._anchor_position[2] + self.strike_plane_offset + float(action[2])
+        base_metrics = self._intercept_metrics(ball_index, strike_plane_z=base_strike_plane_z)
+        if np.isfinite(float(base_metrics["intercept_time"])):
+            base_intercept_time = max(float(base_metrics["intercept_time"]), self.min_intercept_time)
+            base_readiness = 1.0 - np.clip(base_intercept_time / 0.32, 0.0, 1.0)
+        else:
+            base_readiness = 0.0
+        recovery_lift = self._low_apex_recovery_lift(ball_index, float(base_readiness))
+        recovery_velocity = self._low_apex_recovery_velocity(ball_index, float(base_readiness))
+        strike_plane_z = base_strike_plane_z + recovery_lift
         metrics = self._intercept_metrics(ball_index, strike_plane_z=strike_plane_z)
         contact_active = bool(np.isfinite(float(metrics["intercept_time"])))
         if contact_active:
@@ -467,6 +590,7 @@ class TwoBallKeepUpEnv:
         intercept_velocity = self.intercept_velocity_gain * (target_position - self.sim.racket_position) / max(intercept_time, 1.0e-3)
         intercept_velocity = self._clip_norm(intercept_velocity, self.target_velocity_max)
         target_velocity = intercept_velocity + readiness * required_racket_velocity + action[5:8]
+        target_velocity[2] += recovery_velocity
         target_velocity[:2] = self._clip_norm(target_velocity[:2], self.lateral_velocity_max)
         target_velocity = self._clip_norm(target_velocity, self.target_velocity_max)
 
@@ -483,8 +607,38 @@ class TwoBallKeepUpEnv:
             "contact_active": contact_active,
             "intercept_time": float(intercept_time),
             "readiness": float(readiness),
+            "recovery_lift": float(recovery_lift),
+            "recovery_velocity": float(recovery_velocity),
             "metrics": metrics,
         }
+
+    def _normalized_last_contact_apex_shortfall(self, ball_index: int) -> float:
+        shortfall = float(self._last_contact_apex_shortfalls[ball_index])
+        if shortfall <= 0.0:
+            return 0.0
+        return float(np.clip(shortfall / self._apex_height_tolerance(), 0.0, 2.0))
+
+    def _low_apex_recovery_lift(self, ball_index: int, readiness: float) -> float:
+        if self.low_apex_recovery_lift_gain <= 0.0 or self.low_apex_recovery_lift_max <= 0.0:
+            return 0.0
+        if float(self.sim.ball_velocity(ball_index)[2]) >= -0.02:
+            return 0.0
+        normalized_shortfall = self._normalized_last_contact_apex_shortfall(ball_index)
+        if normalized_shortfall <= 0.0:
+            return 0.0
+        lift = self.low_apex_recovery_lift_gain * normalized_shortfall * np.clip(readiness, 0.0, 1.0)
+        return float(np.clip(lift, 0.0, self.low_apex_recovery_lift_max))
+
+    def _low_apex_recovery_velocity(self, ball_index: int, readiness: float) -> float:
+        if self.low_apex_recovery_velocity_gain <= 0.0 or self.low_apex_recovery_velocity_max <= 0.0:
+            return 0.0
+        if float(self.sim.ball_velocity(ball_index)[2]) >= -0.02:
+            return 0.0
+        normalized_shortfall = self._normalized_last_contact_apex_shortfall(ball_index)
+        if normalized_shortfall <= 0.0:
+            return 0.0
+        velocity = self.low_apex_recovery_velocity_gain * normalized_shortfall * np.clip(readiness, 0.0, 1.0)
+        return float(np.clip(velocity, 0.0, self.low_apex_recovery_velocity_max))
 
     def _desired_outgoing_velocity(self, ball_index: int, contact_position: np.ndarray, action: np.ndarray) -> np.ndarray:
         target_apex_z = self._anchor_position[2] + self.target_apex_height + float(action[10])
@@ -560,10 +714,14 @@ class TwoBallKeepUpEnv:
             info["target_xy_error"] = float(target_metrics["xy_error"])
         if command is not None:
             info["target_readiness"] = float(command["readiness"])
+            info["recovery_lift"] = float(command["recovery_lift"])
+            info["recovery_velocity"] = float(command["recovery_velocity"])
         if contact_infos:
             info["last_contact_useful"] = bool(contact_infos[-1]["useful"])
             info["last_projected_apex_height"] = float(contact_infos[-1]["projected_apex_height"])
             info["last_projected_apex_xy_error"] = float(contact_infos[-1]["projected_apex_xy_error"])
+            info["last_contact_racket_vz"] = float(contact_infos[-1]["contact_racket_vz"])
+        info["last_contact_apex_shortfalls"] = self._last_contact_apex_shortfalls.tolist()
         return info
 
     def training_config(self) -> dict[str, object]:
@@ -576,6 +734,7 @@ class TwoBallKeepUpEnv:
             "apex_xy_tolerance": self.apex_xy_tolerance,
             "reset_xy_range": self.reset_xy_range,
             "reset_height_jitter": self.reset_height_jitter,
+            "reset_base_heights": self.reset_base_heights.tolist(),
             "reset_velocity_xy_range": self.reset_velocity_xy_range,
             "reset_velocity_z_range": self.reset_velocity_z_range,
             "reset_spin_range": self.reset_spin_range,
@@ -589,11 +748,23 @@ class TwoBallKeepUpEnv:
             "lateral_velocity_max": self.lateral_velocity_max,
             "tilt_gain": self.tilt_gain,
             "tilt_limit": self.tilt_limit.tolist(),
+            "min_useful_outgoing_vz": self.min_useful_outgoing_vz,
+            "min_useful_racket_vz": self.min_useful_racket_vz,
             "action_penalty_weight": self.action_penalty_weight,
             "tracking_reward_weight": self.tracking_reward_weight,
             "contact_bonus": self.contact_bonus,
             "useful_contact_bonus": self.useful_contact_bonus,
             "alternating_bonus": self.alternating_bonus,
+            "contact_apex_under_min_penalty_weight": self.contact_apex_under_min_penalty_weight,
+            "contact_apex_progress_reward_weight": self.contact_apex_progress_reward_weight,
+            "contact_apex_recovery_progress_reward_weight": self.contact_apex_recovery_progress_reward_weight,
+            "contact_apex_potential_reward_weight": self.contact_apex_potential_reward_weight,
+            "contact_apex_potential_gamma": self.contact_apex_potential_gamma,
+            "contact_apex_potential_cap": self.contact_apex_potential_cap,
+            "low_apex_recovery_lift_gain": self.low_apex_recovery_lift_gain,
+            "low_apex_recovery_lift_max": self.low_apex_recovery_lift_max,
+            "low_apex_recovery_velocity_gain": self.low_apex_recovery_velocity_gain,
+            "low_apex_recovery_velocity_max": self.low_apex_recovery_velocity_max,
             "failure_penalty": self.failure_penalty,
             "slot_xy_offsets": self.slot_xy_offsets.tolist(),
             "x_bounds": list(self.x_bounds),
@@ -601,6 +772,13 @@ class TwoBallKeepUpEnv:
             "z_bounds": list(self.z_bounds),
             "max_ball_speed": self.max_ball_speed,
             "terminate_on_ball_ball_contact": self.terminate_on_ball_ball_contact,
+            "controller_position_gain": self.controller_position_gain,
+            "controller_orientation_gain": self.controller_orientation_gain,
+            "controller_max_position_step": self.controller_max_position_step,
+            "controller_max_orientation_step": self.controller_max_orientation_step,
+            "controller_velocity_gain": self.controller_velocity_gain,
+            "controller_velocity_feedback_gain": self.controller_velocity_feedback_gain,
+            "controller_max_velocity_step": self.controller_max_velocity_step,
             "action_names": ACTION_NAMES,
             "action_low": self.action_low.tolist(),
             "action_high": self.action_high.tolist(),

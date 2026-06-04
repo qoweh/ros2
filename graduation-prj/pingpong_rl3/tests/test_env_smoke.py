@@ -98,16 +98,63 @@ def test_contact_active_at_step_start_is_not_counted_as_new_contact() -> None:
 
 
 def test_training_config_captures_reward_and_bounds_parameters() -> None:
-    env = TwoBallKeepUpEnv(max_episode_steps=0, terminate_on_ball_ball_contact=False)
+    env = TwoBallKeepUpEnv(
+        max_episode_steps=0,
+        reset_base_heights=(0.35, 1.15),
+        terminate_on_ball_ball_contact=False,
+    )
 
     config = env.training_config()
 
     assert config["max_episode_steps"] is None
+    assert config["reset_base_heights"] == [0.35, 1.15]
     assert config["slot_xy_offsets"] == env.slot_xy_offsets.tolist()
     assert config["x_bounds"] == list(env.x_bounds)
     assert config["tilt_limit"] == env.tilt_limit.tolist()
     assert config["contact_bonus"] == env.contact_bonus
+    assert config["min_useful_outgoing_vz"] == env.min_useful_outgoing_vz
+    assert config["controller_max_velocity_step"] == env.controller_max_velocity_step
     assert config["terminate_on_ball_ball_contact"] is False
+    env.close()
+
+
+def test_reset_base_heights_can_stagger_initial_phase() -> None:
+    env = TwoBallKeepUpEnv(
+        reset_base_heights=(0.35, 1.15),
+        reset_height_jitter=0.0,
+        reset_xy_range=0.0,
+        reset_velocity_xy_range=0.0,
+        reset_spin_range=0.0,
+    )
+
+    env.reset(seed=3)
+    relative_heights = np.sort((env.sim.ball_positions - env._anchor_position)[:, 2])
+
+    assert np.allclose(relative_heights, [0.35, 1.15])
+    env.close()
+
+
+def test_low_apex_recovery_adds_lift_and_velocity_to_command() -> None:
+    env = TwoBallKeepUpEnv(
+        target_apex_height=0.28,
+        min_useful_apex_height=0.20,
+        low_apex_recovery_lift_gain=0.035,
+        low_apex_recovery_lift_max=0.060,
+        low_apex_recovery_velocity_gain=0.45,
+        low_apex_recovery_velocity_max=0.70,
+        reset_xy_range=0.0,
+        reset_velocity_xy_range=0.0,
+        reset_spin_range=0.0,
+    )
+    env.reset(seed=4)
+    action = np.zeros(env.action_size, dtype=float)
+    target_ball_index, target_metrics = env._select_target_ball(action)
+    env._last_contact_apex_shortfalls[target_ball_index] = 0.08
+
+    command = env._build_command(target_ball_index, target_metrics, action)
+
+    assert command["recovery_lift"] > 0.0
+    assert command["recovery_velocity"] > 0.0
     env.close()
 
 
