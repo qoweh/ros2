@@ -2092,6 +2092,61 @@ class PingPongKeepUpEnv:
             "contact_frame_low_apex_recovery_velocity_max": self.contact_frame_low_apex_recovery_velocity_max,
         }
 
+    def set_reset_distribution(
+        self,
+        *,
+        reset_xy_range: float | None = None,
+        reset_xy_sampling: str | None = None,
+        reset_ball_height_range: float | None = None,
+        reset_ball_height_bounds: Sequence[float] | None = None,
+        reset_velocity_xy_range: float | None = None,
+        reset_velocity_z_range: Sequence[float] | None = None,
+    ) -> dict[str, object]:
+        if reset_xy_range is not None:
+            parsed_xy_range = float(reset_xy_range)
+            if parsed_xy_range < 0.0:
+                raise ValueError(f"reset_xy_range must be non-negative, got {parsed_xy_range}.")
+            self.reset_xy_range = parsed_xy_range
+        if reset_xy_sampling is not None:
+            parsed_xy_sampling = str(reset_xy_sampling)
+            if parsed_xy_sampling not in _RESET_XY_SAMPLING_MODES:
+                raise ValueError(
+                    f"reset_xy_sampling must be one of {_RESET_XY_SAMPLING_MODES}, got {parsed_xy_sampling!r}."
+                )
+            self.reset_xy_sampling = parsed_xy_sampling
+        if reset_ball_height_range is not None:
+            parsed_height_range = float(reset_ball_height_range)
+            if parsed_height_range < 0.0:
+                raise ValueError(f"reset_ball_height_range must be non-negative, got {parsed_height_range}.")
+            self.reset_ball_height_range = parsed_height_range
+        if reset_ball_height_bounds is not None:
+            parsed_height_bounds = (float(reset_ball_height_bounds[0]), float(reset_ball_height_bounds[1]))
+            if parsed_height_bounds[0] > parsed_height_bounds[1]:
+                raise ValueError(
+                    "reset_ball_height_bounds must be ordered as (low, high), got "
+                    f"{parsed_height_bounds}."
+                )
+            if parsed_height_bounds[0] <= 0.0:
+                raise ValueError(
+                    "reset_ball_height_bounds must stay above the racket plane, got "
+                    f"{parsed_height_bounds}."
+                )
+            self.reset_ball_height_bounds = parsed_height_bounds
+        if reset_velocity_xy_range is not None:
+            parsed_velocity_xy_range = float(reset_velocity_xy_range)
+            if parsed_velocity_xy_range < 0.0:
+                raise ValueError(f"reset_velocity_xy_range must be non-negative, got {parsed_velocity_xy_range}.")
+            self.reset_velocity_xy_range = parsed_velocity_xy_range
+        if reset_velocity_z_range is not None:
+            parsed_velocity_z_range = (float(reset_velocity_z_range[0]), float(reset_velocity_z_range[1]))
+            if parsed_velocity_z_range[0] > parsed_velocity_z_range[1]:
+                raise ValueError(
+                    "reset_velocity_z_range must be ordered as (low, high), got "
+                    f"{parsed_velocity_z_range}."
+                )
+            self.reset_velocity_z_range = parsed_velocity_z_range
+        return self.training_config()
+
     def close(self) -> None:
         return None
 

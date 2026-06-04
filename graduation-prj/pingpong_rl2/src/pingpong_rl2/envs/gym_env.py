@@ -55,5 +55,8 @@ class PingPongKeepUpGymEnv(gym.Env[np.ndarray, np.ndarray]):
     def training_config(self) -> dict[str, object]:
         return self.base_env.training_config()
 
+    def set_reset_distribution(self, **kwargs: object) -> dict[str, object]:
+        return self.base_env.set_reset_distribution(**kwargs)
+
     def close(self) -> None:
         self.base_env.close()

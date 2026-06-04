@@ -47,6 +47,33 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertEqual(env.training_config()["reset_ball_height_bounds"], [0.24, 0.48])
         self.assertEqual(env.training_config()["reset_xy_sampling"], "disk")
 
+    def test_set_reset_distribution_updates_randomization_config(self) -> None:
+        env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+
+        config = env.set_reset_distribution(
+            reset_xy_range=0.12,
+            reset_xy_sampling="disk",
+            reset_ball_height_bounds=(0.24, 0.50),
+            reset_velocity_xy_range=0.03,
+            reset_velocity_z_range=(-0.10, 0.02),
+        )
+
+        self.assertEqual(config["reset_xy_range"], 0.12)
+        self.assertEqual(config["reset_xy_sampling"], "disk")
+        self.assertEqual(config["reset_ball_height_bounds"], [0.24, 0.5])
+        self.assertEqual(config["reset_velocity_xy_range"], 0.03)
+        self.assertEqual(config["reset_velocity_z_range"], [-0.1, 0.02])
+
+    def test_gym_wrapper_set_reset_distribution_updates_base_env(self) -> None:
+        env = PingPongKeepUpGymEnv(reset_xy_range=0.0)
+
+        config = env.set_reset_distribution(reset_xy_range=0.10, reset_xy_sampling="disk")
+
+        self.assertEqual(config["reset_xy_range"], 0.10)
+        self.assertEqual(config["reset_xy_sampling"], "disk")
+        self.assertEqual(env.base_env.reset_xy_range, 0.10)
+        self.assertEqual(env.base_env.reset_xy_sampling, "disk")
+
     def test_scene_path_variant_moves_racket_center_farther_from_hand(self) -> None:
         default_env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
         outward_env = PingPongKeepUpEnv(

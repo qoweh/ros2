@@ -1,0 +1,9 @@
+{
+  "args": {
+    "preset": "contact_frame_self_rally_v27_reachable_xy_curriculum",
+    "run_name": "pmk_cf_self_rally",
+    "run_version": "v27",
+    "resume_from": "artifacts/ppo_runs/pmk_cf_self_rally_v26/pmk_cf_self_rally_v26_best_model.zip",
+    "total_timesteps": 1000000
+  }
+}

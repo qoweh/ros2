@@ -10,6 +10,7 @@ from typing import Sequence
 
 import numpy as np
 from stable_baselines3 import PPO
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env import VecMonitor
 import torch as th
 
@@ -517,6 +518,18 @@ _ENV_PRESETS["contact_frame_self_rally_v26_unlimited_broad_xyz"] = {
     "evaluation_step_limit": _UNLIMITED_EVAL_STEP_LIMIT,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v27_reachable_xy_curriculum"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v26_unlimited_broad_xyz"],
+    "reset_xy_range": 0.12,
+    "reset_xy_sampling": "disk",
+    "reset_xy_curriculum_enabled": True,
+    "reset_xy_curriculum_start": 0.075,
+    "reset_xy_curriculum_end": 0.12,
+    "reset_xy_curriculum_fraction": 0.85,
+    "reset_xy_curriculum_update_interval": 10_000,
+    "eval_episodes": 80,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -587,6 +600,11 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "reset_velocity_xy_range": DEFAULT_RESET_VELOCITY_XY_RANGE,
     "reset_velocity_z_range": DEFAULT_RESET_VELOCITY_Z_RANGE,
     "evaluation_step_limit": None,
+    "reset_xy_curriculum_enabled": False,
+    "reset_xy_curriculum_start": None,
+    "reset_xy_curriculum_end": None,
+    "reset_xy_curriculum_fraction": 1.0,
+    "reset_xy_curriculum_update_interval": 10_000,
     "bootstrap_heuristic_episodes": 0,
     "bootstrap_min_useful_bounces": 1,
     "bootstrap_max_samples": 0,
@@ -1023,6 +1041,25 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=("square", "disk"),
         default="square",
         help="Shape used for random XY reset offsets. disk gives uniform 0-360 degree starts inside the radius.",
+    )
+    parser.add_argument(
+        "--reset-xy-curriculum-enabled",
+        action="store_true",
+        help="Linearly widen reset_xy_range during PPO training while keeping final evaluation at --reset-xy-range.",
+    )
+    parser.add_argument("--reset-xy-curriculum-start", type=float, default=None)
+    parser.add_argument("--reset-xy-curriculum-end", type=float, default=None)
+    parser.add_argument(
+        "--reset-xy-curriculum-fraction",
+        type=float,
+        default=1.0,
+        help="Fraction of this run's timesteps used to reach reset_xy_curriculum_end.",
+    )
+    parser.add_argument(
+        "--reset-xy-curriculum-update-interval",
+        type=int,
+        default=10_000,
+        help="Training timesteps between reset_xy_range curriculum updates.",
     )
     parser.add_argument("--reset-velocity-xy-range", type=float, default=DEFAULT_RESET_VELOCITY_XY_RANGE)
     parser.add_argument(
@@ -1981,6 +2018,72 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
     return env_kwargs
 
 
+class ResetXyCurriculumCallback(BaseCallback):
+    def __init__(
+        self,
+        *,
+        start_xy_range: float,
+        end_xy_range: float,
+        total_timesteps: int,
+        curriculum_fraction: float,
+        update_interval: int,
+    ) -> None:
+        super().__init__(verbose=0)
+        if start_xy_range < 0.0 or end_xy_range < 0.0:
+            raise ValueError("reset xy curriculum ranges must be non-negative.")
+        if total_timesteps < 0:
+            raise ValueError(f"total_timesteps must be non-negative, got {total_timesteps}.")
+        if curriculum_fraction <= 0.0:
+            raise ValueError(f"reset_xy_curriculum_fraction must be positive, got {curriculum_fraction}.")
+        if update_interval < 1:
+            raise ValueError(f"reset_xy_curriculum_update_interval must be positive, got {update_interval}.")
+        self.start_xy_range = float(start_xy_range)
+        self.end_xy_range = float(end_xy_range)
+        self.total_timesteps = int(total_timesteps)
+        self.curriculum_fraction = float(curriculum_fraction)
+        self.update_interval = int(update_interval)
+        self._base_num_timesteps: int | None = None
+        self._last_applied_xy_range: float | None = None
+
+    def _target_xy_range(self) -> float:
+        if self.total_timesteps <= 0:
+            return self.end_xy_range
+        run_timesteps = max(int(self.num_timesteps) - int(self._base_num_timesteps or 0), 0)
+        curriculum_timesteps = max(int(round(self.total_timesteps * self.curriculum_fraction)), 1)
+        progress = float(np.clip(run_timesteps / curriculum_timesteps, 0.0, 1.0))
+        return self.start_xy_range + (self.end_xy_range - self.start_xy_range) * progress
+
+    def _apply_xy_range(self, xy_range: float) -> None:
+        if self._last_applied_xy_range is not None and abs(xy_range - self._last_applied_xy_range) < 1.0e-6:
+            return
+        self.training_env.env_method("set_reset_distribution", reset_xy_range=float(xy_range))
+        self._last_applied_xy_range = float(xy_range)
+
+    def _on_training_start(self) -> None:
+        if self._base_num_timesteps is None:
+            self._base_num_timesteps = int(self.model.num_timesteps)
+        self._apply_xy_range(self._target_xy_range())
+
+    def _on_step(self) -> bool:
+        if self.n_calls % self.update_interval == 0:
+            self._apply_xy_range(self._target_xy_range())
+        return True
+
+
+def build_reset_xy_curriculum_callback(args: argparse.Namespace) -> ResetXyCurriculumCallback | None:
+    if not args.reset_xy_curriculum_enabled:
+        return None
+    start_xy_range = args.reset_xy_range if args.reset_xy_curriculum_start is None else args.reset_xy_curriculum_start
+    end_xy_range = args.reset_xy_range if args.reset_xy_curriculum_end is None else args.reset_xy_curriculum_end
+    return ResetXyCurriculumCallback(
+        start_xy_range=float(start_xy_range),
+        end_xy_range=float(end_xy_range),
+        total_timesteps=int(args.total_timesteps),
+        curriculum_fraction=float(args.reset_xy_curriculum_fraction),
+        update_interval=int(args.reset_xy_curriculum_update_interval),
+    )
+
+
 def evaluate_model(
     model: PPO,
     env_kwargs: dict[str, object],
@@ -2316,6 +2419,7 @@ def save_periodic_checkpoints(
     initial_reset_num_timesteps: bool,
     seed: int,
     evaluation_step_limit: int | None,
+    callback: BaseCallback | None = None,
 ) -> tuple[dict[str, object], list[dict[str, object]], dict[str, object] | None, int, bool]:
     if checkpoint_interval < 0:
         raise ValueError(f"checkpoint-interval must be non-negative, got {checkpoint_interval}.")
@@ -2334,6 +2438,7 @@ def save_periodic_checkpoints(
                 total_timesteps=total_timesteps,
                 progress_bar=False,
                 reset_num_timesteps=initial_reset_num_timesteps,
+                callback=callback,
             )
             completed_timesteps = total_timesteps
         return run_dir / "checkpoints", [], None, completed_timesteps, False
@@ -2374,6 +2479,7 @@ def save_periodic_checkpoints(
             total_timesteps=learn_chunk,
             progress_bar=False,
             reset_num_timesteps=initial_reset_num_timesteps and completed_timesteps == 0,
+            callback=callback,
         )
         completed_timesteps += learn_chunk
 
@@ -2514,6 +2620,7 @@ def main() -> None:
     vec_env = make_sb3_async_vector_env(num_envs=args.n_envs, env_kwargs=env_kwargs, seed=args.seed)
     monitor_path = build_session_monitor_path(run_dir)
     monitored_env = VecMonitor(venv=vec_env, filename=str(monitor_path))
+    reset_xy_curriculum_callback = build_reset_xy_curriculum_callback(args)
 
     scaled_log_std_summary: dict[str, object] | None = None
     if starting_checkpoint is None:
@@ -2637,6 +2744,7 @@ def main() -> None:
             initial_reset_num_timesteps=starting_checkpoint is None,
             seed=args.seed,
             evaluation_step_limit=args.evaluation_step_limit,
+            callback=reset_xy_curriculum_callback,
         )
         model_path = run_dir / f"{resolved_run_name}_model"
         model.save(str(model_path))
@@ -2700,6 +2808,11 @@ def main() -> None:
             "checkpoint_eval_episodes": args.checkpoint_eval_episodes,
             "early_stop_patience_evals": args.early_stop_patience_evals,
             "evaluation_step_limit": args.evaluation_step_limit,
+            "reset_xy_curriculum_enabled": args.reset_xy_curriculum_enabled,
+            "reset_xy_curriculum_start": args.reset_xy_curriculum_start,
+            "reset_xy_curriculum_end": args.reset_xy_curriculum_end,
+            "reset_xy_curriculum_fraction": args.reset_xy_curriculum_fraction,
+            "reset_xy_curriculum_update_interval": args.reset_xy_curriculum_update_interval,
             **env_kwargs,
         },
         "scaled_log_std_initialization": scaled_log_std_summary,
