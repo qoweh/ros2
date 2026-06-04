@@ -207,10 +207,7 @@ _ENV_PRESETS["contact_frame_bootstrap_candidate"] = {
     "learning_rate": 1.0e-5,
     "n_epochs": 1,
     "clip_range": 0.05,
-    "checkpoint_interval": 10_000,
-    "checkpoint_eval_episodes": 50,
     "eval_episodes": 100,
-    "early_stop_patience_evals": 4,
     "reset_xy_range": 0.0,
     "reset_velocity_xy_range": 0.0,
     "reset_velocity_z_range": (-0.01, 0.01),
@@ -297,9 +294,6 @@ _ENV_PRESETS["contact_frame_self_rally_candidate"] = {
     "scene_path": "assets/scene.xml",
     "n_envs": 4,
     "batch_size": 512,
-    "checkpoint_interval": 100_000,
-    "checkpoint_eval_episodes": 40,
-    "early_stop_patience_evals": 0,
     "ball_height": 0.34,
     "target_ball_height": 0.30,
     "reset_ball_height_range": 0.02,
@@ -500,7 +494,6 @@ _ENV_PRESETS["contact_frame_self_rally_v25_long_horizon_30_bounce"] = {
     **_ENV_PRESETS["contact_frame_self_rally_v23_outward_timing_guard"],
     "max_episode_steps": 1800,
     "stable_cycle_reward_cap": 12,
-    "checkpoint_eval_episodes": 30,
     "eval_episodes": 80,
 }
 
@@ -513,7 +506,6 @@ _ENV_PRESETS["contact_frame_self_rally_v26_unlimited_broad_xyz"] = {
     "reset_xy_sampling": "disk",
     "reset_velocity_xy_range": 0.025,
     "reset_velocity_z_range": (-0.08, 0.02),
-    "checkpoint_eval_episodes": 24,
     "eval_episodes": 60,
     "evaluation_step_limit": _UNLIMITED_EVAL_STEP_LIMIT,
 }
@@ -530,6 +522,55 @@ _ENV_PRESETS["contact_frame_self_rally_v27_reachable_xy_curriculum"] = {
     "eval_episodes": 80,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v28_robot_base_disk_curriculum"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v27_reachable_xy_curriculum"],
+    "reset_xy_origin": "robot_base",
+    "reset_robot_base_xy": (0.0, 0.0),
+    "reset_xy_range": 0.68,
+    "reset_xy_sampling": "disk",
+    "reset_xy_curriculum_enabled": True,
+    "reset_xy_curriculum_start": 0.12,
+    "reset_xy_curriculum_end": 0.68,
+    "reset_xy_curriculum_fraction": 0.90,
+    "reset_xy_curriculum_update_interval": 10_000,
+    "target_offset_low": (-1.25, -0.85, -0.04),
+    "target_offset_high": (0.20, 0.55, 0.12),
+    "ball_x_bounds": (-0.85, 0.85),
+    "ball_y_bounds": (-0.85, 0.85),
+    "max_episode_steps": 1200,
+    "evaluation_step_limit": 1200,
+    "eval_episodes": 20,
+}
+
+_ENV_PRESETS["contact_frame_self_rally_v29_first_contact_chase_sector"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v28_robot_base_disk_curriculum"],
+    "action_mode": "position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
+    "reset_xy_range": 0.68,
+    "reset_xy_min_radius": 0.35,
+    "reset_xy_angle_bounds_degrees": (-60.0, 60.0),
+    "reset_xy_curriculum_enabled": True,
+    "reset_xy_curriculum_start": 0.40,
+    "reset_xy_curriculum_end": 0.68,
+    "reset_xy_curriculum_fraction": 0.85,
+    "ball_x_bounds": (-0.10, 0.90),
+    "ball_y_bounds": (-0.75, 0.75),
+    "contact_frame_chase_xy_action_limit": 0.80,
+    "contact_frame_contact_xy_action_limit": 0.12,
+    "first_contact_chase_reward_weight": 0.60,
+    "first_contact_chase_reward_radius": 0.18,
+    "first_contact_reach_reward_weight": 2.0,
+    "contact_frame_intercept_velocity_max": 1.6,
+    "contact_frame_velocity_target_max": 3.6,
+    "controller_max_velocity_step": 0.11,
+    "max_episode_steps": 600,
+    "evaluation_step_limit": 600,
+    "eval_episodes": 30,
+    "bootstrap_heuristic_episodes": 0,
+    "bootstrap_max_samples": 0,
+    "bootstrap_epochs": 0,
+    "bootstrap_followup_epochs": 0,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -538,10 +579,7 @@ _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     "learning_rate": 1.0e-5,
     "n_epochs": 1,
     "clip_range": 0.05,
-    "checkpoint_interval": 10_000,
-    "checkpoint_eval_episodes": 50,
     "eval_episodes": 100,
-    "early_stop_patience_evals": 4,
     "reset_xy_range": 0.0,
     "reset_velocity_xy_range": 0.0,
     "reset_velocity_z_range": (-0.01, 0.01),
@@ -562,10 +600,7 @@ _ENV_PRESETS["contact_frame_tilt_headroom_bootstrap_candidate"] = {
     "learning_rate": 1.0e-5,
     "n_epochs": 1,
     "clip_range": 0.05,
-    "checkpoint_interval": 10_000,
-    "checkpoint_eval_episodes": 50,
     "eval_episodes": 100,
-    "early_stop_patience_evals": 4,
     "reset_xy_range": 0.0,
     "reset_velocity_xy_range": 0.0,
     "reset_velocity_z_range": (-0.01, 0.01),
@@ -588,15 +623,16 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "n_epochs": 10,
     "clip_range": 0.2,
     "eval_episodes": 5,
-    "checkpoint_interval": 10_000,
-    "checkpoint_eval_episodes": 10,
-    "early_stop_patience_evals": 0,
     "max_episode_steps": DEFAULT_MAX_EPISODE_STEPS,
     "ball_height": DEFAULT_BALL_HEIGHT,
     "reset_ball_height_range": DEFAULT_RESET_BALL_HEIGHT_RANGE,
     "reset_ball_height_bounds": None,
     "reset_xy_range": DEFAULT_RESET_XY_RANGE,
     "reset_xy_sampling": "square",
+    "reset_xy_origin": "racket",
+    "reset_robot_base_xy": (0.0, 0.0),
+    "reset_xy_min_radius": 0.0,
+    "reset_xy_angle_bounds_degrees": None,
     "reset_velocity_xy_range": DEFAULT_RESET_VELOCITY_XY_RANGE,
     "reset_velocity_z_range": DEFAULT_RESET_VELOCITY_Z_RANGE,
     "evaluation_step_limit": None,
@@ -623,6 +659,10 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "tilt_profile": "auto",
     "target_ball_height": None,
     "followup_lift_action_limit": None,
+    "target_offset_low": (-0.12, -0.12, -0.04),
+    "target_offset_high": (0.12, 0.12, 0.12),
+    "ball_x_bounds": (0.0, 1.35),
+    "ball_y_bounds": (-0.6, 0.6),
     "target_tilt_limit": None,
     "strike_tilt_ramp_pitch": None,
     "strike_tilt_ramp_xy_tolerance": None,
@@ -679,6 +719,8 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_tilt_scale_action_limit": None,
     "contact_frame_target_apex_z_action_limit": None,
     "contact_frame_strike_plane_z_action_limit": None,
+    "contact_frame_chase_xy_action_limit": None,
+    "contact_frame_contact_xy_action_limit": None,
     "contact_frame_intercept_velocity_gain": None,
     "contact_frame_intercept_velocity_max": None,
     "contact_frame_intercept_velocity_time_floor": None,
@@ -747,6 +789,9 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "stable_cycle_reward_weight": None,
     "stable_cycle_reward_cap": 4,
     "stable_cycle_min_easy_next_ball_score": None,
+    "first_contact_chase_reward_weight": None,
+    "first_contact_chase_reward_radius": None,
+    "first_contact_reach_reward_weight": None,
     "log_std_init": None,
     "scale_log_std_by_action_limit": False,
     "action_std_limit_ratio": None,
@@ -889,12 +934,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--resume-from",
         type=Path,
         default=None,
-        help="Optional checkpoint zip to continue from. Default behavior resumes <run-name>_model.zip when it exists.",
+        help="Optional model zip to continue from. Default behavior resumes <run-name>_model.zip when it exists.",
     )
     parser.add_argument(
         "--reset-model",
         action="store_true",
-        help="Start a fresh model even when the target run directory already has a saved checkpoint.",
+        help="Start a fresh model even when the target run directory already has a saved model.",
     )
     parser.add_argument("--total-timesteps", type=int, default=DEFAULT_PPO_TOTAL_TIMESTEPS)
     parser.add_argument("--n-envs", type=int, default=4)
@@ -1000,6 +1045,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "position_contact_frame_velocity_tilt_residual",
             "position_contact_frame_velocity_tilt_lateral_residual",
             "position_contact_frame_velocity_tilt_lateral_apex_residual",
+            "position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
         ),
     )
     parser.add_argument(
@@ -1043,6 +1089,35 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Shape used for random XY reset offsets. disk gives uniform 0-360 degree starts inside the radius.",
     )
     parser.add_argument(
+        "--reset-xy-origin",
+        type=str,
+        choices=("racket", "robot_base"),
+        default="racket",
+        help="World reference for reset XY offsets: racket keeps the old behavior, robot_base samples around the robot base XY.",
+    )
+    parser.add_argument(
+        "--reset-robot-base-xy",
+        type=float,
+        nargs=2,
+        metavar=("X", "Y"),
+        default=(0.0, 0.0),
+        help="World XY center used when --reset-xy-origin=robot_base.",
+    )
+    parser.add_argument(
+        "--reset-xy-min-radius",
+        type=float,
+        default=0.0,
+        help="Minimum radius for disk reset sampling. Use with robot_base sectors to skip unreachable near-base drops.",
+    )
+    parser.add_argument(
+        "--reset-xy-angle-bounds-degrees",
+        type=float,
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        default=None,
+        help="Optional angle sector in degrees for disk reset offsets, measured from +x around the reset origin.",
+    )
+    parser.add_argument(
         "--reset-xy-curriculum-enabled",
         action="store_true",
         help="Linearly widen reset_xy_range during PPO training while keeping final evaluation at --reset-xy-range.",
@@ -1078,6 +1153,38 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--vertical-action-limit", type=float, default=None)
     parser.add_argument("--tilt-action-limit", type=float, default=None)
     parser.add_argument("--followup-lift-action-limit", type=float, default=None)
+    parser.add_argument(
+        "--target-offset-low",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+        default=(-0.12, -0.12, -0.04),
+        help="Lower XYZ target clamp relative to the controller anchor.",
+    )
+    parser.add_argument(
+        "--target-offset-high",
+        type=float,
+        nargs=3,
+        metavar=("X", "Y", "Z"),
+        default=(0.12, 0.12, 0.12),
+        help="Upper XYZ target clamp relative to the controller anchor.",
+    )
+    parser.add_argument(
+        "--ball-x-bounds",
+        type=float,
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        default=(0.0, 1.35),
+        help="World X bounds used for ball_out_of_bounds termination.",
+    )
+    parser.add_argument(
+        "--ball-y-bounds",
+        type=float,
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        default=(-0.6, 0.6),
+        help="World Y bounds used for ball_out_of_bounds termination.",
+    )
     parser.add_argument("--tracking-during-contact-scale", type=float, default=None)
     parser.add_argument("--useful-contact-outgoing-x-penalty-weight", type=float, default=None)
     parser.add_argument("--desired-outgoing-ball-velocity-x", type=float, default=None)
@@ -1195,6 +1302,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--contact-frame-tilt-scale-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-target-apex-z-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-strike-plane-z-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-chase-xy-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-contact-xy-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
@@ -1384,6 +1493,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Minimum easy_next_ball_score required before a useful contact counts as a stable cycle.",
     )
+    parser.add_argument("--first-contact-chase-reward-weight", type=float, default=None)
+    parser.add_argument("--first-contact-chase-reward-radius", type=float, default=None)
+    parser.add_argument("--first-contact-reach-reward-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
     parser.add_argument(
@@ -1517,24 +1629,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--checkpoint-interval",
-        type=int,
-        default=10_000,
-        help="Timesteps between periodic checkpoint saves and interim evaluations. Set 0 to disable interim checkpointing.",
-    )
-    parser.add_argument(
-        "--checkpoint-eval-episodes",
-        type=int,
-        default=10,
-        help="Number of deterministic episodes used for periodic checkpoint evaluation.",
-    )
-    parser.add_argument(
-        "--early-stop-patience-evals",
-        type=int,
-        default=0,
-        help="Optional number of consecutive non-improving checkpoint evaluations before training stops early. Set 0 to disable.",
-    )
-    parser.add_argument(
         "--log-std-init",
         type=float,
         default=None,
@@ -1608,7 +1702,7 @@ def default_model_path(run_dir: Path, run_name: str) -> Path:
     return run_dir / f"{run_name}_model.zip"
 
 
-def resolve_starting_checkpoint(args: argparse.Namespace, run_dir: Path, resolved_run_name: str) -> tuple[str, Path | None]:
+def resolve_starting_model(args: argparse.Namespace, run_dir: Path, resolved_run_name: str) -> tuple[str, Path | None]:
     if args.reset_model and args.resume_from is not None:
         raise ValueError("--reset-model and --resume-from cannot be used together.")
 
@@ -1616,14 +1710,14 @@ def resolve_starting_checkpoint(args: argparse.Namespace, run_dir: Path, resolve
         return "new", None
 
     if args.resume_from is not None:
-        checkpoint_path = resolve_input_path(args.resume_from)
-        if not checkpoint_path.is_file():
-            raise FileNotFoundError(f"Resume checkpoint not found: {checkpoint_path}")
-        return "resume", checkpoint_path
+        resume_path = resolve_input_path(args.resume_from)
+        if not resume_path.is_file():
+            raise FileNotFoundError(f"Resume model not found: {resume_path}")
+        return "resume", resume_path
 
-    checkpoint_path = default_model_path(run_dir, resolved_run_name)
-    if checkpoint_path.is_file():
-        return "resume", checkpoint_path
+    existing_model_path = default_model_path(run_dir, resolved_run_name)
+    if existing_model_path.is_file():
+        return "resume", existing_model_path
     return "new", None
 
 
@@ -1636,12 +1730,6 @@ def build_session_monitor_path(run_dir: Path) -> Path:
         session_index += 1
 
 
-def build_checkpoint_dir(run_dir: Path) -> Path:
-    checkpoint_dir = run_dir / "checkpoints"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    return checkpoint_dir
-
-
 def resolve_tilt_profile(args: argparse.Namespace) -> str:
     if args.action_mode not in (
         "position_tilt",
@@ -1652,6 +1740,7 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
         "position_contact_frame_velocity_tilt_residual",
         "position_contact_frame_velocity_tilt_lateral_residual",
         "position_contact_frame_velocity_tilt_lateral_apex_residual",
+        "position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
     ):
         if args.tracking_during_contact_scale is None:
             args.tracking_during_contact_scale = 0.0
@@ -1689,6 +1778,7 @@ def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
             "position_contact_frame_velocity_tilt_residual",
             "position_contact_frame_velocity_tilt_lateral_residual",
             "position_contact_frame_velocity_tilt_lateral_apex_residual",
+            "position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
         )
         or args.tilt_action_limit is None
         or args.target_tilt_limit is None
@@ -1709,8 +1799,20 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         ),
         "reset_xy_range": args.reset_xy_range,
         "reset_xy_sampling": args.reset_xy_sampling,
+        "reset_xy_origin": args.reset_xy_origin,
+        "reset_robot_base_xy": tuple(args.reset_robot_base_xy),
+        "reset_xy_min_radius": args.reset_xy_min_radius,
+        "reset_xy_angle_bounds_degrees": (
+            None
+            if args.reset_xy_angle_bounds_degrees is None
+            else tuple(args.reset_xy_angle_bounds_degrees)
+        ),
         "reset_velocity_xy_range": args.reset_velocity_xy_range,
         "reset_velocity_z_range": tuple(args.reset_velocity_z_range),
+        "target_offset_low": tuple(args.target_offset_low),
+        "target_offset_high": tuple(args.target_offset_high),
+        "ball_x_bounds": tuple(args.ball_x_bounds),
+        "ball_y_bounds": tuple(args.ball_y_bounds),
         "success_velocity_threshold": args.success_velocity_threshold,
     }
     if args.scene_path is not None:
@@ -1815,6 +1917,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_target_apex_z_action_limit"] = args.contact_frame_target_apex_z_action_limit
     if args.contact_frame_strike_plane_z_action_limit is not None:
         env_kwargs["contact_frame_strike_plane_z_action_limit"] = args.contact_frame_strike_plane_z_action_limit
+    if args.contact_frame_chase_xy_action_limit is not None:
+        env_kwargs["contact_frame_chase_xy_action_limit"] = args.contact_frame_chase_xy_action_limit
+    if args.contact_frame_contact_xy_action_limit is not None:
+        env_kwargs["contact_frame_contact_xy_action_limit"] = args.contact_frame_contact_xy_action_limit
     if args.contact_frame_intercept_velocity_gain is not None:
         env_kwargs["contact_frame_intercept_velocity_gain"] = args.contact_frame_intercept_velocity_gain
     if args.contact_frame_intercept_velocity_max is not None:
@@ -1963,6 +2069,12 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["stable_cycle_reward_cap"] = args.stable_cycle_reward_cap
     if args.stable_cycle_min_easy_next_ball_score is not None:
         env_kwargs["stable_cycle_min_easy_next_ball_score"] = args.stable_cycle_min_easy_next_ball_score
+    if args.first_contact_chase_reward_weight is not None:
+        env_kwargs["first_contact_chase_reward_weight"] = args.first_contact_chase_reward_weight
+    if args.first_contact_chase_reward_radius is not None:
+        env_kwargs["first_contact_chase_reward_radius"] = args.first_contact_chase_reward_radius
+    if args.first_contact_reach_reward_weight is not None:
+        env_kwargs["first_contact_reach_reward_weight"] = args.first_contact_reach_reward_weight
     if args.post_contact_return_assist_weight is not None:
         env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
     if args.post_contact_return_max_intercept_time is not None:
@@ -2200,33 +2312,6 @@ def evaluate_model(
     }
 
 
-def evaluation_sort_key(evaluation: dict[str, object]) -> tuple[float, ...]:
-    failure_counts = evaluation.get("failure_counts", {})
-    if not isinstance(failure_counts, dict):
-        failure_counts = {}
-    return (
-        float(evaluation.get("thirty_or_more_stable_cycle_rate", 0.0)),
-        float(evaluation.get("thirty_or_more_useful_bounce_rate", 0.0)),
-        float(evaluation.get("twenty_or_more_stable_cycle_rate", 0.0)),
-        float(evaluation.get("twenty_or_more_useful_bounce_rate", 0.0)),
-        float(evaluation.get("ten_or_more_stable_cycle_rate", 0.0)),
-        float(evaluation.get("ten_or_more_useful_bounce_rate", 0.0)),
-        float(evaluation.get("three_or_more_stable_cycle_rate", 0.0)),
-        float(evaluation.get("two_or_more_stable_cycle_rate", 0.0)),
-        float(evaluation.get("mean_stable_cycles", 0.0)),
-        int(evaluation.get("max_stable_cycles", 0)),
-        -float(failure_counts.get("robot_body_contact", 0)),
-        -float(failure_counts.get("floor_contact", 0)),
-        -float(failure_counts.get("ball_speed_limit", 0)),
-        -float(failure_counts.get("ball_out_of_bounds", 0)),
-        float(evaluation.get("three_or_more_useful_bounce_rate", 0.0)),
-        float(evaluation.get("two_or_more_useful_bounce_rate", 0.0)),
-        float(evaluation.get("mean_useful_bounces", 0.0)),
-        int(evaluation.get("max_useful_bounces", 0)),
-        float(evaluation.get("mean_return", 0.0)),
-    )
-
-
 def collect_heuristic_bootstrap_dataset(
     *,
     env_kwargs: dict[str, object],
@@ -2255,6 +2340,7 @@ def collect_heuristic_bootstrap_dataset(
         "position_contact_frame_velocity_tilt_residual",
         "position_contact_frame_velocity_tilt_lateral_residual",
         "position_contact_frame_velocity_tilt_lateral_apex_residual",
+        "position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
     }:
         raise ValueError(
             "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', "
@@ -2262,7 +2348,8 @@ def collect_heuristic_bootstrap_dataset(
             "'position_contact_frame_velocity_residual', or "
             "'position_contact_frame_velocity_tilt_residual', or "
             "'position_contact_frame_velocity_tilt_lateral_residual', or "
-            "'position_contact_frame_velocity_tilt_lateral_apex_residual'."
+            "'position_contact_frame_velocity_tilt_lateral_apex_residual', or "
+            "'position_contact_frame_velocity_tilt_lateral_apex_chase_residual'."
         )
     if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
         raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")
@@ -2406,113 +2493,23 @@ def bootstrap_actor_from_dataset(
     }
 
 
-def save_periodic_checkpoints(
+def learn_model(
     *,
     model: PPO,
-    run_dir: Path,
-    resolved_run_name: str,
-    env_kwargs: dict[str, object],
     total_timesteps: int,
-    checkpoint_interval: int,
-    checkpoint_eval_episodes: int,
-    early_stop_patience_evals: int,
     initial_reset_num_timesteps: bool,
-    seed: int,
-    evaluation_step_limit: int | None,
     callback: BaseCallback | None = None,
-) -> tuple[dict[str, object], list[dict[str, object]], dict[str, object] | None, int, bool]:
-    if checkpoint_interval < 0:
-        raise ValueError(f"checkpoint-interval must be non-negative, got {checkpoint_interval}.")
-    if checkpoint_eval_episodes < 1:
-        raise ValueError(
-            f"checkpoint-eval-episodes must be positive, got {checkpoint_eval_episodes}."
-        )
-    if early_stop_patience_evals < 0:
-        raise ValueError(
-            f"early-stop-patience-evals must be non-negative, got {early_stop_patience_evals}."
-        )
-    if checkpoint_interval == 0:
-        completed_timesteps = 0
-        if total_timesteps > 0:
-            model.learn(
-                total_timesteps=total_timesteps,
-                progress_bar=False,
-                reset_num_timesteps=initial_reset_num_timesteps,
-                callback=callback,
-            )
-            completed_timesteps = total_timesteps
-        return run_dir / "checkpoints", [], None, completed_timesteps, False
-
-    checkpoint_dir = build_checkpoint_dir(run_dir)
-    effective_interval = checkpoint_interval
-    completed_timesteps = 0
-    no_improvement_evals = 0
-    stopped_early = False
-    best_evaluation: dict[str, object] | None = None
-    best_checkpoint_record: dict[str, object] | None = None
-    checkpoint_history: list[dict[str, object]] = []
-
-    if total_timesteps > 0 and checkpoint_interval > 0:
-        initial_checkpoint_path = checkpoint_dir / f"{resolved_run_name}_step_{0:07d}_model"
-        model.save(str(initial_checkpoint_path))
-        initial_evaluation = evaluate_model(
-            model,
-            env_kwargs=env_kwargs,
-            episodes=checkpoint_eval_episodes,
-            seed=seed + 20_000,
-            evaluation_step_limit=evaluation_step_limit,
-        )
-        initial_record = {
-            "timesteps": 0,
-            "model_path": str(initial_checkpoint_path.with_suffix(".zip").resolve()),
-            "evaluation": initial_evaluation,
-        }
-        checkpoint_history.append(initial_record)
-        best_evaluation = initial_evaluation
-        best_checkpoint_record = initial_record
-        best_model_path = run_dir / f"{resolved_run_name}_best_model"
-        model.save(str(best_model_path))
-
-    while completed_timesteps < total_timesteps:
-        learn_chunk = min(effective_interval, total_timesteps - completed_timesteps)
+) -> int:
+    if total_timesteps < 0:
+        raise ValueError(f"total_timesteps must be non-negative, got {total_timesteps}.")
+    if total_timesteps > 0:
         model.learn(
-            total_timesteps=learn_chunk,
+            total_timesteps=total_timesteps,
             progress_bar=False,
-            reset_num_timesteps=initial_reset_num_timesteps and completed_timesteps == 0,
+            reset_num_timesteps=initial_reset_num_timesteps,
             callback=callback,
         )
-        completed_timesteps += learn_chunk
-
-        checkpoint_path = checkpoint_dir / f"{resolved_run_name}_step_{completed_timesteps:07d}_model"
-        model.save(str(checkpoint_path))
-        checkpoint_evaluation = evaluate_model(
-            model,
-            env_kwargs=env_kwargs,
-            episodes=checkpoint_eval_episodes,
-            seed=seed + 20_000,
-            evaluation_step_limit=evaluation_step_limit,
-        )
-        checkpoint_record = {
-            "timesteps": completed_timesteps,
-            "model_path": str(checkpoint_path.with_suffix(".zip").resolve()),
-            "evaluation": checkpoint_evaluation,
-        }
-        checkpoint_history.append(checkpoint_record)
-
-        if best_evaluation is None or evaluation_sort_key(checkpoint_evaluation) > evaluation_sort_key(best_evaluation):
-            best_evaluation = checkpoint_evaluation
-            best_checkpoint_record = checkpoint_record
-            best_model_path = run_dir / f"{resolved_run_name}_best_model"
-            model.save(str(best_model_path))
-            no_improvement_evals = 0
-        else:
-            no_improvement_evals += 1
-
-        if early_stop_patience_evals > 0 and no_improvement_evals >= early_stop_patience_evals:
-            stopped_early = True
-            break
-
-    return checkpoint_dir, checkpoint_history, best_checkpoint_record, completed_timesteps, stopped_early
+    return total_timesteps
 
 
 def scaled_action_log_std(
@@ -2586,10 +2583,6 @@ def main() -> None:
         args.n_steps = SMOKE_PPO_N_STEPS
         args.batch_size = SMOKE_PPO_BATCH_SIZE
         args.n_envs = min(args.n_envs, 2)
-        if args.checkpoint_interval > args.total_timesteps:
-            args.checkpoint_interval = args.total_timesteps
-        if args.checkpoint_eval_episodes > 2:
-            args.checkpoint_eval_episodes = 2
         if args.eval_episodes > 2:
             args.eval_episodes = 2
         if args.bootstrap_heuristic_episodes > 12:
@@ -2610,7 +2603,7 @@ def main() -> None:
         raise ValueError(f"batch-size must be <= n_steps * n_envs ({rollout_size}), got {args.batch_size}.")
 
     run_dir = build_run_dir(resolved_run_name, args.output_dir)
-    training_mode, starting_checkpoint = resolve_starting_checkpoint(args, run_dir, resolved_run_name)
+    training_mode, starting_model_path = resolve_starting_model(args, run_dir, resolved_run_name)
     env_kwargs = env_kwargs_from_args(args)
     config_env = PingPongKeepUpGymEnv(**env_kwargs)
     try:
@@ -2623,7 +2616,7 @@ def main() -> None:
     reset_xy_curriculum_callback = build_reset_xy_curriculum_callback(args)
 
     scaled_log_std_summary: dict[str, object] | None = None
-    if starting_checkpoint is None:
+    if starting_model_path is None:
         policy_kwargs = None if args.log_std_init is None else {"log_std_init": float(args.log_std_init)}
         model = PPO(
             "MlpPolicy",
@@ -2654,13 +2647,13 @@ def main() -> None:
             th.nn.init.zeros_(model.policy.action_net.bias)
     else:
         model = PPO.load(
-            str(starting_checkpoint),
+            str(starting_model_path),
             env=monitored_env,
             device=args.device,
         )
     bootstrap_summary: dict[str, object] | None = None
     try:
-        if starting_checkpoint is None and args.bootstrap_heuristic_episodes > 0 and args.bootstrap_epochs > 0:
+        if starting_model_path is None and args.bootstrap_heuristic_episodes > 0 and args.bootstrap_epochs > 0:
             bootstrap_dataset = collect_heuristic_bootstrap_dataset(
                 env_kwargs=env_kwargs,
                 episodes=args.bootstrap_heuristic_episodes,
@@ -2732,18 +2725,10 @@ def main() -> None:
                 }
             else:
                 bootstrap_summary["followup"] = None
-        checkpoint_dir, checkpoint_history, best_checkpoint_record, completed_timesteps, stopped_early = save_periodic_checkpoints(
+        completed_timesteps = learn_model(
             model=model,
-            run_dir=run_dir,
-            resolved_run_name=resolved_run_name,
-            env_kwargs=env_kwargs,
             total_timesteps=args.total_timesteps,
-            checkpoint_interval=args.checkpoint_interval,
-            checkpoint_eval_episodes=args.checkpoint_eval_episodes,
-            early_stop_patience_evals=args.early_stop_patience_evals,
-            initial_reset_num_timesteps=starting_checkpoint is None,
-            seed=args.seed,
-            evaluation_step_limit=args.evaluation_step_limit,
+            initial_reset_num_timesteps=starting_model_path is None,
             callback=reset_xy_curriculum_callback,
         )
         model_path = run_dir / f"{resolved_run_name}_model"
@@ -2758,13 +2743,10 @@ def main() -> None:
     finally:
         monitored_env.close()
 
-    checkpoint_history_path = run_dir / f"{resolved_run_name}_checkpoint_evaluations.json"
-    checkpoint_history_path.write_text(json.dumps(checkpoint_history, indent=2), encoding="utf-8")
-
     summary = {
         "run_name": resolved_run_name,
         "training_mode": training_mode,
-        "starting_checkpoint": None if starting_checkpoint is None else str(starting_checkpoint.resolve()),
+        "starting_model_path": None if starting_model_path is None else str(starting_model_path.resolve()),
         "model_path": str((run_dir / f"{resolved_run_name}_model.zip").resolve()),
         "monitor_path": str(monitor_path.resolve()),
         "completed_timesteps": completed_timesteps,
@@ -2804,9 +2786,6 @@ def main() -> None:
             "bootstrap_followup_min_useful_bounces": args.bootstrap_followup_min_useful_bounces,
             "bootstrap_followup_learning_rate": args.bootstrap_followup_learning_rate,
             "eval_episodes": args.eval_episodes,
-            "checkpoint_interval": args.checkpoint_interval,
-            "checkpoint_eval_episodes": args.checkpoint_eval_episodes,
-            "early_stop_patience_evals": args.early_stop_patience_evals,
             "evaluation_step_limit": args.evaluation_step_limit,
             "reset_xy_curriculum_enabled": args.reset_xy_curriculum_enabled,
             "reset_xy_curriculum_start": args.reset_xy_curriculum_start,
@@ -2817,18 +2796,6 @@ def main() -> None:
         },
         "scaled_log_std_initialization": scaled_log_std_summary,
         "env_config": resolved_env_config,
-        "checkpointing": {
-            "checkpoint_dir": str(checkpoint_dir.resolve()),
-            "checkpoint_history_path": str(checkpoint_history_path.resolve()),
-            "checkpoint_count": len(checkpoint_history),
-            "stopped_early": stopped_early,
-            "best_checkpoint": best_checkpoint_record,
-            "best_model_path": (
-                None
-                if best_checkpoint_record is None
-                else str((run_dir / f"{resolved_run_name}_best_model.zip").resolve())
-            ),
-        },
         "bootstrap": bootstrap_summary,
         "evaluation": evaluation,
     }
@@ -2839,10 +2806,10 @@ def main() -> None:
     print(f"resolved_tilt_profile={resolved_tilt_profile}")
     print(f"training_mode={training_mode}")
     print(f"completed_timesteps={completed_timesteps}")
-    if starting_checkpoint is not None:
-        print(f"starting_checkpoint={starting_checkpoint}")
+    if starting_model_path is not None:
+        print(f"starting_model_path={starting_model_path}")
         if args.resume_from is None and not args.reset_model:
-            print("resume_note=existing_checkpoint_in_run_dir")
+            print("resume_note=existing_model_in_run_dir")
     resolved_tilt_limit_ratio = tilt_limit_ratio(args)
     if resolved_tilt_limit_ratio is not None:
         print(f"tilt_limit_ratio={resolved_tilt_limit_ratio:.3f}")
@@ -2850,10 +2817,6 @@ def main() -> None:
             print("tilt_limit_warning=tilt_action_limit is large relative to target_tilt_limit and may encourage chatter")
     print(f"run_dir={run_dir}")
     print(f"model_path={run_dir / f'{resolved_run_name}_model.zip'}")
-    print(f"checkpoint_history_path={checkpoint_history_path}")
-    if best_checkpoint_record is not None:
-        print(f"best_model_path={run_dir / f'{resolved_run_name}_best_model.zip'}")
-        print(f"best_checkpoint_timesteps={best_checkpoint_record['timesteps']}")
     print(f"monitor_path={monitor_path}")
     print(f"summary_path={summary_path}")
     if bootstrap_summary is not None:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 from pingpong_rl2.defaults import (
@@ -11,6 +10,7 @@ from pingpong_rl2.defaults import (
     DEFAULT_PPO_POSITION_STRIKE_TILT_RUN_NAME,
     DEFAULT_PPO_POSITION_STRIKE_TILT_LIFT_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_RUN_NAME,
+    DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_CHASE_RESIDUAL_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_RESIDUAL_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_RESIDUAL_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_RESIDUAL_RUN_NAME,
@@ -26,6 +26,7 @@ from pingpong_rl2.defaults import (
     SMOKE_PPO_POSITION_STRIKE_TILT_RUN_NAME,
     SMOKE_PPO_POSITION_STRIKE_TILT_LIFT_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_RUN_NAME,
+    SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_CHASE_RESIDUAL_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_RESIDUAL_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_RESIDUAL_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_RESIDUAL_RUN_NAME,
@@ -35,8 +36,6 @@ from pingpong_rl2.defaults import (
     default_ppo_model_candidates,
 )
 from pingpong_rl2.utils.paths import PPO_RUNS_ROOT, resolve_input_path
-
-_CHECKPOINT_MODEL_STEM_PATTERN = re.compile(r"^(?P<run_name>.+)_step_\d+_model$")
 
 
 def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> str:
@@ -57,6 +56,9 @@ def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> s
         "position_contact_frame_velocity_tilt_lateral_apex_residual": (
             SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_RESIDUAL_RUN_NAME
         ),
+        "position_contact_frame_velocity_tilt_lateral_apex_chase_residual": (
+            SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_CHASE_RESIDUAL_RUN_NAME
+        ),
     }
     standard_run_names = {
         "position": DEFAULT_PPO_RUN_NAME,
@@ -74,6 +76,9 @@ def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> s
         ),
         "position_contact_frame_velocity_tilt_lateral_apex_residual": (
             DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_RESIDUAL_RUN_NAME
+        ),
+        "position_contact_frame_velocity_tilt_lateral_apex_chase_residual": (
+            DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_CHASE_RESIDUAL_RUN_NAME
         ),
     }
     if smoke:
@@ -122,18 +127,12 @@ def infer_training_run_name_from_model_path(model_path: Path) -> str:
     model_stem = model_path.stem
     if model_stem.endswith("_best_model"):
         return model_stem[:-11]
-    checkpoint_match = _CHECKPOINT_MODEL_STEM_PATTERN.match(model_stem)
-    if checkpoint_match is not None:
-        return str(checkpoint_match.group("run_name"))
     return infer_run_name_from_model_path(model_path)
 
 
 def training_summary_candidates_for_model(model_path: Path) -> list[Path]:
     run_name = infer_training_run_name_from_model_path(model_path)
-    candidates = [model_path.parent / f"{run_name}_training_summary.json"]
-    if model_path.parent.name == "checkpoints":
-        candidates.append(model_path.parent.parent / f"{run_name}_training_summary.json")
-    return candidates
+    return [model_path.parent / f"{run_name}_training_summary.json"]
 
 
 def resolve_saved_model_path(
@@ -146,16 +145,6 @@ def resolve_saved_model_path(
         return resolve_input_path(model_path)
     if run_name is not None:
         if prefer_best_model:
-            summary_path = training_summary_path_for_run_name(run_name)
-            summary = load_training_summary(summary_path)
-            if isinstance(summary, dict):
-                checkpointing = summary.get("checkpointing")
-                if isinstance(checkpointing, dict):
-                    best_model_path = checkpointing.get("best_model_path")
-                    if isinstance(best_model_path, str):
-                        resolved_best_model_path = resolve_input_path(Path(best_model_path))
-                        if resolved_best_model_path.is_file():
-                            return resolved_best_model_path
             fallback_best_model_path = best_model_path_for_run_name(run_name)
             if fallback_best_model_path.is_file():
                 return fallback_best_model_path
@@ -195,6 +184,12 @@ def resolve_env_kwargs_for_model(
     reset_ball_height_bounds: tuple[float, float] | list[float] | None = None,
     reset_xy_range: float | None = None,
     reset_xy_sampling: str | None = None,
+    reset_xy_origin: str | None = None,
+    reset_robot_base_xy: tuple[float, float] | list[float] | None = None,
+    reset_xy_min_radius: float | None = None,
+    reset_xy_angle_bounds_degrees: tuple[float, float] | list[float] | None = None,
+    ball_x_bounds: tuple[float, float] | list[float] | None = None,
+    ball_y_bounds: tuple[float, float] | list[float] | None = None,
     reset_velocity_xy_range: float | None = None,
     reset_velocity_z_range: tuple[float, float] | list[float] | None = None,
     success_velocity_threshold: float | None = None,
@@ -208,6 +203,12 @@ def resolve_env_kwargs_for_model(
         "reset_ball_height_bounds": None,
         "reset_xy_range": DEFAULT_RESET_XY_RANGE,
         "reset_xy_sampling": "square",
+        "reset_xy_origin": "racket",
+        "reset_robot_base_xy": (0.0, 0.0),
+        "reset_xy_min_radius": 0.0,
+        "reset_xy_angle_bounds_degrees": None,
+        "ball_x_bounds": (0.0, 1.35),
+        "ball_y_bounds": (-0.6, 0.6),
         "reset_velocity_xy_range": DEFAULT_RESET_VELOCITY_XY_RANGE,
         "reset_velocity_z_range": tuple(DEFAULT_RESET_VELOCITY_Z_RANGE),
         "success_velocity_threshold": DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
@@ -235,6 +236,20 @@ def resolve_env_kwargs_for_model(
         env_kwargs["reset_xy_range"] = float(reset_xy_range)
     if reset_xy_sampling is not None:
         env_kwargs["reset_xy_sampling"] = str(reset_xy_sampling)
+    if reset_xy_origin is not None:
+        env_kwargs["reset_xy_origin"] = str(reset_xy_origin)
+    if reset_robot_base_xy is not None:
+        env_kwargs["reset_robot_base_xy"] = tuple(float(value) for value in reset_robot_base_xy)
+    if reset_xy_min_radius is not None:
+        env_kwargs["reset_xy_min_radius"] = float(reset_xy_min_radius)
+    if reset_xy_angle_bounds_degrees is not None:
+        env_kwargs["reset_xy_angle_bounds_degrees"] = tuple(
+            float(value) for value in reset_xy_angle_bounds_degrees
+        )
+    if ball_x_bounds is not None:
+        env_kwargs["ball_x_bounds"] = tuple(float(value) for value in ball_x_bounds)
+    if ball_y_bounds is not None:
+        env_kwargs["ball_y_bounds"] = tuple(float(value) for value in ball_y_bounds)
     if reset_velocity_xy_range is not None:
         env_kwargs["reset_velocity_xy_range"] = float(reset_velocity_xy_range)
     if reset_velocity_z_range is not None:
