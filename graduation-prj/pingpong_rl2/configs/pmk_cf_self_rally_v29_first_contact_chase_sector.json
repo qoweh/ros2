@@ -1,9 +1,0 @@
-{
-  "args": {
-    "preset": "contact_frame_self_rally_v29_first_contact_chase_sector",
-    "run_name": "pmk_cf_self_rally",
-    "run_version": "v29_first_contact_chase_sector",
-    "total_timesteps": 2000000,
-    "reset_model": true
-  }
-}

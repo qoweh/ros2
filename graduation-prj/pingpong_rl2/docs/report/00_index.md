@@ -100,7 +100,3 @@
   - `run_ppo_learning.py`의 preset/config/default 인자 동작, v25 핵심 설정, 설정파일 기반 실행과 cleanup 판단을 정리한 보고서
 - `48_v26_unlimited_broad_xyz_reset.md`
   - 웹서비스/시연용 무제한 episode, v26 broad xyz reset preset, evaluation safety cap, 학습/분석/viewer 명령을 정리한 보고서
-- `49_v28_robot_base_disk_curriculum_and_checkpoint_cleanup.md`
-  - reset 원반 기준을 탁구채 중심에서 로봇 베이스 중심으로 바꾸고, v28 robot-base disk curriculum 및 checkpoint 코드 제거 내용을 정리한 보고서
-- `50_v29_logic_flow_and_first_contact_chase.md`
-  - 현재 self-rally 전체 로직 흐름과 RL 담당 영역, v29 19D first-contact chase residual, robot-base sector reset, 학습 명령을 정리한 보고서

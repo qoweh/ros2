@@ -522,55 +522,6 @@ _ENV_PRESETS["contact_frame_self_rally_v27_reachable_xy_curriculum"] = {
     "eval_episodes": 80,
 }
 
-_ENV_PRESETS["contact_frame_self_rally_v28_robot_base_disk_curriculum"] = {
-    **_ENV_PRESETS["contact_frame_self_rally_v27_reachable_xy_curriculum"],
-    "reset_xy_origin": "robot_base",
-    "reset_robot_base_xy": (0.0, 0.0),
-    "reset_xy_range": 0.68,
-    "reset_xy_sampling": "disk",
-    "reset_xy_curriculum_enabled": True,
-    "reset_xy_curriculum_start": 0.12,
-    "reset_xy_curriculum_end": 0.68,
-    "reset_xy_curriculum_fraction": 0.90,
-    "reset_xy_curriculum_update_interval": 10_000,
-    "target_offset_low": (-1.25, -0.85, -0.04),
-    "target_offset_high": (0.20, 0.55, 0.12),
-    "ball_x_bounds": (-0.85, 0.85),
-    "ball_y_bounds": (-0.85, 0.85),
-    "max_episode_steps": 1200,
-    "evaluation_step_limit": 1200,
-    "eval_episodes": 20,
-}
-
-_ENV_PRESETS["contact_frame_self_rally_v29_first_contact_chase_sector"] = {
-    **_ENV_PRESETS["contact_frame_self_rally_v28_robot_base_disk_curriculum"],
-    "action_mode": "position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
-    "reset_xy_range": 0.68,
-    "reset_xy_min_radius": 0.35,
-    "reset_xy_angle_bounds_degrees": (-60.0, 60.0),
-    "reset_xy_curriculum_enabled": True,
-    "reset_xy_curriculum_start": 0.40,
-    "reset_xy_curriculum_end": 0.68,
-    "reset_xy_curriculum_fraction": 0.85,
-    "ball_x_bounds": (-0.10, 0.90),
-    "ball_y_bounds": (-0.75, 0.75),
-    "contact_frame_chase_xy_action_limit": 0.80,
-    "contact_frame_contact_xy_action_limit": 0.12,
-    "first_contact_chase_reward_weight": 0.60,
-    "first_contact_chase_reward_radius": 0.18,
-    "first_contact_reach_reward_weight": 2.0,
-    "contact_frame_intercept_velocity_max": 1.6,
-    "contact_frame_velocity_target_max": 3.6,
-    "controller_max_velocity_step": 0.11,
-    "max_episode_steps": 600,
-    "evaluation_step_limit": 600,
-    "eval_episodes": 30,
-    "bootstrap_heuristic_episodes": 0,
-    "bootstrap_max_samples": 0,
-    "bootstrap_epochs": 0,
-    "bootstrap_followup_epochs": 0,
-}
-
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -629,10 +580,6 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "reset_ball_height_bounds": None,
     "reset_xy_range": DEFAULT_RESET_XY_RANGE,
     "reset_xy_sampling": "square",
-    "reset_xy_origin": "racket",
-    "reset_robot_base_xy": (0.0, 0.0),
-    "reset_xy_min_radius": 0.0,
-    "reset_xy_angle_bounds_degrees": None,
     "reset_velocity_xy_range": DEFAULT_RESET_VELOCITY_XY_RANGE,
     "reset_velocity_z_range": DEFAULT_RESET_VELOCITY_Z_RANGE,
     "evaluation_step_limit": None,
@@ -661,8 +608,6 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "followup_lift_action_limit": None,
     "target_offset_low": (-0.12, -0.12, -0.04),
     "target_offset_high": (0.12, 0.12, 0.12),
-    "ball_x_bounds": (0.0, 1.35),
-    "ball_y_bounds": (-0.6, 0.6),
     "target_tilt_limit": None,
     "strike_tilt_ramp_pitch": None,
     "strike_tilt_ramp_xy_tolerance": None,
@@ -719,8 +664,6 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_tilt_scale_action_limit": None,
     "contact_frame_target_apex_z_action_limit": None,
     "contact_frame_strike_plane_z_action_limit": None,
-    "contact_frame_chase_xy_action_limit": None,
-    "contact_frame_contact_xy_action_limit": None,
     "contact_frame_intercept_velocity_gain": None,
     "contact_frame_intercept_velocity_max": None,
     "contact_frame_intercept_velocity_time_floor": None,
@@ -789,9 +732,6 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "stable_cycle_reward_weight": None,
     "stable_cycle_reward_cap": 4,
     "stable_cycle_min_easy_next_ball_score": None,
-    "first_contact_chase_reward_weight": None,
-    "first_contact_chase_reward_radius": None,
-    "first_contact_reach_reward_weight": None,
     "log_std_init": None,
     "scale_log_std_by_action_limit": False,
     "action_std_limit_ratio": None,
@@ -1045,7 +985,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "position_contact_frame_velocity_tilt_residual",
             "position_contact_frame_velocity_tilt_lateral_residual",
             "position_contact_frame_velocity_tilt_lateral_apex_residual",
-            "position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
         ),
     )
     parser.add_argument(
@@ -1087,35 +1026,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=("square", "disk"),
         default="square",
         help="Shape used for random XY reset offsets. disk gives uniform 0-360 degree starts inside the radius.",
-    )
-    parser.add_argument(
-        "--reset-xy-origin",
-        type=str,
-        choices=("racket", "robot_base"),
-        default="racket",
-        help="World reference for reset XY offsets: racket keeps the old behavior, robot_base samples around the robot base XY.",
-    )
-    parser.add_argument(
-        "--reset-robot-base-xy",
-        type=float,
-        nargs=2,
-        metavar=("X", "Y"),
-        default=(0.0, 0.0),
-        help="World XY center used when --reset-xy-origin=robot_base.",
-    )
-    parser.add_argument(
-        "--reset-xy-min-radius",
-        type=float,
-        default=0.0,
-        help="Minimum radius for disk reset sampling. Use with robot_base sectors to skip unreachable near-base drops.",
-    )
-    parser.add_argument(
-        "--reset-xy-angle-bounds-degrees",
-        type=float,
-        nargs=2,
-        metavar=("LOW", "HIGH"),
-        default=None,
-        help="Optional angle sector in degrees for disk reset offsets, measured from +x around the reset origin.",
     )
     parser.add_argument(
         "--reset-xy-curriculum-enabled",
@@ -1168,22 +1078,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar=("X", "Y", "Z"),
         default=(0.12, 0.12, 0.12),
         help="Upper XYZ target clamp relative to the controller anchor.",
-    )
-    parser.add_argument(
-        "--ball-x-bounds",
-        type=float,
-        nargs=2,
-        metavar=("LOW", "HIGH"),
-        default=(0.0, 1.35),
-        help="World X bounds used for ball_out_of_bounds termination.",
-    )
-    parser.add_argument(
-        "--ball-y-bounds",
-        type=float,
-        nargs=2,
-        metavar=("LOW", "HIGH"),
-        default=(-0.6, 0.6),
-        help="World Y bounds used for ball_out_of_bounds termination.",
     )
     parser.add_argument("--tracking-during-contact-scale", type=float, default=None)
     parser.add_argument("--useful-contact-outgoing-x-penalty-weight", type=float, default=None)
@@ -1302,8 +1196,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--contact-frame-tilt-scale-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-target-apex-z-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-strike-plane-z-action-limit", type=float, default=None)
-    parser.add_argument("--contact-frame-chase-xy-action-limit", type=float, default=None)
-    parser.add_argument("--contact-frame-contact-xy-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
@@ -1493,9 +1385,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Minimum easy_next_ball_score required before a useful contact counts as a stable cycle.",
     )
-    parser.add_argument("--first-contact-chase-reward-weight", type=float, default=None)
-    parser.add_argument("--first-contact-chase-reward-radius", type=float, default=None)
-    parser.add_argument("--first-contact-reach-reward-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-assist-weight", type=float, default=None)
     parser.add_argument("--post-contact-return-max-intercept-time", type=float, default=None)
     parser.add_argument(
@@ -1740,7 +1629,6 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
         "position_contact_frame_velocity_tilt_residual",
         "position_contact_frame_velocity_tilt_lateral_residual",
         "position_contact_frame_velocity_tilt_lateral_apex_residual",
-        "position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
     ):
         if args.tracking_during_contact_scale is None:
             args.tracking_during_contact_scale = 0.0
@@ -1778,7 +1666,6 @@ def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
             "position_contact_frame_velocity_tilt_residual",
             "position_contact_frame_velocity_tilt_lateral_residual",
             "position_contact_frame_velocity_tilt_lateral_apex_residual",
-            "position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
         )
         or args.tilt_action_limit is None
         or args.target_tilt_limit is None
@@ -1799,20 +1686,10 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         ),
         "reset_xy_range": args.reset_xy_range,
         "reset_xy_sampling": args.reset_xy_sampling,
-        "reset_xy_origin": args.reset_xy_origin,
-        "reset_robot_base_xy": tuple(args.reset_robot_base_xy),
-        "reset_xy_min_radius": args.reset_xy_min_radius,
-        "reset_xy_angle_bounds_degrees": (
-            None
-            if args.reset_xy_angle_bounds_degrees is None
-            else tuple(args.reset_xy_angle_bounds_degrees)
-        ),
         "reset_velocity_xy_range": args.reset_velocity_xy_range,
         "reset_velocity_z_range": tuple(args.reset_velocity_z_range),
         "target_offset_low": tuple(args.target_offset_low),
         "target_offset_high": tuple(args.target_offset_high),
-        "ball_x_bounds": tuple(args.ball_x_bounds),
-        "ball_y_bounds": tuple(args.ball_y_bounds),
         "success_velocity_threshold": args.success_velocity_threshold,
     }
     if args.scene_path is not None:
@@ -1917,10 +1794,6 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_target_apex_z_action_limit"] = args.contact_frame_target_apex_z_action_limit
     if args.contact_frame_strike_plane_z_action_limit is not None:
         env_kwargs["contact_frame_strike_plane_z_action_limit"] = args.contact_frame_strike_plane_z_action_limit
-    if args.contact_frame_chase_xy_action_limit is not None:
-        env_kwargs["contact_frame_chase_xy_action_limit"] = args.contact_frame_chase_xy_action_limit
-    if args.contact_frame_contact_xy_action_limit is not None:
-        env_kwargs["contact_frame_contact_xy_action_limit"] = args.contact_frame_contact_xy_action_limit
     if args.contact_frame_intercept_velocity_gain is not None:
         env_kwargs["contact_frame_intercept_velocity_gain"] = args.contact_frame_intercept_velocity_gain
     if args.contact_frame_intercept_velocity_max is not None:
@@ -2069,12 +1942,6 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["stable_cycle_reward_cap"] = args.stable_cycle_reward_cap
     if args.stable_cycle_min_easy_next_ball_score is not None:
         env_kwargs["stable_cycle_min_easy_next_ball_score"] = args.stable_cycle_min_easy_next_ball_score
-    if args.first_contact_chase_reward_weight is not None:
-        env_kwargs["first_contact_chase_reward_weight"] = args.first_contact_chase_reward_weight
-    if args.first_contact_chase_reward_radius is not None:
-        env_kwargs["first_contact_chase_reward_radius"] = args.first_contact_chase_reward_radius
-    if args.first_contact_reach_reward_weight is not None:
-        env_kwargs["first_contact_reach_reward_weight"] = args.first_contact_reach_reward_weight
     if args.post_contact_return_assist_weight is not None:
         env_kwargs["post_contact_return_assist_weight"] = args.post_contact_return_assist_weight
     if args.post_contact_return_max_intercept_time is not None:
@@ -2340,7 +2207,6 @@ def collect_heuristic_bootstrap_dataset(
         "position_contact_frame_velocity_tilt_residual",
         "position_contact_frame_velocity_tilt_lateral_residual",
         "position_contact_frame_velocity_tilt_lateral_apex_residual",
-        "position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
     }:
         raise ValueError(
             "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', "
@@ -2348,8 +2214,7 @@ def collect_heuristic_bootstrap_dataset(
             "'position_contact_frame_velocity_residual', or "
             "'position_contact_frame_velocity_tilt_residual', or "
             "'position_contact_frame_velocity_tilt_lateral_residual', or "
-            "'position_contact_frame_velocity_tilt_lateral_apex_residual', or "
-            "'position_contact_frame_velocity_tilt_lateral_apex_chase_residual'."
+            "'position_contact_frame_velocity_tilt_lateral_apex_residual'."
         )
     if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
         raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")

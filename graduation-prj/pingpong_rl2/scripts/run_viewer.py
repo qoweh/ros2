@@ -56,12 +56,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--reset-xy-range", type=float, default=None)
     parser.add_argument("--reset-xy-sampling", type=str, choices=("square", "disk"), default=None)
-    parser.add_argument("--reset-xy-origin", type=str, choices=("racket", "robot_base"), default=None)
-    parser.add_argument("--reset-robot-base-xy", type=float, nargs=2, metavar=("X", "Y"), default=None)
-    parser.add_argument("--reset-xy-min-radius", type=float, default=None)
-    parser.add_argument("--reset-xy-angle-bounds-degrees", type=float, nargs=2, metavar=("LOW", "HIGH"), default=None)
-    parser.add_argument("--ball-x-bounds", type=float, nargs=2, metavar=("LOW", "HIGH"), default=None)
-    parser.add_argument("--ball-y-bounds", type=float, nargs=2, metavar=("LOW", "HIGH"), default=None)
     parser.add_argument("--reset-velocity-xy-range", type=float, default=None)
     parser.add_argument(
         "--reset-velocity-z-range",
@@ -135,12 +129,6 @@ def main() -> None:
         reset_ball_height_bounds=args.reset_ball_height_bounds,
         reset_xy_range=args.reset_xy_range,
         reset_xy_sampling=args.reset_xy_sampling,
-        reset_xy_origin=args.reset_xy_origin,
-        reset_robot_base_xy=args.reset_robot_base_xy,
-        reset_xy_min_radius=args.reset_xy_min_radius,
-        reset_xy_angle_bounds_degrees=args.reset_xy_angle_bounds_degrees,
-        ball_x_bounds=args.ball_x_bounds,
-        ball_y_bounds=args.ball_y_bounds,
         reset_velocity_xy_range=args.reset_velocity_xy_range,
         reset_velocity_z_range=args.reset_velocity_z_range,
     )

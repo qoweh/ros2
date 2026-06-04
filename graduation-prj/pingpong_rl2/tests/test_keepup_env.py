@@ -47,58 +47,12 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertEqual(env.training_config()["reset_ball_height_bounds"], [0.24, 0.48])
         self.assertEqual(env.training_config()["reset_xy_sampling"], "disk")
 
-    def test_robot_base_origin_reset_uses_world_base_xy(self) -> None:
-        env = PingPongKeepUpEnv(
-            reset_xy_origin="robot_base",
-            reset_robot_base_xy=(0.0, 0.0),
-            reset_xy_range=0.10,
-            reset_xy_sampling="disk",
-            reset_velocity_xy_range=0.0,
-        )
-
-        for seed in range(10):
-            env.seed(seed)
-            _, info = env.reset(ball_height=0.30)
-            self.assertLessEqual(float(np.linalg.norm(env.sim.ball_position[:2])), 0.10 + 1.0e-9)
-            self.assertFalse(np.allclose(env.sim.ball_position[:2], env.sim.racket_position[:2]))
-            self.assertEqual(info["reset_xy_origin"], "robot_base")
-        self.assertEqual(env.training_config()["reset_xy_origin"], "robot_base")
-        self.assertEqual(env.training_config()["reset_robot_base_xy"], [0.0, 0.0])
-
-    def test_disk_reset_can_use_min_radius_and_angle_sector(self) -> None:
-        env = PingPongKeepUpEnv(
-            reset_xy_origin="robot_base",
-            reset_robot_base_xy=(0.0, 0.0),
-            reset_xy_range=0.60,
-            reset_xy_min_radius=0.30,
-            reset_xy_angle_bounds_degrees=(-45.0, 45.0),
-            reset_xy_sampling="disk",
-            reset_velocity_xy_range=0.0,
-        )
-
-        for seed in range(20):
-            env.seed(seed)
-            _, info = env.reset(ball_height=0.30)
-            xy_offset = np.asarray(info["spawn_ball_xy_offset"], dtype=float)
-            radius = float(np.linalg.norm(xy_offset))
-            angle_degrees = float(np.rad2deg(np.arctan2(xy_offset[1], xy_offset[0])))
-            self.assertGreaterEqual(radius, 0.30 - 1.0e-9)
-            self.assertLessEqual(radius, 0.60 + 1.0e-9)
-            self.assertGreaterEqual(angle_degrees, -45.0 - 1.0e-9)
-            self.assertLessEqual(angle_degrees, 45.0 + 1.0e-9)
-        self.assertEqual(env.training_config()["reset_xy_min_radius"], 0.30)
-        self.assertEqual(env.training_config()["reset_xy_angle_bounds_degrees"], [-45.0, 45.0])
-
     def test_set_reset_distribution_updates_randomization_config(self) -> None:
         env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
 
         config = env.set_reset_distribution(
             reset_xy_range=0.12,
             reset_xy_sampling="disk",
-            reset_xy_origin="robot_base",
-            reset_robot_base_xy=(0.01, -0.02),
-            reset_xy_min_radius=0.04,
-            reset_xy_angle_bounds_degrees=(-30.0, 30.0),
             reset_ball_height_bounds=(0.24, 0.50),
             reset_velocity_xy_range=0.03,
             reset_velocity_z_range=(-0.10, 0.02),
@@ -106,10 +60,6 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
 
         self.assertEqual(config["reset_xy_range"], 0.12)
         self.assertEqual(config["reset_xy_sampling"], "disk")
-        self.assertEqual(config["reset_xy_origin"], "robot_base")
-        self.assertEqual(config["reset_robot_base_xy"], [0.01, -0.02])
-        self.assertEqual(config["reset_xy_min_radius"], 0.04)
-        self.assertEqual(config["reset_xy_angle_bounds_degrees"], [-30.0, 30.0])
         self.assertEqual(config["reset_ball_height_bounds"], [0.24, 0.5])
         self.assertEqual(config["reset_velocity_xy_range"], 0.03)
         self.assertEqual(config["reset_velocity_z_range"], [-0.1, 0.02])
@@ -1087,59 +1037,6 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertAlmostEqual(config["contact_frame_target_apex_z_action_limit"], 0.09)
         self.assertAlmostEqual(config["contact_frame_strike_plane_z_action_limit"], 0.02)
 
-    def test_position_contact_frame_velocity_tilt_lateral_apex_chase_residual_mode_exposes_19d_action_space(
-        self,
-    ) -> None:
-        env = PingPongKeepUpEnv(
-            action_mode="position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
-            reset_xy_range=0.0,
-            reset_velocity_xy_range=0.0,
-            lateral_action_limit=0.02,
-            vertical_action_limit=0.03,
-            tilt_action_limit=0.008,
-            contact_frame_velocity_scale_action_limit=0.25,
-            contact_frame_outgoing_xy_action_limit=0.40,
-            contact_frame_racket_vz_action_limit=0.50,
-            contact_frame_tilt_scale_action_limit=0.60,
-            contact_frame_racket_xy_action_limit=0.30,
-            contact_frame_target_apex_z_action_limit=0.09,
-            contact_frame_strike_plane_z_action_limit=0.02,
-            contact_frame_chase_xy_action_limit=0.70,
-            contact_frame_contact_xy_action_limit=0.11,
-        )
-        observation, _ = env.reset()
-        expected_high = np.array(
-            [
-                0.02,
-                0.02,
-                0.03,
-                0.008,
-                0.008,
-                0.25,
-                0.40,
-                0.40,
-                0.50,
-                0.60,
-                0.60,
-                0.30,
-                0.30,
-                0.09,
-                0.02,
-                0.70,
-                0.70,
-                0.11,
-                0.11,
-            ],
-            dtype=float,
-        )
-        self.assertEqual(env.action_size, 19)
-        self.assertTrue(np.allclose(env.action_high, expected_high))
-        self.assertEqual(observation.shape, (env.observation_size,))
-        config = env.training_config()
-        self.assertEqual(config["action_mode"], "position_contact_frame_velocity_tilt_lateral_apex_chase_residual")
-        self.assertAlmostEqual(config["contact_frame_chase_xy_action_limit"], 0.70)
-        self.assertAlmostEqual(config["contact_frame_contact_xy_action_limit"], 0.11)
-
     def test_contact_frame_velocity_residual_changes_controller_desired_velocity_only(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame_velocity_residual",
@@ -1223,27 +1120,6 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertTrue(np.allclose(baseline_target[:2], np.zeros(2, dtype=float)))
         self.assertAlmostEqual(float(residual_target[0]), -0.25)
         self.assertAlmostEqual(float(residual_target[1]), 0.15)
-
-    def test_contact_frame_chase_residual_changes_first_contact_velocity_target_directly(self) -> None:
-        env = PingPongKeepUpEnv(
-            action_mode="position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
-            reset_xy_range=0.0,
-            reset_velocity_xy_range=0.0,
-            contact_frame_velocity_target_gain=0.0,
-            contact_frame_velocity_target_max=2.0,
-            contact_frame_chase_xy_action_limit=0.8,
-        )
-        env.reset(ball_height=env.ball_height)
-        ball_position = env.sim.racket_position + np.array([0.0, 0.0, env._preparation_target_height_above_racket()])
-        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
-
-        baseline_target = env._contact_frame_velocity_target()
-        env._contact_frame_chase_xy_residual_action = np.array([0.35, -0.20], dtype=float)
-        residual_target = env._contact_frame_velocity_target()
-
-        self.assertTrue(np.allclose(baseline_target[:2], np.zeros(2, dtype=float)))
-        self.assertAlmostEqual(float(residual_target[0]), 0.35)
-        self.assertAlmostEqual(float(residual_target[1]), -0.20)
 
     def test_contact_frame_velocity_tilt_residual_step_info_exposes_extra_residuals(self) -> None:
         env = PingPongKeepUpEnv(
@@ -1389,19 +1265,6 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertTrue(np.all(action <= env.action_high + 1.0e-9))
         self.assertTrue(np.all(action >= env.action_low - 1.0e-9))
         self.assertTrue(np.allclose(action[5:], np.zeros(10, dtype=float)))
-
-    def test_heuristic_policy_supports_contact_frame_velocity_tilt_lateral_apex_chase_residual_mode(self) -> None:
-        env = PingPongKeepUpEnv(
-            action_mode="position_contact_frame_velocity_tilt_lateral_apex_chase_residual",
-            reset_xy_range=0.0,
-            reset_velocity_xy_range=0.0,
-        )
-        env.reset(ball_height=env.ball_height)
-        action = HeuristicKeepUpPolicy().predict(env)
-        self.assertEqual(action.shape, (env.action_size,))
-        self.assertTrue(np.all(action <= env.action_high + 1.0e-9))
-        self.assertTrue(np.all(action >= env.action_low - 1.0e-9))
-        self.assertTrue(np.allclose(action[5:], np.zeros(14, dtype=float)))
 
     def test_contact_frame_base_strike_lift_makes_zero_action_nonempty(self) -> None:
         env = PingPongKeepUpEnv(
