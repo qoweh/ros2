@@ -32,6 +32,7 @@ _EASY_NEXT_BALL_TIME_TOLERANCE = 0.30
 _EASY_NEXT_BALL_TARGET_DESCENDING_SPEED = 1.25
 _EASY_NEXT_BALL_MAX_LATERAL_SPEED = 1.0
 _EASY_NEXT_BALL_SOFT_SPEED_LIMIT = 3.0
+_UNLIMITED_ANALYSIS_STEP_LIMIT = 3_600
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,7 +56,16 @@ def parse_args() -> argparse.Namespace:
         help="Override only the desired post-contact apex height. --ball-height still controls reset height.",
     )
     parser.add_argument("--max-episode-steps", type=int, default=None)
+    parser.add_argument("--reset-ball-height-range", type=float, default=None)
+    parser.add_argument(
+        "--reset-ball-height-bounds",
+        type=float,
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        default=None,
+    )
     parser.add_argument("--reset-xy-range", type=float, default=None)
+    parser.add_argument("--reset-xy-sampling", type=str, choices=("square", "disk"), default=None)
     parser.add_argument("--reset-velocity-xy-range", type=float, default=None)
     parser.add_argument(
         "--reset-velocity-z-range",
@@ -172,6 +182,12 @@ def parse_args() -> argparse.Namespace:
         help="Override the env so a racket contact that is not useful terminates the episode.",
     )
     parser.add_argument("--stochastic", action="store_true")
+    parser.add_argument(
+        "--episode-step-limit",
+        type=int,
+        default=None,
+        help="Analysis-only safety cap for unlimited envs. Defaults to 3600 steps when max_episode_steps is unlimited.",
+    )
     parser.add_argument("--analysis-name", type=str, default=None)
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument(
@@ -1036,7 +1052,10 @@ def main() -> None:
         ball_height=args.ball_height,
         target_ball_height=args.target_ball_height,
         max_episode_steps=args.max_episode_steps,
+        reset_ball_height_range=args.reset_ball_height_range,
+        reset_ball_height_bounds=args.reset_ball_height_bounds,
         reset_xy_range=args.reset_xy_range,
+        reset_xy_sampling=args.reset_xy_sampling,
         reset_velocity_xy_range=args.reset_velocity_xy_range,
         reset_velocity_z_range=args.reset_velocity_z_range,
         success_velocity_threshold=args.success_velocity_threshold,
@@ -1162,6 +1181,10 @@ def main() -> None:
     if args.terminate_on_nonuseful_contact:
         env_kwargs["terminate_on_nonuseful_contact"] = True
     env = PingPongKeepUpGymEnv(**env_kwargs)
+    if args.episode_step_limit is None:
+        episode_step_limit = _UNLIMITED_ANALYSIS_STEP_LIMIT if env.base_env.max_episode_steps is None else None
+    else:
+        episode_step_limit = None if args.episode_step_limit <= 0 else int(args.episode_step_limit)
     model = PPO.load(str(model_path))
     run_name = infer_run_name_from_model_path(model_path)
     gravity_z = float(env.base_env.sim.model.opt.gravity[2])
@@ -1194,6 +1217,11 @@ def main() -> None:
                 observation, reward, terminated, truncated, info = env.step(action)
                 episode_return += float(reward)
                 step_count += 1
+                if not terminated and not truncated and episode_step_limit is not None and step_count >= episode_step_limit:
+                    truncated = True
+                    info = dict(info)
+                    info["truncated"] = True
+                    info["analysis_step_limit"] = episode_step_limit
 
                 if bool(info.get("contact_event_during_step", False)):
                     contact_count += 1
@@ -1656,6 +1684,7 @@ def main() -> None:
         "run_name": run_name,
         "episodes": args.episodes,
         "env_config": env.training_config() if False else env_kwargs,
+        "episode_step_limit": episode_step_limit,
         "mean_return": float(returns_array.mean()) if returns_array.size else 0.0,
         "mean_useful_bounces": float(bounce_array.mean()) if bounce_array.size else 0.0,
         "max_useful_bounces": int(bounce_array.max()) if bounce_array.size else 0,

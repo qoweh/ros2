@@ -45,6 +45,8 @@ from pingpong_rl2.utils import (
     resolve_requested_run_name,
 )
 
+_UNLIMITED_EVAL_STEP_LIMIT = 3_600
+
 _TILT_PROFILES: dict[str, dict[str, object]] = {
     "early": {
         "tilt_action_limit": 0.015,
@@ -501,6 +503,20 @@ _ENV_PRESETS["contact_frame_self_rally_v25_long_horizon_30_bounce"] = {
     "eval_episodes": 80,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v26_unlimited_broad_xyz"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v25_long_horizon_30_bounce"],
+    "max_episode_steps": 0,
+    "reset_ball_height_range": 0.0,
+    "reset_ball_height_bounds": (0.24, 0.48),
+    "reset_xy_range": 0.075,
+    "reset_xy_sampling": "disk",
+    "reset_velocity_xy_range": 0.025,
+    "reset_velocity_z_range": (-0.08, 0.02),
+    "checkpoint_eval_episodes": 24,
+    "eval_episodes": 60,
+    "evaluation_step_limit": _UNLIMITED_EVAL_STEP_LIMIT,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -565,9 +581,12 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "max_episode_steps": DEFAULT_MAX_EPISODE_STEPS,
     "ball_height": DEFAULT_BALL_HEIGHT,
     "reset_ball_height_range": DEFAULT_RESET_BALL_HEIGHT_RANGE,
+    "reset_ball_height_bounds": None,
     "reset_xy_range": DEFAULT_RESET_XY_RANGE,
+    "reset_xy_sampling": "square",
     "reset_velocity_xy_range": DEFAULT_RESET_VELOCITY_XY_RANGE,
     "reset_velocity_z_range": DEFAULT_RESET_VELOCITY_Z_RANGE,
+    "evaluation_step_limit": None,
     "bootstrap_heuristic_episodes": 0,
     "bootstrap_min_useful_bounces": 1,
     "bootstrap_max_samples": 0,
@@ -975,6 +994,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
     parser.add_argument("--reset-ball-height-range", type=float, default=DEFAULT_RESET_BALL_HEIGHT_RANGE)
     parser.add_argument(
+        "--reset-ball-height-bounds",
+        type=float,
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        default=None,
+        help="Optional absolute reset height range above the racket. Overrides --reset-ball-height-range when set.",
+    )
+    parser.add_argument(
         "--target-ball-height",
         type=float,
         default=None,
@@ -990,6 +1017,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--max-episode-steps", type=int, default=DEFAULT_MAX_EPISODE_STEPS)
     parser.add_argument("--reset-xy-range", type=float, default=DEFAULT_RESET_XY_RANGE)
+    parser.add_argument(
+        "--reset-xy-sampling",
+        type=str,
+        choices=("square", "disk"),
+        default="square",
+        help="Shape used for random XY reset offsets. disk gives uniform 0-360 degree starts inside the radius.",
+    )
     parser.add_argument("--reset-velocity-xy-range", type=float, default=DEFAULT_RESET_VELOCITY_XY_RANGE)
     parser.add_argument(
         "--reset-velocity-z-range",
@@ -1437,6 +1471,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument(
+        "--evaluation-step-limit",
+        type=int,
+        default=None,
+        help=(
+            "Safety cap used only by deterministic evaluations when the env itself has unlimited episode length. "
+            "Defaults to 3600 steps for unlimited envs."
+        ),
+    )
+    parser.add_argument(
         "--checkpoint-interval",
         type=int,
         default=10_000,
@@ -1624,7 +1667,11 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         "target_ball_height": args.ball_height if args.target_ball_height is None else args.target_ball_height,
         "max_episode_steps": args.max_episode_steps,
         "reset_ball_height_range": args.reset_ball_height_range,
+        "reset_ball_height_bounds": (
+            None if args.reset_ball_height_bounds is None else tuple(args.reset_ball_height_bounds)
+        ),
         "reset_xy_range": args.reset_xy_range,
+        "reset_xy_sampling": args.reset_xy_sampling,
         "reset_velocity_xy_range": args.reset_velocity_xy_range,
         "reset_velocity_z_range": tuple(args.reset_velocity_z_range),
         "success_velocity_threshold": args.success_velocity_threshold,
@@ -1934,8 +1981,19 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
     return env_kwargs
 
 
-def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, seed: int) -> dict[str, object]:
+def evaluate_model(
+    model: PPO,
+    env_kwargs: dict[str, object],
+    episodes: int,
+    seed: int,
+    evaluation_step_limit: int | None = None,
+) -> dict[str, object]:
     env = PingPongKeepUpGymEnv(**env_kwargs)
+    if evaluation_step_limit is None:
+        effective_step_limit = _UNLIMITED_EVAL_STEP_LIMIT if env.base_env.max_episode_steps is None else None
+    else:
+        parsed_step_limit = int(evaluation_step_limit)
+        effective_step_limit = None if parsed_step_limit <= 0 else parsed_step_limit
     returns: list[float] = []
     useful_bounces: list[int] = []
     stable_cycles: list[int] = []
@@ -1944,10 +2002,17 @@ def evaluate_model(model: PPO, env_kwargs: dict[str, object], episodes: int, see
         observation, _ = env.reset(seed=seed + episode_index)
         episode_return = 0.0
         info: dict[str, object] = {}
+        step_count = 0
         while True:
             action, _ = model.predict(observation, deterministic=True)
             observation, reward, terminated, truncated, info = env.step(action)
             episode_return += float(reward)
+            step_count += 1
+            if not terminated and not truncated and effective_step_limit is not None and step_count >= effective_step_limit:
+                truncated = True
+                info = dict(info)
+                info["truncated"] = True
+                info["evaluation_step_limit"] = effective_step_limit
             if terminated or truncated:
                 break
         returns.append(episode_return)
@@ -2250,6 +2315,7 @@ def save_periodic_checkpoints(
     early_stop_patience_evals: int,
     initial_reset_num_timesteps: bool,
     seed: int,
+    evaluation_step_limit: int | None,
 ) -> tuple[dict[str, object], list[dict[str, object]], dict[str, object] | None, int, bool]:
     if checkpoint_interval < 0:
         raise ValueError(f"checkpoint-interval must be non-negative, got {checkpoint_interval}.")
@@ -2289,6 +2355,7 @@ def save_periodic_checkpoints(
             env_kwargs=env_kwargs,
             episodes=checkpoint_eval_episodes,
             seed=seed + 20_000,
+            evaluation_step_limit=evaluation_step_limit,
         )
         initial_record = {
             "timesteps": 0,
@@ -2317,6 +2384,7 @@ def save_periodic_checkpoints(
             env_kwargs=env_kwargs,
             episodes=checkpoint_eval_episodes,
             seed=seed + 20_000,
+            evaluation_step_limit=evaluation_step_limit,
         )
         checkpoint_record = {
             "timesteps": completed_timesteps,
@@ -2568,10 +2636,17 @@ def main() -> None:
             early_stop_patience_evals=args.early_stop_patience_evals,
             initial_reset_num_timesteps=starting_checkpoint is None,
             seed=args.seed,
+            evaluation_step_limit=args.evaluation_step_limit,
         )
         model_path = run_dir / f"{resolved_run_name}_model"
         model.save(str(model_path))
-        evaluation = evaluate_model(model, env_kwargs=env_kwargs, episodes=args.eval_episodes, seed=args.seed + 10_000)
+        evaluation = evaluate_model(
+            model,
+            env_kwargs=env_kwargs,
+            episodes=args.eval_episodes,
+            seed=args.seed + 10_000,
+            evaluation_step_limit=args.evaluation_step_limit,
+        )
     finally:
         monitored_env.close()
 
@@ -2624,6 +2699,7 @@ def main() -> None:
             "checkpoint_interval": args.checkpoint_interval,
             "checkpoint_eval_episodes": args.checkpoint_eval_episodes,
             "early_stop_patience_evals": args.early_stop_patience_evals,
+            "evaluation_step_limit": args.evaluation_step_limit,
             **env_kwargs,
         },
         "scaled_log_std_initialization": scaled_log_std_summary,

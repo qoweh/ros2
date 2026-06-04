@@ -17,6 +17,36 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertEqual(info["contact_count"], 0)
         self.assertEqual(info["successful_bounce_count"], 0)
 
+    def test_zero_max_episode_steps_disables_time_limit_truncation(self) -> None:
+        env = PingPongKeepUpEnv(max_episode_steps=0, reset_xy_range=0.0, reset_velocity_xy_range=0.0)
+
+        env.reset(ball_height=env.ball_height)
+        _, _, terminated, truncated, info = env.step(np.zeros(env.action_size, dtype=float))
+
+        self.assertIsNone(env.max_episode_steps)
+        self.assertIsNone(env.training_config()["max_episode_steps"])
+        self.assertFalse(terminated)
+        self.assertFalse(truncated)
+        self.assertFalse(info["truncated"])
+
+    def test_disk_reset_uses_radius_and_height_bounds(self) -> None:
+        env = PingPongKeepUpEnv(
+            reset_ball_height_bounds=(0.24, 0.48),
+            reset_xy_range=0.075,
+            reset_xy_sampling="disk",
+            reset_velocity_xy_range=0.0,
+        )
+
+        for seed in range(10):
+            env.seed(seed)
+            env.reset()
+            xy_offset = env.sim.ball_position[:2] - env.sim.racket_position[:2]
+            self.assertGreaterEqual(env._spawn_ball_height_above_racket, 0.24)
+            self.assertLessEqual(env._spawn_ball_height_above_racket, 0.48)
+            self.assertLessEqual(float(np.linalg.norm(xy_offset)), 0.075 + 1.0e-9)
+        self.assertEqual(env.training_config()["reset_ball_height_bounds"], [0.24, 0.48])
+        self.assertEqual(env.training_config()["reset_xy_sampling"], "disk")
+
     def test_scene_path_variant_moves_racket_center_farther_from_hand(self) -> None:
         default_env = PingPongKeepUpEnv(reset_xy_range=0.0, reset_velocity_xy_range=0.0)
         outward_env = PingPongKeepUpEnv(

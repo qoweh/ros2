@@ -74,6 +74,7 @@ _TILT_SLICE_3_TO_5_ACTION_MODES = ("position_strike_tilt_lift", *_CONTACT_FRAME_
 _CONTACT_ORACLE_MODES = ("none", "desired_outgoing_velocity")
 _RETURN_TARGET_XY_SOURCES = ("controller_anchor", "racket_home", "racket_position", "target_position")
 _DESIRED_OUTGOING_XY_MODES = ("next_intercept", "apex")
+_RESET_XY_SAMPLING_MODES = ("square", "disk")
 
 _EASY_NEXT_BALL_TARGET_TIME = 0.45
 _EASY_NEXT_BALL_TIME_TOLERANCE = 0.30
@@ -170,7 +171,7 @@ class PingPongKeepUpEnv:
         vertical_action_limit: float | None = None,
         tilt_action_limit: float = 0.05,
         followup_lift_action_limit: float = 0.02,
-        max_episode_steps: int = DEFAULT_MAX_EPISODE_STEPS,
+        max_episode_steps: int | None = DEFAULT_MAX_EPISODE_STEPS,
         success_velocity_threshold: float = DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
         ball_height: float = DEFAULT_BALL_HEIGHT,
         target_ball_height: float = DEFAULT_BALL_HEIGHT,
@@ -195,7 +196,9 @@ class PingPongKeepUpEnv:
         robot_body_contact_penalty: float = DEFAULT_BODY_CONTACT_PENALTY,
         failure_penalty: float = DEFAULT_FAILURE_PENALTY,
         reset_ball_height_range: float = DEFAULT_RESET_BALL_HEIGHT_RANGE,
+        reset_ball_height_bounds: Sequence[float] | None = None,
         reset_xy_range: float = DEFAULT_RESET_XY_RANGE,
+        reset_xy_sampling: str = "square",
         reset_velocity_xy_range: float = DEFAULT_RESET_VELOCITY_XY_RANGE,
         reset_velocity_z_range: tuple[float, float] = DEFAULT_RESET_VELOCITY_Z_RANGE,
         target_offset_low: Sequence[float] = (-0.12, -0.12, -0.04),
@@ -344,7 +347,11 @@ class PingPongKeepUpEnv:
         self.vertical_action_limit = self.action_limit if vertical_action_limit is None else float(vertical_action_limit)
         self.tilt_action_limit = float(tilt_action_limit)
         self.followup_lift_action_limit = float(followup_lift_action_limit)
-        self.max_episode_steps = int(max_episode_steps)
+        if max_episode_steps is None:
+            self.max_episode_steps = None
+        else:
+            parsed_max_episode_steps = int(max_episode_steps)
+            self.max_episode_steps = None if parsed_max_episode_steps <= 0 else parsed_max_episode_steps
         self.success_velocity_threshold = float(success_velocity_threshold)
         self.ball_height = float(ball_height)
         self.target_ball_height = float(target_ball_height)
@@ -381,7 +388,13 @@ class PingPongKeepUpEnv:
         self.robot_body_contact_penalty = float(robot_body_contact_penalty)
         self.failure_penalty = float(failure_penalty)
         self.reset_ball_height_range = float(reset_ball_height_range)
+        self.reset_ball_height_bounds = (
+            None
+            if reset_ball_height_bounds is None
+            else (float(reset_ball_height_bounds[0]), float(reset_ball_height_bounds[1]))
+        )
         self.reset_xy_range = float(reset_xy_range)
+        self.reset_xy_sampling = str(reset_xy_sampling)
         self.reset_velocity_xy_range = float(reset_velocity_xy_range)
         self.reset_velocity_z_range = (float(reset_velocity_z_range[0]), float(reset_velocity_z_range[1]))
         self.target_offset_low = np.asarray(target_offset_low, dtype=float)
@@ -648,12 +661,31 @@ class PingPongKeepUpEnv:
                 "tilt_action_delta_penalty_weight must be non-negative, got "
                 f"{self.tilt_action_delta_penalty_weight}."
             )
-        if self.max_episode_steps < 1:
-            raise ValueError(f"max_episode_steps must be positive, got {self.max_episode_steps}.")
+        if self.max_episode_steps is not None and self.max_episode_steps < 1:
+            raise ValueError(f"max_episode_steps must be positive or <= 0 for unlimited, got {self.max_episode_steps}.")
         if self.height_tolerance <= 0.0:
             raise ValueError(f"height_tolerance must be positive, got {self.height_tolerance}.")
         if self.target_ball_height <= 0.0:
             raise ValueError(f"target_ball_height must be positive, got {self.target_ball_height}.")
+        if self.reset_ball_height_range < 0.0:
+            raise ValueError(f"reset_ball_height_range must be non-negative, got {self.reset_ball_height_range}.")
+        if self.reset_ball_height_bounds is not None:
+            if self.reset_ball_height_bounds[0] > self.reset_ball_height_bounds[1]:
+                raise ValueError(
+                    "reset_ball_height_bounds must be ordered as (low, high), got "
+                    f"{self.reset_ball_height_bounds}."
+                )
+            if self.reset_ball_height_bounds[0] <= 0.0:
+                raise ValueError(
+                    "reset_ball_height_bounds must stay above the racket plane, got "
+                    f"{self.reset_ball_height_bounds}."
+                )
+        if self.reset_xy_range < 0.0:
+            raise ValueError(f"reset_xy_range must be non-negative, got {self.reset_xy_range}.")
+        if self.reset_xy_sampling not in _RESET_XY_SAMPLING_MODES:
+            raise ValueError(
+                f"reset_xy_sampling must be one of {_RESET_XY_SAMPLING_MODES}, got {self.reset_xy_sampling!r}."
+            )
         if self.reset_velocity_z_range[0] > self.reset_velocity_z_range[1]:
             raise ValueError(
                 "reset_velocity_z_range must be ordered as (low, high), got "
@@ -1478,8 +1510,7 @@ class PingPongKeepUpEnv:
         ball_velocity: Sequence[float] | None = None,
         ball_xy_offset: Sequence[float] | None = None,
     ) -> tuple[np.ndarray, dict[str, object]]:
-        spawn_height = self.ball_height if ball_height is None else float(ball_height)
-        spawn_height += self._sample_reset_ball_height_offset() if ball_height is None else 0.0
+        spawn_height = self._sample_reset_ball_height() if ball_height is None else float(ball_height)
         spawn_velocity = self._sample_reset_velocity() if ball_velocity is None else np.asarray(ball_velocity, dtype=float)
         spawn_xy_offset = self._sample_reset_xy_offset() if ball_xy_offset is None else np.asarray(ball_xy_offset, dtype=float)
         self.sim.reset(ball_height=spawn_height, ball_velocity=spawn_velocity, ball_xy_offset=spawn_xy_offset)
@@ -1650,7 +1681,11 @@ class PingPongKeepUpEnv:
         )
         reward = float(sum(reward_terms.values()))
         terminated = failure_reason is not None
-        truncated = (not terminated) and self.step_count >= self.max_episode_steps
+        truncated = (
+            (not terminated)
+            and self.max_episode_steps is not None
+            and self.step_count >= self.max_episode_steps
+        )
         episode_success_reason = None
         if truncated and self.successful_bounce_count > 0:
             episode_success_reason = "keepup_time_limit"
@@ -1895,7 +1930,11 @@ class PingPongKeepUpEnv:
             "contact_centering_radius": self.contact_centering_radius,
             "min_upward_racket_velocity_z": self.min_upward_racket_velocity_z,
             "reset_ball_height_range": self.reset_ball_height_range,
+            "reset_ball_height_bounds": (
+                None if self.reset_ball_height_bounds is None else list(self.reset_ball_height_bounds)
+            ),
             "reset_xy_range": self.reset_xy_range,
+            "reset_xy_sampling": self.reset_xy_sampling,
             "reset_velocity_xy_range": self.reset_velocity_xy_range,
             "reset_velocity_z_range": list(self.reset_velocity_z_range),
             "target_offset_low": self.target_offset_low.tolist(),
@@ -3448,12 +3487,18 @@ class PingPongKeepUpEnv:
     def _sample_reset_xy_offset(self) -> np.ndarray:
         if self.reset_xy_range <= 0.0:
             return np.zeros(2, dtype=float)
+        if self.reset_xy_sampling == "disk":
+            radius = self.reset_xy_range * float(np.sqrt(self._rng.uniform(0.0, 1.0)))
+            angle = float(self._rng.uniform(0.0, 2.0 * np.pi))
+            return np.array([radius * np.cos(angle), radius * np.sin(angle)], dtype=float)
         return self._rng.uniform(-self.reset_xy_range, self.reset_xy_range, size=2)
 
-    def _sample_reset_ball_height_offset(self) -> float:
+    def _sample_reset_ball_height(self) -> float:
+        if self.reset_ball_height_bounds is not None:
+            return float(self._rng.uniform(self.reset_ball_height_bounds[0], self.reset_ball_height_bounds[1]))
         if self.reset_ball_height_range <= 0.0:
-            return 0.0
-        return float(self._rng.uniform(-self.reset_ball_height_range, self.reset_ball_height_range))
+            return self.ball_height
+        return float(self.ball_height + self._rng.uniform(-self.reset_ball_height_range, self.reset_ball_height_range))
 
     def _sample_reset_velocity(self) -> np.ndarray:
         velocity = np.zeros(3, dtype=float)

@@ -98,3 +98,5 @@
   - `pmk_cf_self_rally_v23/v24` 비교, 30 useful bounce 목표의 horizon/checkpoint metric 병목, v25 long-horizon preset과 학습/분석 명령을 정리한 보고서
 - `47_run_ppo_learning_preset_config_reference.md`
   - `run_ppo_learning.py`의 preset/config/default 인자 동작, v25 핵심 설정, 설정파일 기반 실행과 cleanup 판단을 정리한 보고서
+- `48_v26_unlimited_broad_xyz_reset.md`
+  - 웹서비스/시연용 무제한 episode, v26 broad xyz reset preset, evaluation safety cap, 학습/분석/viewer 명령을 정리한 보고서

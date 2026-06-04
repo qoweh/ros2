@@ -17,6 +17,7 @@ from pingpong_rl2.defaults import (
     DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_RESIDUAL_RUN_NAME,
     DEFAULT_PPO_POSITION_TILT_RUN_NAME,
     DEFAULT_PPO_RUN_NAME,
+    DEFAULT_RESET_BALL_HEIGHT_RANGE,
     DEFAULT_RESET_VELOCITY_XY_RANGE,
     DEFAULT_RESET_VELOCITY_Z_RANGE,
     DEFAULT_RESET_XY_RANGE,
@@ -190,7 +191,10 @@ def resolve_env_kwargs_for_model(
     ball_height: float | None = None,
     target_ball_height: float | None = None,
     max_episode_steps: int | None = None,
+    reset_ball_height_range: float | None = None,
+    reset_ball_height_bounds: tuple[float, float] | list[float] | None = None,
     reset_xy_range: float | None = None,
+    reset_xy_sampling: str | None = None,
     reset_velocity_xy_range: float | None = None,
     reset_velocity_z_range: tuple[float, float] | list[float] | None = None,
     success_velocity_threshold: float | None = None,
@@ -200,7 +204,10 @@ def resolve_env_kwargs_for_model(
         "ball_height": DEFAULT_BALL_HEIGHT,
         "target_ball_height": DEFAULT_BALL_HEIGHT,
         "max_episode_steps": DEFAULT_MAX_EPISODE_STEPS,
+        "reset_ball_height_range": DEFAULT_RESET_BALL_HEIGHT_RANGE,
+        "reset_ball_height_bounds": None,
         "reset_xy_range": DEFAULT_RESET_XY_RANGE,
+        "reset_xy_sampling": "square",
         "reset_velocity_xy_range": DEFAULT_RESET_VELOCITY_XY_RANGE,
         "reset_velocity_z_range": tuple(DEFAULT_RESET_VELOCITY_Z_RANGE),
         "success_velocity_threshold": DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
@@ -220,8 +227,14 @@ def resolve_env_kwargs_for_model(
         env_kwargs["target_ball_height"] = float(target_ball_height)
     if max_episode_steps is not None:
         env_kwargs["max_episode_steps"] = int(max_episode_steps)
+    if reset_ball_height_range is not None:
+        env_kwargs["reset_ball_height_range"] = float(reset_ball_height_range)
+    if reset_ball_height_bounds is not None:
+        env_kwargs["reset_ball_height_bounds"] = tuple(float(value) for value in reset_ball_height_bounds)
     if reset_xy_range is not None:
         env_kwargs["reset_xy_range"] = float(reset_xy_range)
+    if reset_xy_sampling is not None:
+        env_kwargs["reset_xy_sampling"] = str(reset_xy_sampling)
     if reset_velocity_xy_range is not None:
         env_kwargs["reset_velocity_xy_range"] = float(reset_velocity_xy_range)
     if reset_velocity_z_range is not None:

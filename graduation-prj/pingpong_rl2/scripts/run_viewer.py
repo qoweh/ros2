@@ -15,13 +15,6 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from pingpong_rl2.controllers import HeuristicKeepUpPolicy
-from pingpong_rl2.defaults import (
-    DEFAULT_BALL_HEIGHT,
-    DEFAULT_MAX_EPISODE_STEPS,
-    DEFAULT_RESET_VELOCITY_XY_RANGE,
-    DEFAULT_RESET_VELOCITY_Z_RANGE,
-    DEFAULT_RESET_XY_RANGE,
-)
 from pingpong_rl2.envs import PingPongKeepUpGymEnv
 from pingpong_rl2.utils import resolve_env_kwargs_for_model, resolve_requested_run_name, resolve_saved_model_path
 
@@ -53,7 +46,16 @@ def parse_args() -> argparse.Namespace:
         help="Override only the desired post-contact apex height. --ball-height still controls reset height.",
     )
     parser.add_argument("--max-episode-steps", type=int, default=None)
+    parser.add_argument("--reset-ball-height-range", type=float, default=None)
+    parser.add_argument(
+        "--reset-ball-height-bounds",
+        type=float,
+        nargs=2,
+        metavar=("LOW", "HIGH"),
+        default=None,
+    )
     parser.add_argument("--reset-xy-range", type=float, default=None)
+    parser.add_argument("--reset-xy-sampling", type=str, choices=("square", "disk"), default=None)
     parser.add_argument("--reset-velocity-xy-range", type=float, default=None)
     parser.add_argument(
         "--reset-velocity-z-range",
@@ -123,7 +125,10 @@ def main() -> None:
         ball_height=args.ball_height,
         target_ball_height=args.target_ball_height,
         max_episode_steps=args.max_episode_steps,
+        reset_ball_height_range=args.reset_ball_height_range,
+        reset_ball_height_bounds=args.reset_ball_height_bounds,
         reset_xy_range=args.reset_xy_range,
+        reset_xy_sampling=args.reset_xy_sampling,
         reset_velocity_xy_range=args.reset_velocity_xy_range,
         reset_velocity_z_range=args.reset_velocity_z_range,
     )
