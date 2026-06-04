@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import mujoco
 import numpy as np
 
-from pingpong_rl3.envs.two_ball_sim import TwoBallPingPongSim as PingPongSim
+if TYPE_CHECKING:
+    from pingpong_rl3.envs.two_ball_sim import TwoBallPingPongSim as PingPongSim
 
 
 class RacketCartesianController:
