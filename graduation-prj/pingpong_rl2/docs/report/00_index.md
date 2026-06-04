@@ -106,3 +106,7 @@
   - `pmk_cf_self_rally_v28_racket_tracking_spin` 분석, 17D tracking action 사용량, staged reset distribution curriculum, v29 preset과 학습/분석 명령을 정리한 보고서
 - `51_v29_review_max_step_and_two_ball_mode.md`
   - `pmk_cf_self_rally_v29_racket_tracking_staged_distribution` 분석, max episode step 의미, 1공/2공 모델 분리 판단, v30 v26 기반 안정 확장 명령을 정리한 보고서
+- `52_v30_review_and_short_model_names.md`
+  - `keep1_v30` 분석, v26/v29/v30 비교, active 모델 짧은 이름 정리, `_legacy_models` archive 구조와 viewer/analysis 명령을 정리한 보고서
+- `53_keep1_v31_wider_xy_and_keep2_model_plan.md`
+  - `keep1_v31` 시작 위치 확장 설정, v31 학습/분석/viewer 명령, 2공 `keep2` 모델 분리 필요성과 구현 항목을 정리한 보고서

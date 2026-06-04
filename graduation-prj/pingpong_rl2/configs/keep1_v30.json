@@ -1,0 +1,9 @@
+{
+  "args": {
+    "preset": "contact_frame_self_rally_v30_v26_wider_xy_stability",
+    "run_name": "keep1",
+    "run_version": "v30",
+    "resume_from": "artifacts/ppo_runs/keep1_v26/keep1_v26_model.zip",
+    "total_timesteps": 1000000
+  }
+}

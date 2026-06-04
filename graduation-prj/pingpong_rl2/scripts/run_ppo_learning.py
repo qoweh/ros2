@@ -576,6 +576,17 @@ _ENV_PRESETS["contact_frame_self_rally_v30_v26_wider_xy_stability"] = {
     "eval_episodes": 80,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v31_keep1_wider_xy"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v30_v26_wider_xy_stability"],
+    "reset_xy_range": 0.14,
+    "reset_xy_curriculum_start": 0.10,
+    "reset_xy_curriculum_end": 0.14,
+    "reset_xy_curriculum_fraction": 0.90,
+    "target_offset_low": (-0.14, -0.14, -0.04),
+    "target_offset_high": (0.14, 0.14, 0.12),
+    "eval_episodes": 100,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,

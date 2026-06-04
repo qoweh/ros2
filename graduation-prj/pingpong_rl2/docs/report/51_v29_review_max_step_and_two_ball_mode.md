@@ -81,7 +81,7 @@ v26은 더 쉬운 reset 분포이지만 안정성이 압도적으로 좋다.
 
 새 config:
 
-- `configs/pmk_cf_self_rally_v30_v26_wider_xy_stability.json`
+- `configs/keep1_v30.json`
 
 v30 설정:
 
@@ -124,17 +124,16 @@ v30 설정:
 ```bash
 cd /Users/pilt/project-collection/ros2/graduation-prj/pingpong_rl2
 conda activate mujoco_env
-python scripts/run_ppo_learning.py --config-file configs/pmk_cf_self_rally_v30_v26_wider_xy_stability.json
+python scripts/run_ppo_learning.py --config-file configs/keep1_v30.json
 ```
 
 학습 후 분석:
 
 ```bash
 python scripts/run_ppo_rebound_analysis.py \
-  --model-path artifacts/ppo_runs/pmk_cf_self_rally_v30_v26_wider_xy_stability/pmk_cf_self_rally_v30_v26_wider_xy_stability_model.zip \
+  --model-path artifacts/ppo_runs/keep1_v30/keep1_v30_model.zip \
   --episodes 100 \
   --seed 231 \
   --episode-step-limit 1800 \
-  --analysis-name pmk_cf_self_rally_v30_v26_wider_xy_stability_eval100
+  --analysis-name keep1_v30_eval100
 ```
-
