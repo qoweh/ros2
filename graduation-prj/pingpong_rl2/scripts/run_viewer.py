@@ -64,6 +64,7 @@ def parse_args() -> argparse.Namespace:
         metavar=("LOW", "HIGH"),
         default=None,
     )
+    parser.add_argument("--reset-ball-angular-velocity-range", type=float, default=None)
     parser.add_argument(
         "--keepup-target-xy-offset",
         type=float,
@@ -131,6 +132,7 @@ def main() -> None:
         reset_xy_sampling=args.reset_xy_sampling,
         reset_velocity_xy_range=args.reset_velocity_xy_range,
         reset_velocity_z_range=args.reset_velocity_z_range,
+        reset_ball_angular_velocity_range=args.reset_ball_angular_velocity_range,
     )
     if args.keepup_target_xy_offset is not None:
         env_kwargs["keepup_target_xy_offset"] = tuple(args.keepup_target_xy_offset)

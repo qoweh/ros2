@@ -84,6 +84,10 @@ class PingPongSim:
     def ball_velocity(self) -> np.ndarray:
         return self.data.qvel[self._ball_dof_adr:self._ball_dof_adr + 3].copy()
 
+    @property
+    def ball_angular_velocity(self) -> np.ndarray:
+        return self.data.qvel[self._ball_dof_adr + 3:self._ball_dof_adr + 6].copy()
+
     def set_ball_velocity(
         self,
         velocity: Sequence[float],
@@ -108,6 +112,7 @@ class PingPongSim:
         self,
         ball_position: Sequence[float] | None = None,
         ball_velocity: Sequence[float] = (0.0, 0.0, 0.0),
+        ball_angular_velocity: Sequence[float] | None = None,
         ball_height: float | None = None,
         ball_xy_offset: Sequence[float] = (0.0, 0.0),
     ) -> mujoco.MjData:
@@ -117,20 +122,39 @@ class PingPongSim:
 
         if ball_position is None:
             spawn_height = self._default_ball_height if ball_height is None else float(ball_height)
-            self.reset_ball_above_racket(height=spawn_height, xy_offset=ball_xy_offset, velocity=ball_velocity)
+            self.reset_ball_above_racket(
+                height=spawn_height,
+                xy_offset=ball_xy_offset,
+                velocity=ball_velocity,
+                angular_velocity=ball_angular_velocity,
+            )
         else:
-            self.spawn_ball(ball_position, ball_velocity)
+            self.spawn_ball(ball_position, ball_velocity, angular_velocity=ball_angular_velocity)
 
         return self.data
 
-    def spawn_ball(self, position: Sequence[float], velocity: Sequence[float] = (0.0, 0.0, 0.0)) -> np.ndarray:
+    def spawn_ball(
+        self,
+        position: Sequence[float],
+        velocity: Sequence[float] = (0.0, 0.0, 0.0),
+        angular_velocity: Sequence[float] | None = None,
+    ) -> np.ndarray:
         position_array = np.asarray(position, dtype=float)
         velocity_array = np.asarray(velocity, dtype=float)
+        angular_velocity_array = (
+            np.zeros(3, dtype=float)
+            if angular_velocity is None
+            else np.asarray(angular_velocity, dtype=float)
+        )
 
         if position_array.shape != (3,):
             raise ValueError(f"Ball position must have shape (3,), got {position_array.shape}.")
         if velocity_array.shape != (3,):
             raise ValueError(f"Ball velocity must have shape (3,), got {velocity_array.shape}.")
+        if angular_velocity_array.shape != (3,):
+            raise ValueError(
+                f"Ball angular velocity must have shape (3,), got {angular_velocity_array.shape}."
+            )
 
         qpos = self.data.qpos
         qvel = self.data.qvel
@@ -138,7 +162,7 @@ class PingPongSim:
         qpos[self._ball_qpos_adr:self._ball_qpos_adr + 3] = position_array
         qpos[self._ball_qpos_adr + 3:self._ball_qpos_adr + 7] = np.array([1.0, 0.0, 0.0, 0.0])
         qvel[self._ball_dof_adr:self._ball_dof_adr + 3] = velocity_array
-        qvel[self._ball_dof_adr + 3:self._ball_dof_adr + 6] = 0.0
+        qvel[self._ball_dof_adr + 3:self._ball_dof_adr + 6] = angular_velocity_array
         mujoco.mj_forward(self.model, self.data)
         return self.ball_position
 
@@ -147,13 +171,14 @@ class PingPongSim:
         height: float = 0.25,
         xy_offset: Sequence[float] = (0.0, 0.0),
         velocity: Sequence[float] = (0.0, 0.0, 0.0),
+        angular_velocity: Sequence[float] | None = None,
     ) -> np.ndarray:
         xy_offset_array = np.asarray(xy_offset, dtype=float)
         if xy_offset_array.shape != (2,):
             raise ValueError(f"xy_offset must have shape (2,), got {xy_offset_array.shape}.")
 
         spawn_position = self.racket_position + np.array([xy_offset_array[0], xy_offset_array[1], height])
-        return self.spawn_ball(spawn_position, velocity)
+        return self.spawn_ball(spawn_position, velocity, angular_velocity=angular_velocity)
 
     def set_arm_joint_targets(self, joint_targets: Sequence[float], gripper_target: float | None = None) -> np.ndarray:
         joint_targets_array = np.asarray(joint_targets, dtype=float)

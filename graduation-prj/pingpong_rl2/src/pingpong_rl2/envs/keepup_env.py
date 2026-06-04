@@ -35,24 +35,32 @@ _ACTION_MODES = (
     "position_contact_frame_velocity_tilt_residual",
     "position_contact_frame_velocity_tilt_lateral_residual",
     "position_contact_frame_velocity_tilt_lateral_apex_residual",
+    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
 )
 _CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES = (
     "position_contact_frame_velocity_residual",
     "position_contact_frame_velocity_tilt_residual",
     "position_contact_frame_velocity_tilt_lateral_residual",
     "position_contact_frame_velocity_tilt_lateral_apex_residual",
+    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
 )
 _CONTACT_FRAME_TILT_SCALE_ACTION_MODES = (
     "position_contact_frame_velocity_tilt_residual",
     "position_contact_frame_velocity_tilt_lateral_residual",
     "position_contact_frame_velocity_tilt_lateral_apex_residual",
+    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
 )
 _CONTACT_FRAME_LATERAL_VELOCITY_RESIDUAL_ACTION_MODES = (
     "position_contact_frame_velocity_tilt_lateral_residual",
     "position_contact_frame_velocity_tilt_lateral_apex_residual",
+    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
 )
 _CONTACT_FRAME_APEX_TIMING_RESIDUAL_ACTION_MODES = (
     "position_contact_frame_velocity_tilt_lateral_apex_residual",
+    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
+)
+_CONTACT_FRAME_TRACKING_RESIDUAL_ACTION_MODES = (
+    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
 )
 _CONTACT_FRAME_ACTION_MODES = (
     "position_contact_frame",
@@ -201,6 +209,7 @@ class PingPongKeepUpEnv:
         reset_xy_sampling: str = "square",
         reset_velocity_xy_range: float = DEFAULT_RESET_VELOCITY_XY_RANGE,
         reset_velocity_z_range: tuple[float, float] = DEFAULT_RESET_VELOCITY_Z_RANGE,
+        reset_ball_angular_velocity_range: float = 0.0,
         target_offset_low: Sequence[float] = (-0.12, -0.12, -0.04),
         target_offset_high: Sequence[float] = (0.12, 0.12, 0.12),
         target_tilt_limit: Sequence[float] = (0.18, 0.18),
@@ -278,6 +287,7 @@ class PingPongKeepUpEnv:
         contact_frame_tilt_scale_action_limit: float = 0.75,
         contact_frame_target_apex_z_action_limit: float = 0.08,
         contact_frame_strike_plane_z_action_limit: float = 0.025,
+        contact_frame_tracking_xy_action_limit: float = 0.60,
         contact_frame_intercept_velocity_gain: float = 0.0,
         contact_frame_intercept_velocity_max: float = 0.0,
         contact_frame_intercept_velocity_time_floor: float = 0.08,
@@ -397,6 +407,7 @@ class PingPongKeepUpEnv:
         self.reset_xy_sampling = str(reset_xy_sampling)
         self.reset_velocity_xy_range = float(reset_velocity_xy_range)
         self.reset_velocity_z_range = (float(reset_velocity_z_range[0]), float(reset_velocity_z_range[1]))
+        self.reset_ball_angular_velocity_range = float(reset_ball_angular_velocity_range)
         self.target_offset_low = np.asarray(target_offset_low, dtype=float)
         self.target_offset_high = np.asarray(target_offset_high, dtype=float)
         self.target_tilt_limit = np.asarray(target_tilt_limit, dtype=float)
@@ -502,6 +513,7 @@ class PingPongKeepUpEnv:
         self.contact_frame_tilt_scale_action_limit = float(contact_frame_tilt_scale_action_limit)
         self.contact_frame_target_apex_z_action_limit = float(contact_frame_target_apex_z_action_limit)
         self.contact_frame_strike_plane_z_action_limit = float(contact_frame_strike_plane_z_action_limit)
+        self.contact_frame_tracking_xy_action_limit = float(contact_frame_tracking_xy_action_limit)
         self.contact_frame_intercept_velocity_gain = float(contact_frame_intercept_velocity_gain)
         self.contact_frame_intercept_velocity_max = float(contact_frame_intercept_velocity_max)
         self.contact_frame_intercept_velocity_time_floor = float(contact_frame_intercept_velocity_time_floor)
@@ -690,6 +702,11 @@ class PingPongKeepUpEnv:
             raise ValueError(
                 "reset_velocity_z_range must be ordered as (low, high), got "
                 f"{self.reset_velocity_z_range}."
+            )
+        if self.reset_ball_angular_velocity_range < 0.0:
+            raise ValueError(
+                "reset_ball_angular_velocity_range must be non-negative, got "
+                f"{self.reset_ball_angular_velocity_range}."
             )
         if self.target_tilt_limit.shape != (2,):
             raise ValueError(f"target_tilt_limit must have shape (2,), got {self.target_tilt_limit.shape}.")
@@ -952,6 +969,11 @@ class PingPongKeepUpEnv:
                 "contact_frame_strike_plane_z_action_limit must be non-negative, got "
                 f"{self.contact_frame_strike_plane_z_action_limit}."
             )
+        if self.contact_frame_tracking_xy_action_limit < 0.0:
+            raise ValueError(
+                "contact_frame_tracking_xy_action_limit must be non-negative, got "
+                f"{self.contact_frame_tracking_xy_action_limit}."
+            )
         if self.action_mode in _CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES:
             if self.contact_frame_velocity_scale_action_limit <= 0.0:
                 raise ValueError(
@@ -977,6 +999,11 @@ class PingPongKeepUpEnv:
             if self.contact_frame_strike_plane_z_action_limit <= 0.0:
                 raise ValueError(
                     "contact_frame_strike_plane_z_action_limit must be positive in apex/timing residual mode."
+                )
+        if self.action_mode in _CONTACT_FRAME_TRACKING_RESIDUAL_ACTION_MODES:
+            if self.contact_frame_tracking_xy_action_limit <= 0.0:
+                raise ValueError(
+                    "contact_frame_tracking_xy_action_limit must be positive in tracking residual mode."
                 )
         if self.contact_frame_intercept_velocity_gain < 0.0:
             raise ValueError(
@@ -1407,6 +1434,15 @@ class PingPongKeepUpEnv:
                                 dtype=float,
                             )
                             self.action_high = np.concatenate([self.action_high, apex_timing_residual_limit])
+                            if self.action_mode in _CONTACT_FRAME_TRACKING_RESIDUAL_ACTION_MODES:
+                                tracking_residual_limit = np.array(
+                                    [
+                                        self.contact_frame_tracking_xy_action_limit,
+                                        self.contact_frame_tracking_xy_action_limit,
+                                    ],
+                                    dtype=float,
+                                )
+                                self.action_high = np.concatenate([self.action_high, tracking_residual_limit])
         else:
             self.action_high = position_action_limit
         self.action_low = -self.action_high.copy()
@@ -1438,6 +1474,7 @@ class PingPongKeepUpEnv:
         self._contact_frame_racket_xy_residual_action = np.zeros(2, dtype=float)
         self._contact_frame_target_apex_z_residual_action = 0.0
         self._contact_frame_strike_plane_z_residual_action = 0.0
+        self._contact_frame_tracking_xy_residual_action = np.zeros(2, dtype=float)
         self._reset_contact_frame_plan()
 
     @property
@@ -1508,12 +1545,23 @@ class PingPongKeepUpEnv:
         self,
         ball_height: float | None = None,
         ball_velocity: Sequence[float] | None = None,
+        ball_angular_velocity: Sequence[float] | None = None,
         ball_xy_offset: Sequence[float] | None = None,
     ) -> tuple[np.ndarray, dict[str, object]]:
         spawn_height = self._sample_reset_ball_height() if ball_height is None else float(ball_height)
         spawn_velocity = self._sample_reset_velocity() if ball_velocity is None else np.asarray(ball_velocity, dtype=float)
+        spawn_angular_velocity = (
+            self._sample_reset_ball_angular_velocity()
+            if ball_angular_velocity is None
+            else np.asarray(ball_angular_velocity, dtype=float)
+        )
         spawn_xy_offset = self._sample_reset_xy_offset() if ball_xy_offset is None else np.asarray(ball_xy_offset, dtype=float)
-        self.sim.reset(ball_height=spawn_height, ball_velocity=spawn_velocity, ball_xy_offset=spawn_xy_offset)
+        self.sim.reset(
+            ball_height=spawn_height,
+            ball_velocity=spawn_velocity,
+            ball_angular_velocity=spawn_angular_velocity,
+            ball_xy_offset=spawn_xy_offset,
+        )
         self.controller.reset()
         if self.action_mode in ("position_tilt", *_STRIKE_CONTRACT_ACTION_MODES) and self.initial_target_tilt is not None:
             self.controller.set_target_tilt(self.initial_target_tilt)
@@ -1534,6 +1582,7 @@ class PingPongKeepUpEnv:
         self._contact_frame_racket_xy_residual_action[:] = 0.0
         self._contact_frame_target_apex_z_residual_action = 0.0
         self._contact_frame_strike_plane_z_residual_action = 0.0
+        self._contact_frame_tracking_xy_residual_action[:] = 0.0
         self._reset_contact_frame_plan()
         self._spawn_ball_height_above_racket = float(self.sim.ball_position[2] - self.sim.racket_position[2])
         info: dict[str, object] = {
@@ -1550,6 +1599,8 @@ class PingPongKeepUpEnv:
             "ball_height_above_racket": self._ball_height_above_racket(),
             "spawn_ball_height_above_racket": self._spawn_ball_height_above_racket,
             "spawn_ball_position": self.sim.ball_position.copy(),
+            "spawn_ball_velocity": self.sim.ball_velocity.copy(),
+            "spawn_ball_angular_velocity": self.sim.ball_angular_velocity.copy(),
             "spawn_ball_xy_offset": spawn_xy_offset.copy(),
         }
         return self.observation(), info
@@ -1568,6 +1619,7 @@ class PingPongKeepUpEnv:
         self._contact_frame_racket_xy_residual_action[:] = 0.0
         self._contact_frame_target_apex_z_residual_action = 0.0
         self._contact_frame_strike_plane_z_residual_action = 0.0
+        self._contact_frame_tracking_xy_residual_action[:] = 0.0
         if self.action_mode in _CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES:
             self._contact_frame_velocity_residual_action = applied_action[5:8].copy()
         if self.action_mode in _CONTACT_FRAME_TILT_SCALE_ACTION_MODES:
@@ -1578,6 +1630,8 @@ class PingPongKeepUpEnv:
         if self.action_mode in _CONTACT_FRAME_APEX_TIMING_RESIDUAL_ACTION_MODES:
             self._contact_frame_target_apex_z_residual_action = float(applied_action[13])
             self._contact_frame_strike_plane_z_residual_action = float(applied_action[14])
+        if self.action_mode in _CONTACT_FRAME_TRACKING_RESIDUAL_ACTION_MODES:
+            self._contact_frame_tracking_xy_residual_action = applied_action[15:17].copy()
         if self._contact_frame_action_mode():
             self._update_contact_frame_plan()
             requested_target_position = self._contact_frame_action_target_position(applied_action[:3])
@@ -1767,9 +1821,12 @@ class PingPongKeepUpEnv:
             "contact_frame_outgoing_y_residual_action": float(self._contact_frame_velocity_residual_action[2]),
             "contact_frame_racket_vz_residual_action": self._contact_frame_racket_vz_residual(),
             "contact_frame_racket_xy_residual_action": self._contact_frame_racket_xy_residual().copy(),
+            "contact_frame_tracking_xy_residual_action": self._contact_frame_tracking_xy_residual().copy(),
             "contact_frame_tilt_scale_residual_action": self._contact_frame_tilt_scale_residual_action.copy(),
             "contact_frame_racket_x_residual_action": float(self._contact_frame_racket_xy_residual()[0]),
             "contact_frame_racket_y_residual_action": float(self._contact_frame_racket_xy_residual()[1]),
+            "contact_frame_tracking_x_residual_action": float(self._contact_frame_tracking_xy_residual()[0]),
+            "contact_frame_tracking_y_residual_action": float(self._contact_frame_tracking_xy_residual()[1]),
             "contact_frame_target_apex_z_residual_action": self._contact_frame_target_apex_z_residual(),
             "contact_frame_strike_plane_z_residual_action": self._contact_frame_strike_plane_z_residual(),
             "contact_frame_trajectory_tilt_scale": self._contact_frame_trajectory_tilt_scale(),
@@ -1939,6 +1996,7 @@ class PingPongKeepUpEnv:
             "reset_xy_sampling": self.reset_xy_sampling,
             "reset_velocity_xy_range": self.reset_velocity_xy_range,
             "reset_velocity_z_range": list(self.reset_velocity_z_range),
+            "reset_ball_angular_velocity_range": self.reset_ball_angular_velocity_range,
             "target_offset_low": self.target_offset_low.tolist(),
             "target_offset_high": self.target_offset_high.tolist(),
             "target_tilt_limit": self.target_tilt_limit.tolist(),
@@ -2026,6 +2084,7 @@ class PingPongKeepUpEnv:
             "contact_frame_tilt_scale_action_limit": self.contact_frame_tilt_scale_action_limit,
             "contact_frame_target_apex_z_action_limit": self.contact_frame_target_apex_z_action_limit,
             "contact_frame_strike_plane_z_action_limit": self.contact_frame_strike_plane_z_action_limit,
+            "contact_frame_tracking_xy_action_limit": self.contact_frame_tracking_xy_action_limit,
             "contact_frame_intercept_velocity_gain": self.contact_frame_intercept_velocity_gain,
             "contact_frame_intercept_velocity_max": self.contact_frame_intercept_velocity_max,
             "contact_frame_intercept_velocity_time_floor": self.contact_frame_intercept_velocity_time_floor,
@@ -2103,6 +2162,7 @@ class PingPongKeepUpEnv:
         reset_ball_height_bounds: Sequence[float] | None = None,
         reset_velocity_xy_range: float | None = None,
         reset_velocity_z_range: Sequence[float] | None = None,
+        reset_ball_angular_velocity_range: float | None = None,
     ) -> dict[str, object]:
         if reset_xy_range is not None:
             parsed_xy_range = float(reset_xy_range)
@@ -2147,6 +2207,14 @@ class PingPongKeepUpEnv:
                     f"{parsed_velocity_z_range}."
                 )
             self.reset_velocity_z_range = parsed_velocity_z_range
+        if reset_ball_angular_velocity_range is not None:
+            parsed_angular_velocity_range = float(reset_ball_angular_velocity_range)
+            if parsed_angular_velocity_range < 0.0:
+                raise ValueError(
+                    "reset_ball_angular_velocity_range must be non-negative, got "
+                    f"{parsed_angular_velocity_range}."
+                )
+            self.reset_ball_angular_velocity_range = parsed_angular_velocity_range
         return self.training_config()
 
     def close(self) -> None:
@@ -2177,6 +2245,13 @@ class PingPongKeepUpEnv:
         if self.action_mode not in _CONTACT_FRAME_LATERAL_VELOCITY_RESIDUAL_ACTION_MODES:
             return np.zeros(2, dtype=float)
         return np.asarray(self._contact_frame_racket_xy_residual_action, dtype=float)
+
+    def _contact_frame_tracking_xy_residual(self) -> np.ndarray:
+        if self.action_mode not in _CONTACT_FRAME_TRACKING_RESIDUAL_ACTION_MODES:
+            return np.zeros(2, dtype=float)
+        if float(self.sim.ball_velocity[2]) >= self.descending_ball_velocity_threshold:
+            return np.zeros(2, dtype=float)
+        return np.asarray(self._contact_frame_tracking_xy_residual_action, dtype=float)
 
     def _contact_frame_target_apex_z_residual(self) -> float:
         if self.action_mode not in _CONTACT_FRAME_APEX_TIMING_RESIDUAL_ACTION_MODES:
@@ -3568,6 +3643,15 @@ class PingPongKeepUpEnv:
         velocity[2] = self._rng.uniform(self.reset_velocity_z_range[0], self.reset_velocity_z_range[1])
         return velocity
 
+    def _sample_reset_ball_angular_velocity(self) -> np.ndarray:
+        if self.reset_ball_angular_velocity_range <= 0.0:
+            return np.zeros(3, dtype=float)
+        return self._rng.uniform(
+            -self.reset_ball_angular_velocity_range,
+            self.reset_ball_angular_velocity_range,
+            size=3,
+        )
+
     def _controller_anchor_position(self) -> np.ndarray:
         anchor_position = getattr(self.controller, "_anchor_position", None)
         if anchor_position is None:
@@ -4041,6 +4125,7 @@ class PingPongKeepUpEnv:
             )
             strike_readiness = float(np.clip(max(self._pre_contact_height_readiness(), urgency), 0.0, 1.0))
             target_velocity = target_velocity + self.contact_frame_velocity_target_gain * strike_readiness * required_velocity
+        target_velocity[:2] += self._contact_frame_tracking_xy_residual()
         target_velocity[:2] += self._contact_frame_racket_xy_residual()
         target_velocity[2] += self._contact_frame_racket_vz_residual()
         target_velocity[2] += self._contact_frame_low_apex_recovery_velocity()

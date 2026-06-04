@@ -100,3 +100,5 @@
   - `run_ppo_learning.py`의 preset/config/default 인자 동작, v25 핵심 설정, 설정파일 기반 실행과 cleanup 판단을 정리한 보고서
 - `48_v26_unlimited_broad_xyz_reset.md`
   - 웹서비스/시연용 무제한 episode, v26 broad xyz reset preset, evaluation safety cap, 학습/분석/viewer 명령을 정리한 보고서
+- `49_racket_center_tracking_spin_and_two_ball_plan.md`
+  - v25/v26 hand-coded 제어와 RL residual 경계, 17D racket-centered tracking residual, spin reset randomization, 2공 keep-up 확장 계획을 정리한 보고서

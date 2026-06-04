@@ -522,6 +522,29 @@ _ENV_PRESETS["contact_frame_self_rally_v27_reachable_xy_curriculum"] = {
     "eval_episodes": 80,
 }
 
+_ENV_PRESETS["contact_frame_self_rally_v28_racket_tracking_spin"] = {
+    **_ENV_PRESETS["contact_frame_self_rally_v26_unlimited_broad_xyz"],
+    "action_mode": "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
+    "reset_xy_range": 0.16,
+    "reset_xy_sampling": "disk",
+    "reset_xy_curriculum_enabled": True,
+    "reset_xy_curriculum_start": 0.075,
+    "reset_xy_curriculum_end": 0.16,
+    "reset_xy_curriculum_fraction": 0.85,
+    "reset_xy_curriculum_update_interval": 10_000,
+    "reset_velocity_xy_range": 0.06,
+    "reset_velocity_z_range": (-0.16, 0.04),
+    "reset_ball_angular_velocity_range": 20.0,
+    "target_offset_low": (-0.16, -0.16, -0.04),
+    "target_offset_high": (0.16, 0.16, 0.13),
+    "contact_frame_tracking_xy_action_limit": 0.65,
+    "contact_frame_racket_xy_action_limit": 0.45,
+    "controller_max_velocity_step": 0.10,
+    "contact_frame_intercept_velocity_max": 1.45,
+    "contact_frame_velocity_target_max": 3.6,
+    "eval_episodes": 80,
+}
+
 _ENV_PRESETS["contact_frame_followthrough_bootstrap_candidate"] = {
     **_ENV_PRESETS["contact_frame_followthrough_candidate"],
     "n_envs": 1,
@@ -582,6 +605,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "reset_xy_sampling": "square",
     "reset_velocity_xy_range": DEFAULT_RESET_VELOCITY_XY_RANGE,
     "reset_velocity_z_range": DEFAULT_RESET_VELOCITY_Z_RANGE,
+    "reset_ball_angular_velocity_range": 0.0,
     "evaluation_step_limit": None,
     "reset_xy_curriculum_enabled": False,
     "reset_xy_curriculum_start": None,
@@ -664,6 +688,7 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "contact_frame_tilt_scale_action_limit": None,
     "contact_frame_target_apex_z_action_limit": None,
     "contact_frame_strike_plane_z_action_limit": None,
+    "contact_frame_tracking_xy_action_limit": None,
     "contact_frame_intercept_velocity_gain": None,
     "contact_frame_intercept_velocity_max": None,
     "contact_frame_intercept_velocity_time_floor": None,
@@ -985,6 +1010,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "position_contact_frame_velocity_tilt_residual",
             "position_contact_frame_velocity_tilt_lateral_residual",
             "position_contact_frame_velocity_tilt_lateral_apex_residual",
+            "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
         ),
     )
     parser.add_argument(
@@ -1053,6 +1079,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         nargs=2,
         metavar=("LOW", "HIGH"),
         default=DEFAULT_RESET_VELOCITY_Z_RANGE,
+    )
+    parser.add_argument(
+        "--reset-ball-angular-velocity-range",
+        type=float,
+        default=0.0,
+        help="Uniform per-axis initial ball spin range in rad/s. 0 keeps the old no-spin reset.",
     )
     parser.add_argument(
         "--success-velocity-threshold",
@@ -1196,6 +1228,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--contact-frame-tilt-scale-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-target-apex-z-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-strike-plane-z-action-limit", type=float, default=None)
+    parser.add_argument("--contact-frame-tracking-xy-action-limit", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-gain", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-max", type=float, default=None)
     parser.add_argument("--contact-frame-intercept-velocity-time-floor", type=float, default=None)
@@ -1629,6 +1662,7 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
         "position_contact_frame_velocity_tilt_residual",
         "position_contact_frame_velocity_tilt_lateral_residual",
         "position_contact_frame_velocity_tilt_lateral_apex_residual",
+        "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
     ):
         if args.tracking_during_contact_scale is None:
             args.tracking_during_contact_scale = 0.0
@@ -1666,6 +1700,7 @@ def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
             "position_contact_frame_velocity_tilt_residual",
             "position_contact_frame_velocity_tilt_lateral_residual",
             "position_contact_frame_velocity_tilt_lateral_apex_residual",
+            "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
         )
         or args.tilt_action_limit is None
         or args.target_tilt_limit is None
@@ -1688,6 +1723,7 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         "reset_xy_sampling": args.reset_xy_sampling,
         "reset_velocity_xy_range": args.reset_velocity_xy_range,
         "reset_velocity_z_range": tuple(args.reset_velocity_z_range),
+        "reset_ball_angular_velocity_range": args.reset_ball_angular_velocity_range,
         "target_offset_low": tuple(args.target_offset_low),
         "target_offset_high": tuple(args.target_offset_high),
         "success_velocity_threshold": args.success_velocity_threshold,
@@ -1794,6 +1830,8 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
         env_kwargs["contact_frame_target_apex_z_action_limit"] = args.contact_frame_target_apex_z_action_limit
     if args.contact_frame_strike_plane_z_action_limit is not None:
         env_kwargs["contact_frame_strike_plane_z_action_limit"] = args.contact_frame_strike_plane_z_action_limit
+    if args.contact_frame_tracking_xy_action_limit is not None:
+        env_kwargs["contact_frame_tracking_xy_action_limit"] = args.contact_frame_tracking_xy_action_limit
     if args.contact_frame_intercept_velocity_gain is not None:
         env_kwargs["contact_frame_intercept_velocity_gain"] = args.contact_frame_intercept_velocity_gain
     if args.contact_frame_intercept_velocity_max is not None:
@@ -2207,6 +2245,7 @@ def collect_heuristic_bootstrap_dataset(
         "position_contact_frame_velocity_tilt_residual",
         "position_contact_frame_velocity_tilt_lateral_residual",
         "position_contact_frame_velocity_tilt_lateral_apex_residual",
+        "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
     }:
         raise ValueError(
             "Heuristic bootstrap currently requires action_mode='position_strike', 'position_strike_tilt', "
@@ -2214,7 +2253,8 @@ def collect_heuristic_bootstrap_dataset(
             "'position_contact_frame_velocity_residual', or "
             "'position_contact_frame_velocity_tilt_residual', or "
             "'position_contact_frame_velocity_tilt_lateral_residual', or "
-            "'position_contact_frame_velocity_tilt_lateral_apex_residual'."
+            "'position_contact_frame_velocity_tilt_lateral_apex_residual', or "
+            "'position_contact_frame_velocity_tilt_lateral_apex_tracking_residual'."
         )
     if sample_mode not in {"episode", "post_success", "post_success_reachable"}:
         raise ValueError(f"Unsupported bootstrap sample mode: {sample_mode}")

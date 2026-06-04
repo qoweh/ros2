@@ -11,6 +11,7 @@ from pingpong_rl2.defaults import (
     DEFAULT_PPO_POSITION_STRIKE_TILT_LIFT_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_RESIDUAL_RUN_NAME,
+    DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_TRACKING_RESIDUAL_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_RESIDUAL_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_RESIDUAL_RUN_NAME,
     DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_RESIDUAL_RUN_NAME,
@@ -26,6 +27,7 @@ from pingpong_rl2.defaults import (
     SMOKE_PPO_POSITION_STRIKE_TILT_LIFT_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_RESIDUAL_RUN_NAME,
+    SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_TRACKING_RESIDUAL_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_RESIDUAL_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_RESIDUAL_RUN_NAME,
     SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_RESIDUAL_RUN_NAME,
@@ -54,6 +56,9 @@ def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> s
         "position_contact_frame_velocity_tilt_lateral_apex_residual": (
             SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_RESIDUAL_RUN_NAME
         ),
+        "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual": (
+            SMOKE_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_TRACKING_RESIDUAL_RUN_NAME
+        ),
     }
     standard_run_names = {
         "position": DEFAULT_PPO_RUN_NAME,
@@ -71,6 +76,9 @@ def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> s
         ),
         "position_contact_frame_velocity_tilt_lateral_apex_residual": (
             DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_RESIDUAL_RUN_NAME
+        ),
+        "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual": (
+            DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_TRACKING_RESIDUAL_RUN_NAME
         ),
     }
     if smoke:
@@ -178,6 +186,7 @@ def resolve_env_kwargs_for_model(
     reset_xy_sampling: str | None = None,
     reset_velocity_xy_range: float | None = None,
     reset_velocity_z_range: tuple[float, float] | list[float] | None = None,
+    reset_ball_angular_velocity_range: float | None = None,
     success_velocity_threshold: float | None = None,
 ) -> dict[str, object]:
     env_kwargs: dict[str, object] = {
@@ -191,6 +200,7 @@ def resolve_env_kwargs_for_model(
         "reset_xy_sampling": "square",
         "reset_velocity_xy_range": DEFAULT_RESET_VELOCITY_XY_RANGE,
         "reset_velocity_z_range": tuple(DEFAULT_RESET_VELOCITY_Z_RANGE),
+        "reset_ball_angular_velocity_range": 0.0,
         "success_velocity_threshold": DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
     }
     if model_path is not None:
@@ -220,6 +230,8 @@ def resolve_env_kwargs_for_model(
         env_kwargs["reset_velocity_xy_range"] = float(reset_velocity_xy_range)
     if reset_velocity_z_range is not None:
         env_kwargs["reset_velocity_z_range"] = tuple(float(value) for value in reset_velocity_z_range)
+    if reset_ball_angular_velocity_range is not None:
+        env_kwargs["reset_ball_angular_velocity_range"] = float(reset_ball_angular_velocity_range)
     if success_velocity_threshold is not None:
         env_kwargs["success_velocity_threshold"] = float(success_velocity_threshold)
     return env_kwargs
