@@ -53,6 +53,8 @@ class HeuristicKeepUpPolicy:
     strike_time_horizon: float = 0.14
     strike_xy_correction_gain: float = 0.0
     strike_xy_correction_max: float = 0.02
+    tracking_velocity_residual_gain: float = 0.35
+    tracking_velocity_residual_max: float = 0.12
     fixed_position_residual: tuple[float, float, float] = (0.0, 0.0, 0.0)
     strike_position_residual: tuple[float, float, float] | None = None
     recovery_position_residual: tuple[float, float, float] | None = None
@@ -98,6 +100,21 @@ class HeuristicKeepUpPolicy:
         residual_xy = self.strike_xy_correction_gain * strike_readiness * np.asarray(correction_xy, dtype=float)
         residual_xy = np.clip(residual_xy, -self.strike_xy_correction_max, self.strike_xy_correction_max)
         return np.array([residual_xy[0], residual_xy[1], 0.0], dtype=float)
+
+    def _tracking_velocity_residual(self, env: PingPongKeepUpEnv, phase_name: str) -> np.ndarray:
+        if phase_name not in {"prepare", "strike"}:
+            return np.zeros(2, dtype=float)
+        if self.tracking_velocity_residual_gain <= 0.0 or self.tracking_velocity_residual_max <= 0.0:
+            return np.zeros(2, dtype=float)
+
+        intercept_time = max(env._predicted_intercept_time(), 0.08)
+        intercept_error_xy = env._predicted_intercept_xy() - env.sim.racket_position[:2]
+        residual_xy = self.tracking_velocity_residual_gain * np.asarray(intercept_error_xy, dtype=float) / intercept_time
+        return np.clip(
+            residual_xy,
+            -self.tracking_velocity_residual_max,
+            self.tracking_velocity_residual_max,
+        )
 
     def _tilt_residual_for_phase(self, phase_name: str) -> np.ndarray:
         if phase_name in {"prepare", "strike"}:
@@ -189,5 +206,5 @@ class HeuristicKeepUpPolicy:
             if env.action_mode in _CONTACT_FRAME_APEX_TIMING_RESIDUAL_ACTION_MODES:
                 action = np.concatenate([action, np.zeros(2, dtype=float)])
             if env.action_mode in _CONTACT_FRAME_TRACKING_RESIDUAL_ACTION_MODES:
-                action = np.concatenate([action, np.zeros(2, dtype=float)])
+                action = np.concatenate([action, self._tracking_velocity_residual(env, phase_name)])
         return np.clip(action, env.action_low, env.action_high)

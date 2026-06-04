@@ -1411,6 +1411,12 @@ def main() -> None:
                         "applied_action_14_strike_plane_z_residual": (
                             None if applied_action is None or applied_action.size <= 14 else float(applied_action[14])
                         ),
+                        "applied_action_15_tracking_vx_residual": (
+                            None if applied_action is None or applied_action.size <= 15 else float(applied_action[15])
+                        ),
+                        "applied_action_16_tracking_vy_residual": (
+                            None if applied_action is None or applied_action.size <= 16 else float(applied_action[16])
+                        ),
                         "contact_frame_vz_scale": info.get("contact_frame_vz_scale"),
                         "contact_frame_outgoing_x_residual_action": info.get(
                             "contact_frame_outgoing_x_residual_action"
@@ -1426,6 +1432,12 @@ def main() -> None:
                         ),
                         "contact_frame_racket_y_residual_action": info.get(
                             "contact_frame_racket_y_residual_action"
+                        ),
+                        "contact_frame_tracking_x_residual_action": info.get(
+                            "contact_frame_tracking_x_residual_action"
+                        ),
+                        "contact_frame_tracking_y_residual_action": info.get(
+                            "contact_frame_tracking_y_residual_action"
                         ),
                         "contact_frame_trajectory_tilt_scale": info.get("contact_frame_trajectory_tilt_scale"),
                         "contact_frame_centering_tilt_scale": info.get("contact_frame_centering_tilt_scale"),

@@ -1368,6 +1368,27 @@ class PingPongKeepUpEnvTests(unittest.TestCase):
         self.assertTrue(np.all(action >= env.action_low - 1.0e-9))
         self.assertTrue(np.allclose(action[5:], np.zeros(12, dtype=float)))
 
+    def test_heuristic_policy_uses_tracking_residual_for_offset_descending_ball(self) -> None:
+        env = PingPongKeepUpEnv(
+            action_mode="position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
+            reset_xy_range=0.0,
+            reset_velocity_xy_range=0.0,
+            contact_frame_tracking_xy_action_limit=0.8,
+        )
+        env.reset(ball_height=env.ball_height)
+        ball_position = env.sim.racket_position + np.array([0.08, -0.04, env.ball_height])
+        env.sim.spawn_ball(ball_position, velocity=(0.0, 0.0, -1.0))
+
+        action = HeuristicKeepUpPolicy(
+            tracking_velocity_residual_gain=0.5,
+            tracking_velocity_residual_max=0.25,
+        ).predict(env)
+
+        self.assertGreater(float(action[15]), 0.0)
+        self.assertLess(float(action[16]), 0.0)
+        self.assertLessEqual(abs(float(action[15])), env.action_high[15] + 1.0e-9)
+        self.assertLessEqual(abs(float(action[16])), env.action_high[16] + 1.0e-9)
+
     def test_contact_frame_base_strike_lift_makes_zero_action_nonempty(self) -> None:
         env = PingPongKeepUpEnv(
             action_mode="position_contact_frame",

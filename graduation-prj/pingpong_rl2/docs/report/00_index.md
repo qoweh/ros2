@@ -102,3 +102,7 @@
   - 웹서비스/시연용 무제한 episode, v26 broad xyz reset preset, evaluation safety cap, 학습/분석/viewer 명령을 정리한 보고서
 - `49_racket_center_tracking_spin_and_two_ball_plan.md`
   - v25/v26 hand-coded 제어와 RL residual 경계, 17D racket-centered tracking residual, spin reset randomization, 2공 keep-up 확장 계획을 정리한 보고서
+- `50_v28_tracking_spin_analysis_and_v29_staged_distribution.md`
+  - `pmk_cf_self_rally_v28_racket_tracking_spin` 분석, 17D tracking action 사용량, staged reset distribution curriculum, v29 preset과 학습/분석 명령을 정리한 보고서
+- `51_v29_review_max_step_and_two_ball_mode.md`
+  - `pmk_cf_self_rally_v29_racket_tracking_staged_distribution` 분석, max episode step 의미, 1공/2공 모델 분리 판단, v30 v26 기반 안정 확장 명령을 정리한 보고서
