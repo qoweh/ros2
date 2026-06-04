@@ -1,0 +1,5 @@
+model,episodes,mean_contacts,mean_useful,max_contacts,max_useful,contacts300_useful100,contacts400_useful150,time_limit,low_apex,ball_out,robot_body,floor,ball_speed
+v32 17D,20,223.25,79.65,418,159,6,1,6,7,5,0,0,2
+v33 17D,20,237.8,91.15,412,170,9,2,8,8,3,0,0,1
+v34 17D,20,318.55,116.05,426,170,13,9,11,0,5,3,0,1
+v35 17D,20,278.05,102.3,414,169,11,4,10,0,6,1,1,2

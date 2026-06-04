@@ -1,0 +1,8 @@
+mask,mean_useful,target_200_70,note
+baseline,64.4167,8,original v34 policy
+drop tracking xy 15/16,50.1667,6,"weak use, still helpful"
+drop centering tilt 10,42.3333,4,"low magnitude, high value"
+drop weak bundle,59.1667,7,several weak axes together
+drop outgoing x 6,14.5,0,critical strong axis
+drop tilt roll 4,65.3333,8,"strong magnitude, ambiguous value"
+drop strike plane z 14,42.3333,2,critical height/timing axis
