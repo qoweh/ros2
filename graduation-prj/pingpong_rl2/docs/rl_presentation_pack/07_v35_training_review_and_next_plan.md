@@ -2,6 +2,8 @@
 
 작성일: 2026-06-05
 
+업데이트: v36 학습 완료 후 검토는 [08_v36_wider_domain_review.md](08_v36_wider_domain_review.md)에 정리했다.
+
 ## 한 줄 요약
 
 `keep1_v35_17d_strong_axis_stable`은 v34에서 이어 학습한 17D 모델이며, body contact와 low-apex/floor 실패는 줄였다. 하지만 사용자가 목표로 잡은 장기 랠리 지표인 `contacts 300 / useful 100`과 `contacts 400 / useful 150`에서는 v34보다 약해졌다. 그래서 현재 배포/시연 주 모델은 v34를 유지하고, v35는 "안정성 reward를 강하게 주면 어떤 trade-off가 생기는가"를 보여주는 실험으로 쓰는 편이 좋다.

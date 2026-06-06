@@ -18,6 +18,7 @@
 | [05_slide_outline.md](05_slide_outline.md) | 실제 발표 슬라이드 구성 후보 |
 | [06_source_data.md](06_source_data.md) | 수치가 나온 원본 report/artifacts 색인 |
 | [07_v35_training_review_and_next_plan.md](07_v35_training_review_and_next_plan.md) | v35 학습 완료 검토와 v36 개선 방향 |
+| [08_v36_wider_domain_review.md](08_v36_wider_domain_review.md) | v36 학습 완료 검토와 넓은 위치/속도 영역 개선안 |
 | [scripts/generate_visuals.py](scripts/generate_visuals.py) | artifacts에서 CSV/PNG를 재생성하는 스크립트 |
 
 ## 생성된 자료
