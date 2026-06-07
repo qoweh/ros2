@@ -22,67 +22,24 @@ from pingpong_rl2.defaults import (
     DEFAULT_SUCCESS_VELOCITY_THRESHOLD,
     DEFAULT_TRACKING_REWARD_WEIGHT,
 )
+from pingpong_rl2.envs.action_modes import (
+    ACTION_MODES as _ACTION_MODES,
+    CONTACT_FRAME_ACTION_MODES as _CONTACT_FRAME_ACTION_MODES,
+    CONTACT_FRAME_APEX_TIMING_RESIDUAL_ACTION_MODES as _CONTACT_FRAME_APEX_TIMING_RESIDUAL_ACTION_MODES,
+    CONTACT_FRAME_LATERAL_VELOCITY_RESIDUAL_ACTION_MODES as _CONTACT_FRAME_LATERAL_VELOCITY_RESIDUAL_ACTION_MODES,
+    CONTACT_FRAME_TILT_SCALE_ACTION_MODES as _CONTACT_FRAME_TILT_SCALE_ACTION_MODES,
+    CONTACT_FRAME_TRACKING_RESIDUAL_ACTION_MODES as _CONTACT_FRAME_TRACKING_RESIDUAL_ACTION_MODES,
+    CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES as _CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES,
+    CONTACT_ORACLE_MODES as _CONTACT_ORACLE_MODES,
+    DESIRED_OUTGOING_XY_MODES as _DESIRED_OUTGOING_XY_MODES,
+    RESET_XY_SAMPLING_MODES as _RESET_XY_SAMPLING_MODES,
+    RETURN_TARGET_XY_SOURCES as _RETURN_TARGET_XY_SOURCES,
+    STRIKE_CONTRACT_ACTION_MODES as _STRIKE_CONTRACT_ACTION_MODES,
+    TILT_ACTION_MODES as _TILT_ACTION_MODES,
+    TILT_SLICE_3_TO_5_ACTION_MODES as _TILT_SLICE_3_TO_5_ACTION_MODES,
+)
+from pingpong_rl2.envs.observation_layout import build_observation_layout
 from pingpong_rl2.envs.pingpong_sim import PingPongSim
-
-_ACTION_MODES = (
-    "position",
-    "position_strike",
-    "position_tilt",
-    "position_strike_tilt",
-    "position_strike_tilt_lift",
-    "position_contact_frame",
-    "position_contact_frame_velocity_residual",
-    "position_contact_frame_velocity_tilt_residual",
-    "position_contact_frame_velocity_tilt_lateral_residual",
-    "position_contact_frame_velocity_tilt_lateral_apex_residual",
-    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
-)
-_CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES = (
-    "position_contact_frame_velocity_residual",
-    "position_contact_frame_velocity_tilt_residual",
-    "position_contact_frame_velocity_tilt_lateral_residual",
-    "position_contact_frame_velocity_tilt_lateral_apex_residual",
-    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
-)
-_CONTACT_FRAME_TILT_SCALE_ACTION_MODES = (
-    "position_contact_frame_velocity_tilt_residual",
-    "position_contact_frame_velocity_tilt_lateral_residual",
-    "position_contact_frame_velocity_tilt_lateral_apex_residual",
-    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
-)
-_CONTACT_FRAME_LATERAL_VELOCITY_RESIDUAL_ACTION_MODES = (
-    "position_contact_frame_velocity_tilt_lateral_residual",
-    "position_contact_frame_velocity_tilt_lateral_apex_residual",
-    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
-)
-_CONTACT_FRAME_APEX_TIMING_RESIDUAL_ACTION_MODES = (
-    "position_contact_frame_velocity_tilt_lateral_apex_residual",
-    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
-)
-_CONTACT_FRAME_TRACKING_RESIDUAL_ACTION_MODES = (
-    "position_contact_frame_velocity_tilt_lateral_apex_tracking_residual",
-)
-_CONTACT_FRAME_ACTION_MODES = (
-    "position_contact_frame",
-    *_CONTACT_FRAME_VELOCITY_RESIDUAL_ACTION_MODES,
-)
-_TILT_ACTION_MODES = (
-    "position_tilt",
-    "position_strike_tilt",
-    "position_strike_tilt_lift",
-    *_CONTACT_FRAME_ACTION_MODES,
-)
-_STRIKE_CONTRACT_ACTION_MODES = (
-    "position_strike",
-    "position_strike_tilt",
-    "position_strike_tilt_lift",
-    *_CONTACT_FRAME_ACTION_MODES,
-)
-_TILT_SLICE_3_TO_5_ACTION_MODES = ("position_strike_tilt_lift", *_CONTACT_FRAME_ACTION_MODES)
-_CONTACT_ORACLE_MODES = ("none", "desired_outgoing_velocity")
-_RETURN_TARGET_XY_SOURCES = ("controller_anchor", "racket_home", "racket_position", "target_position")
-_DESIRED_OUTGOING_XY_MODES = ("next_intercept", "apex")
-_RESET_XY_SAMPLING_MODES = ("square", "disk")
 
 _EASY_NEXT_BALL_TARGET_TIME = 0.45
 _EASY_NEXT_BALL_TIME_TOLERANCE = 0.30
@@ -91,81 +48,6 @@ _EASY_NEXT_BALL_MAX_LATERAL_SPEED = 1.0
 _EASY_NEXT_BALL_SOFT_SPEED_LIMIT = 3.0
 _MIN_DESIRED_APEX_HEIGHT_DELTA = 0.01
 _TRAJECTORY_MATCH_ERROR_SCALE = 1.0
-
-_POSITION_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
-    ("joint_positions", 7),
-    ("joint_velocities", 7),
-    ("racket_position", 3),
-    ("racket_velocity", 3),
-    ("target_position", 3),
-    ("ball_position", 3),
-    ("ball_velocity", 3),
-    ("ball_relative_position", 3),
-    ("predicted_intercept_relative_xy", 2),
-    ("predicted_intercept_time", 1),
-)
-
-_TASK_PHASE_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
-    ("phase_one_hot", 4),
-)
-
-_CONTACT_CONTEXT_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
-    ("time_since_contact", 1),
-    ("successful_bounce_count_clipped", 1),
-)
-
-_NEXT_INTERCEPT_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
-    ("next_intercept_relative_xy", 2),
-    ("next_intercept_time", 1),
-    ("next_intercept_reachable", 1),
-    ("next_intercept_recovery_distance", 1),
-    ("next_intercept_recovery_readiness", 1),
-)
-
-_DESIRED_OUTGOING_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
-    ("desired_outgoing_velocity", 3),
-)
-
-_VELOCITY_DOMAIN_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
-    ("relative_velocity", 3),
-    ("racket_face_normal", 3),
-)
-
-_POSITION_TILT_OBSERVATION_COMPONENTS: tuple[tuple[str, int], ...] = (
-    ("target_tilt", 2),
-)
-
-
-def _build_observation_layout(
-    action_mode: str,
-    include_velocity_domain_observation: bool,
-    include_task_phase_observation: bool,
-    include_contact_context_observation: bool,
-    include_next_intercept_observation: bool,
-    include_desired_outgoing_velocity_observation: bool,
-) -> tuple[tuple[tuple[str, int], ...], dict[str, slice], int]:
-    components = _POSITION_OBSERVATION_COMPONENTS
-    if include_task_phase_observation:
-        components = components + _TASK_PHASE_OBSERVATION_COMPONENTS
-    if include_contact_context_observation:
-        components = components + _CONTACT_CONTEXT_OBSERVATION_COMPONENTS
-    if include_next_intercept_observation:
-        components = components + _NEXT_INTERCEPT_OBSERVATION_COMPONENTS
-    if include_desired_outgoing_velocity_observation:
-        components = components + _DESIRED_OUTGOING_OBSERVATION_COMPONENTS
-    if include_velocity_domain_observation:
-        components = components + _VELOCITY_DOMAIN_OBSERVATION_COMPONENTS
-    if action_mode in _TILT_ACTION_MODES:
-        if not include_velocity_domain_observation:
-            components = components + (("racket_face_normal", 3),)
-        components = components + _POSITION_TILT_OBSERVATION_COMPONENTS
-
-    observation_slices: dict[str, slice] = {}
-    observation_offset = 0
-    for component_name, component_size in components:
-        observation_slices[component_name] = slice(observation_offset, observation_offset + component_size)
-        observation_offset += component_size
-    return components, observation_slices, observation_offset
 
 
 class PingPongKeepUpEnv:
@@ -1447,7 +1329,7 @@ class PingPongKeepUpEnv:
             self.action_high = position_action_limit
         self.action_low = -self.action_high.copy()
         self.action_size = int(self.action_high.shape[0])
-        self._observation_components, self._observation_slices, self.observation_size = _build_observation_layout(
+        self._observation_components, self._observation_slices, self.observation_size = build_observation_layout(
             self.action_mode,
             self.include_velocity_domain_observation,
             self.include_task_phase_observation,
