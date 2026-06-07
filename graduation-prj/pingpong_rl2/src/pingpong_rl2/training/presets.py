@@ -12,6 +12,8 @@ from pingpong_rl2.defaults import (
     DEFAULT_RESET_XY_RANGE,
 )
 
+_UNLIMITED_EVAL_STEP_LIMIT = 3_600
+
 _TILT_PROFILES: dict[str, dict[str, object]] = {
     "early": {
         "tilt_action_limit": 0.015,
@@ -786,5 +788,4 @@ _PRESET_MANAGED_ARG_DEFAULTS: dict[str, object] = {
     "action_std_max": None,
     "zero_init_action_mean": False,
 }
-
 

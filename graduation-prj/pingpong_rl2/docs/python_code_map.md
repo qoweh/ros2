@@ -164,6 +164,11 @@ docs/rl_presentation_pack/scripts/generate_visuals.py
 
 ## 검증 상태
 
-`python3 -m compileall -q pingpong_rl2/src/pingpong_rl2 pingpong_rl2/scripts pingpong_rl2/tests`는 통과했다.
+기본 시스템 Python이 아니라 `mujoco_env` conda 환경에서 검증했다.
 
-현재 시스템 Python에는 `pytest`, `gymnasium`, `mujoco`, `numpy`, `stable_baselines3`, `torch`가 설치되어 있지 않아 실행형 unit test는 import 단계에서 중단된다. `pingpong_rl2/pyproject.toml` 기준 필요한 의존성은 `gymnasium`, `mujoco`, `numpy`, `stable-baselines3`이다.
+- `conda env list` 결과 `mujoco_env`가 존재한다.
+- `conda run -n mujoco_env python -m compileall -q pingpong_rl2/src/pingpong_rl2 pingpong_rl2/scripts pingpong_rl2/tests` 통과.
+- `conda run -n mujoco_env env PYTHONPATH=pingpong_rl2/src:pingpong_rl2 python -m unittest discover -s pingpong_rl2/tests -p 'test*.py'` 통과.
+- 최종 결과: 151 tests, OK.
+
+참고로 `mujoco_env`에는 `gymnasium`, `mujoco`, `numpy`, `stable_baselines3`, `torch`가 설치되어 있지만 `pytest`는 없다. 현재 테스트 파일은 `unittest` 기반이라 `pytest` 없이도 전체 suite를 실행할 수 있다.
