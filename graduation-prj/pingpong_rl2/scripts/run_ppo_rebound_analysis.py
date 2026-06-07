@@ -212,6 +212,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    # 저장된 모델과 학습 env 설정을 복원한 뒤, 반동 분석용 override를 덧씌운다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:138
+    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:176
+    # LINK: pingpong_rl2/src/pingpong_rl2/analysis/rebound_env.py:73
     args = parse_args()
     resolved_run_name = None if args.run_name is None else resolve_requested_run_name(args.run_name, args.run_version)
     model_path = resolve_saved_model_path(args.model_path, resolved_run_name)
@@ -234,6 +238,10 @@ def main() -> None:
         success_velocity_threshold=args.success_velocity_threshold,
     )
     env_kwargs = apply_rebound_env_overrides(args, env_kwargs)
+
+    # 분석은 학습하지 않고 단일 env에서 PPO policy를 재생하며 contact 순간의 물리량을 기록한다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:15
+    # LINK: pingpong_rl2/src/pingpong_rl2/analysis/rebound_metrics.py:52
     env = PingPongKeepUpGymEnv(**env_kwargs)
     if args.episode_step_limit is None:
         episode_step_limit = _UNLIMITED_ANALYSIS_STEP_LIMIT if env.base_env.max_episode_steps is None else None
@@ -258,6 +266,8 @@ def main() -> None:
     robot_body_contact_counts: Counter[str] = Counter()
 
     try:
+        # episode loop: 매 step policy action을 적용하고 contact event가 발생한 순간만 상세 row로 남긴다.
+        # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
         for episode in range(1, args.episodes + 1):
             observation, _ = env.reset(seed=args.seed + episode - 1)
             racket_home_xy = np.asarray(env.base_env.sim.racket_position[:2], dtype=float)
@@ -282,6 +292,8 @@ def main() -> None:
                     if first_contact_step is None:
                         first_contact_step = step_count
                     racket_position_xy = np.asarray(env.base_env.sim.racket_position[:2], dtype=float)
+                    # contact row는 반동 품질의 원자료다. 요약 JSON은 아래 summary 단계에서 여기서 파생된다.
+                    # LINK: pingpong_rl2/src/pingpong_rl2/analysis/rebound_metrics.py:154
                     apex_targets = apex_target_xy_candidates(
                         info=info,
                         racket_home_xy=racket_home_xy,
@@ -745,6 +757,8 @@ def main() -> None:
     returns_array = np.asarray(returns, dtype=float)
     bounce_array = np.asarray(useful_bounces, dtype=float)
     stable_cycle_array = np.asarray(stable_cycles, dtype=float)
+    # CSV 원자료와 함께 contact/episode 요약을 만들어 실패 사례와 정책 품질을 비교한다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/analysis/rebound_summary.py:7
     summary = {
         "model_path": str(model_path.resolve()),
         "run_name": run_name,

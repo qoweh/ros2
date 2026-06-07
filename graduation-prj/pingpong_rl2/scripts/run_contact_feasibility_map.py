@@ -171,6 +171,9 @@ def evaluate_configuration(
     recovery_blend: float,
     strike_time_horizon: float,
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
+    # 각 후보 설정은 PPO가 아니라 HeuristicKeepUpPolicy로 먼저 feasibility를 검사한다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
+    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:15
     env = PingPongKeepUpGymEnv(**env_kwargs)
     policy = HeuristicKeepUpPolicy(
         return_blend=return_blend,
@@ -348,6 +351,7 @@ def evaluate_configuration(
 
 
 def main() -> None:
+    # coarse grid를 넓게 훑고, 점수가 좋은 후보만 finalist 단계에서 더 많은 episode로 재검증한다.
     args = parse_args()
     output_dir = args.output_dir or (ROOT / "artifacts" / "benchmarks" / args.analysis_name)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -405,6 +409,8 @@ def main() -> None:
     finalist_count = max(0, min(int(args.top_k), len(sorted_coarse_rows)))
     finalist_rows: list[dict[str, object]] = []
     finalist_contact_rows: list[dict[str, object]] = []
+
+    # finalist는 coarse에서 살아남은 설정을 장기 샘플로 다시 확인하는 단계다.
     for finalist_rank, coarse_row in enumerate(sorted_coarse_rows[:finalist_count], start=1):
         env_kwargs = build_env_kwargs(
             args,
@@ -448,6 +454,8 @@ def main() -> None:
     best_finalist_row = sorted_finalists[0] if sorted_finalists else None
 
     pass_row = best_finalist_row if best_finalist_row is not None else best_coarse_row
+    # 결과는 summary JSON과 두 CSV(config별 요약, contact별 원자료)로 저장된다.
+    # LINK: pingpong_rl2/scripts/run_heuristic_keepup_diagnostic.py:242
     feasibility_summary = {
         "analysis_name": args.analysis_name,
         "grid": {

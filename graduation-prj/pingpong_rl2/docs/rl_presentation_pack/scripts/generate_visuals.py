@@ -424,6 +424,9 @@ def plot_monitor_curves() -> None:
 
 
 def main() -> None:
+    # 저장된 training summary/analysis CSV를 발표용 표와 PNG 차트로 재생성한다.
+    # LINK: pingpong_rl2/scripts/run_ppo_rebound_analysis.py:214
+    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:60
     metrics = metric_rows()
     long_rows = long_eval_rows()
     usage = action_usage_rows()

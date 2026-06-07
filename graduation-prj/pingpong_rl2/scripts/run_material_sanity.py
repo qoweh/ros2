@@ -42,6 +42,8 @@ def geom_summary(sim: PingPongSim, geom_name: str) -> dict[str, object]:
 
 
 def run_static_racket_drop(sim: PingPongSim, *, drop_height: float, initial_velocity_z: float, max_substeps: int) -> dict[str, object]:
+    # 고정된 라켓 위로 공을 떨어뜨려 XML contact 파라미터의 유효 반발계수를 추정한다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/envs/pingpong_sim.py:13
     sim.reset()
     sim.reset_ball_above_racket(
         height=drop_height,
@@ -101,6 +103,7 @@ def run_static_racket_drop(sim: PingPongSim, *, drop_height: float, initial_velo
 
 
 def main() -> None:
+    # scene XML의 geom/material 값과 drop test 결과를 JSON으로 출력한다.
     args = parse_args()
     scene_path = resolve_input_path(args.scene_path)
     sim = PingPongSim(scene_path=scene_path)

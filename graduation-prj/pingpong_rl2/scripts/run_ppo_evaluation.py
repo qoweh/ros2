@@ -18,7 +18,12 @@ from pingpong_rl2.defaults import (
     DEFAULT_PPO_RUN_NAME,
 )
 from pingpong_rl2.envs import PingPongKeepUpGymEnv
-from pingpong_rl2.utils import infer_run_name_from_model_path, resolve_env_kwargs_for_model, resolve_requested_run_name, resolve_saved_model_path
+from pingpong_rl2.utils import (
+    infer_run_name_from_model_path,
+    resolve_env_kwargs_for_model,
+    resolve_requested_run_name,
+    resolve_saved_model_path,
+)
 
 _UNLIMITED_EVALUATION_STEP_LIMIT = 3_600
 
@@ -67,6 +72,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    # 모델 위치를 확정하고, 학습 summary JSON에 저장된 env kwargs를 기본값으로 복원한다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:138
+    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:176
     args = parse_args()
     resolved_run_name = None
     if args.run_name is not None:
@@ -90,6 +98,9 @@ def main() -> None:
         success_velocity_threshold=args.success_velocity_threshold,
     )
 
+    # 평가 전용 안전 cap이다. 학습 환경이 무제한 horizon이면 기본 3600 step에서 끊는다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:15
+    # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
     env = PingPongKeepUpGymEnv(**env_kwargs)
     env_config = env.training_config()
     if args.episode_step_limit is None:
@@ -105,6 +116,8 @@ def main() -> None:
     summaries: list[dict[str, object]] = []
 
     try:
+        # 단일 env에서 episode를 반복 실행하며 PPO action, reward, terminal info만 모은다.
+        # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:79
         for episode in range(1, args.episodes + 1):
             observation, _ = env.reset(seed=args.seed + episode - 1)
             episode_return = 0.0
@@ -152,6 +165,7 @@ def main() -> None:
     finally:
         env.close()
 
+    # 발표/보고서에 바로 넣기 좋은 scalar rate와 episode별 세부 결과로 압축한다.
     returns_array = np.asarray(returns, dtype=float)
     contact_array = np.asarray(contact_counts, dtype=float)
     bounce_array = np.asarray(useful_bounces, dtype=float)

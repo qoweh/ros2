@@ -110,6 +110,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    # policy/heuristic/zero_action 중 action source를 고르고, 모델이 있으면 저장된 env 설정을 복원한다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:138
+    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:176
     args = parse_args()
     resolved_run_name = None if args.run_name is None else resolve_requested_run_name(args.run_name, args.run_version)
     configured_model_path: Path | None = None
@@ -181,6 +184,8 @@ def main() -> None:
     if args.nonuseful_contact_penalty_weight is not None:
         env_kwargs["nonuseful_contact_penalty_weight"] = args.nonuseful_contact_penalty_weight
     if args.mode == "heuristic" and configured_model_path is None:
+        # 모델 없이 heuristic만 볼 때는 strike-control 관측/행동 구성을 명시적으로 켠다.
+        # LINK: pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
         env_kwargs.update(
             {
                 "action_mode": "position_strike",
@@ -212,6 +217,8 @@ def main() -> None:
     else:
         print("render_mode=zero_action")
 
+    # MuJoCo passive viewer loop: action을 고르고 env.step() 후 episode 종료 시 콘솔 요약을 찍는다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:79
     observation, _ = env.reset(seed=args.seed)
     sim = env.base_env.sim
     frame_sleep = sim.model.opt.timestep * sim.n_substeps

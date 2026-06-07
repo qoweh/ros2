@@ -331,6 +331,9 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
 
 
 def main() -> None:
+    # hand-coded heuristic baseline을 Gym env에서 실행해 PPO 없이 가능한 성능 상한/실패 원인을 본다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
+    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:15
     args = parse_args()
     output_dir = args.output_dir or (ROOT / "artifacts" / "benchmarks" / args.analysis_name)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -407,6 +410,8 @@ def main() -> None:
     oracle_contact_events = 0
 
     try:
+        # episode loop: heuristic action을 적용하고 contact event마다 outgoing/apex/intercept 지표를 축적한다.
+        # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
         for episode_index in range(args.episodes):
             observation, _ = env.reset(seed=args.seed + episode_index)
             del observation
@@ -704,6 +709,7 @@ def main() -> None:
     bounce_array = np.asarray(useful_bounces, dtype=float)
     contact_count_array = np.asarray([float(row["contacts"]) for row in episode_rows], dtype=float)
     time_limit_episodes = sum(1 for row in episode_rows if row["failure_reason"] == "time_limit")
+    # summary는 baseline 수치, episodes.csv는 episode 결과, contacts.csv는 contact별 물리량이다.
     summary = {
         "analysis_name": args.analysis_name,
         "variant_name": args.variant_name,

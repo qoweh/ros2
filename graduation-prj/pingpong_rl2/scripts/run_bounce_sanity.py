@@ -63,6 +63,8 @@ def run_episode(sim: PingPongSim, max_steps: int) -> dict[str, object]:
 
 
 def main() -> None:
+    # MuJoCo XML/기본 물리만 확인하는 no-learning sanity check다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/envs/pingpong_sim.py:13
     args = parse_args()
     sim = PingPongSim()
     racket_first_count = 0

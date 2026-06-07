@@ -62,6 +62,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def target_env_kwargs(args: argparse.Namespace) -> tuple[dict[str, object], str]:
+    # target preset/config는 run_ppo_learning의 파서를 그대로 써서 향후 학습 공간과 맞춘다.
+    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:60
+    # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:88
     learning_argv: list[str] = []
     if args.target_config_file is not None:
         learning_argv.extend(["--config-file", str(args.target_config_file)])
@@ -84,6 +87,7 @@ def copy_policy_prefix(
     target_model: PPO,
     new_action_std_ratio: float,
 ) -> dict[str, object]:
+    # observation space는 그대로 두고 action head/log_std의 앞부분만 이전 policy에서 복사한다.
     if new_action_std_ratio <= 0.0:
         raise ValueError(f"new-action-std-ratio must be positive, got {new_action_std_ratio}.")
     if source_model.observation_space.shape != target_model.observation_space.shape:
@@ -158,6 +162,8 @@ def copy_policy_prefix(
 
 
 def main() -> None:
+    # source PPO를 로드하고 target env/action space에 맞는 새 PPO 껍데기를 만든다.
+    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:15
     args = parse_args()
     source_path = resolve_input_path(args.source_model)
     output_path = resolve_output_path(args.output_model)
