@@ -48,7 +48,7 @@ _STRIKE_CONTRACT_ACTION_MODES = (
 @dataclass(slots=True)
 class HeuristicKeepUpPolicy:
     # PPO bootstrap/진단용 hand-coded policy로, env phase별 target residual을 action으로 변환한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2589
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2589
     return_blend: float = 0.72
     recovery_blend: float = 0.52
     strike_z_boost: float = 0.018
@@ -92,7 +92,7 @@ class HeuristicKeepUpPolicy:
 
     def _state_dependent_strike_xy_residual(self, env: PingPongKeepUpEnv, phase_name: str) -> np.ndarray:
         # strike 직전에는 예측 intercept 오차를 readiness로 스케일해 XY 보정량으로 쓴다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2534
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2534
         if phase_name not in {"prepare", "strike"}:
             return np.zeros(3, dtype=float)
         if self.strike_xy_correction_gain <= 0.0 or self.strike_xy_correction_max <= 0.0:
@@ -154,7 +154,7 @@ class HeuristicKeepUpPolicy:
 
     def predict(self, env: PingPongKeepUpEnv) -> np.ndarray:
         # env action_mode별 기본 strike/contact-frame target을 잡고, heuristic residual을 더해 action으로 변환한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/training/bootstrap.py:12
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/bootstrap.py:12
         if env.action_mode not in _STRIKE_CONTRACT_ACTION_MODES:
             raise ValueError(
                 "HeuristicKeepUpPolicy requires a strike-contract action mode so it can steer the strike controller."

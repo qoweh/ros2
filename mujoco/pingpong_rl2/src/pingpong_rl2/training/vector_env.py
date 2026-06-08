@@ -13,7 +13,7 @@ VectorMode = Literal["async", "sync"]
 
 def make_env_factory(env_kwargs: dict[str, object] | None = None):
     # multiprocessing worker가 pickle할 수 있도록 env 생성 인자를 복사한 thunk를 만든다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:17
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:17
     environment_kwargs = {} if env_kwargs is None else dict(env_kwargs)
 
     def _thunk() -> PingPongKeepUpGymEnv:
@@ -29,7 +29,7 @@ def make_gym_vector_env(
     context: str = "spawn",
 ):
     # Gymnasium vector env를 만들되 autoreset은 끄고 SB3 adapter가 terminal info를 보존하게 한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/vector_env.py:49
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/vector_env.py:49
     if num_envs < 1:
         raise ValueError(f"num_envs must be positive, got {num_envs}.")
     env_fns = [make_env_factory(env_kwargs=env_kwargs) for _ in range(num_envs)]
@@ -48,7 +48,7 @@ def make_gym_vector_env(
 
 class SB3AsyncVectorEnvAdapter(VecEnv):
     # Gymnasium Async/SyncVectorEnv를 SB3 VecEnv 인터페이스로 감싸 episode 종료 처리를 맞춘다.
-    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:113
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:113
     def __init__(self, vector_env: AsyncVectorEnv | SyncVectorEnv):
         # autoreset을 직접 수행해야 terminal_observation과 reset_infos를 SB3 형식으로 남길 수 있다.
         if vector_env.metadata.get("autoreset_mode") != AutoresetMode.DISABLED:
@@ -187,7 +187,7 @@ def make_sb3_async_vector_env(
     context: str = "spawn",
 ) -> SB3AsyncVectorEnvAdapter:
     # 단일 env는 sync로 가볍게 돌리고, 여러 env는 async worker로 병렬 rollout을 만든다.
-    # LINK: pingpong_rl2/scripts/benchmark_vector_env.py:31
+    # LINK: mujoco/pingpong_rl2/scripts/benchmark_vector_env.py:31
     vector_mode: VectorMode = "sync" if num_envs == 1 else "async"
     vector_env = make_gym_vector_env(
         num_envs=num_envs,

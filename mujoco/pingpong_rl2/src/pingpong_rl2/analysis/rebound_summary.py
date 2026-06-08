@@ -11,7 +11,7 @@ def summarize_contacts(
     compare_apex_targets: bool,
 ) -> dict[str, object]:
     # contact row 전체를 useful/stable/trajectory/contact-frame 지표로 요약해 summary JSON에 넣는다.
-    # LINK: pingpong_rl2/scripts/run_ppo_rebound_analysis.py:762
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_rebound_analysis.py:762
     selected_error_key = f"projected_apex_xy_error_{selected_apex_target}"
     if not contact_rows:
         # contact가 없는 run도 dashboard/비교 스크립트가 같은 key set을 읽도록 0값 schema를 반환한다.
@@ -334,7 +334,7 @@ def summarize_contacts(
 
 def summarize_terminal_contacts(contact_rows: list[dict[str, object]]) -> dict[str, object]:
     # episode별 마지막 contact만 뽑아 실패 직전의 apex/속도 특성을 별도로 본다.
-    # LINK: pingpong_rl2/scripts/run_ppo_rebound_analysis.py:762
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_rebound_analysis.py:762
     if not contact_rows:
         return {
             "episodes_with_contacts": 0,
@@ -400,7 +400,7 @@ def summarize_episode_apex_targets(
     compare_apex_targets: bool,
 ) -> dict[str, object]:
     # episode 성공 횟수와 첫 contact의 projected apex target error를 연결해 target 후보를 평가한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/analysis/rebound_metrics.py:199
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/analysis/rebound_metrics.py:199
     episode_useful_bounces: dict[int, int] = {
         int(row["episode"]): int(row.get("useful_bounces", 0))
         for row in episode_rows
@@ -479,7 +479,7 @@ def summarize_episode_next_intercepts(
     contact_rows: list[dict[str, object]],
 ) -> dict[str, object]:
     # 첫 contact 이후 next-intercept error/easy score가 episode 성공 개수와 어떻게 갈리는지 비교한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/analysis/rebound_metrics.py:54
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/analysis/rebound_metrics.py:54
     episode_useful_bounces: dict[int, int] = {
         int(row["episode"]): int(row.get("useful_bounces", 0))
         for row in episode_rows
@@ -591,7 +591,7 @@ def summarize_episode_outgoing_velocities(
     contact_rows: list[dict[str, object]],
 ) -> dict[str, object]:
     # 모든 contact의 outgoing velocity error를 episode 성공 그룹별로 나눠 rebound 품질을 비교한다.
-    # LINK: pingpong_rl2/scripts/run_ppo_rebound_analysis.py:297
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_rebound_analysis.py:297
     episode_useful_bounces: dict[int, int] = {
         int(row["episode"]): int(row.get("useful_bounces", 0))
         for row in episode_rows

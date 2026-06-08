@@ -52,7 +52,7 @@ _TRAJECTORY_MATCH_ERROR_SCALE = 1.0
 
 class PingPongKeepUpEnv:
     # MuJoCo sim, racket controller, reward/termination, observation/action 해석을 묶은 RL용 원본 env다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:17
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:17
     def __init__(
         self,
         sim: PingPongSim | None = None,
@@ -230,7 +230,7 @@ class PingPongKeepUpEnv:
         contact_frame_low_apex_recovery_velocity_max: float = 0.0,
     ) -> None:
         # 생성자 인자는 CLI/env_config에서 온 실험 설정이며, 여기서 타입/기본값을 runtime 상태로 고정한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:96
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:96
         if sim is not None and scene_path is not None:
             raise ValueError("scene_path can only be provided when sim is None.")
         self.sim = PingPongSim(scene_path=scene_path) if sim is None else sim
@@ -1254,7 +1254,7 @@ class PingPongKeepUpEnv:
                     "the ramped strike experiment assumes neutral tilt outside the strike window."
                 )
         # controller는 env target pose/velocity를 7축 arm joint target으로 변환하는 실제 제어 레이어다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/controllers/ee_pose_controller.py:1
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/controllers/ee_pose_controller.py:1
         self.controller = RacketCartesianController(
             self.sim,
             position_gain=self.controller_position_gain,
@@ -1281,7 +1281,7 @@ class PingPongKeepUpEnv:
             dtype=float,
         )
         # action_mode가 길어질수록 위치 residual 뒤에 tilt/velocity/apex/tracking residual 슬롯을 붙인다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/envs/action_modes.py:1
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/action_modes.py:1
         if self.action_mode in _TILT_ACTION_MODES:
             tilt_action_limit = np.full(2, self.tilt_action_limit, dtype=float)
             self.action_high = np.concatenate([position_action_limit, tilt_action_limit])
@@ -1341,7 +1341,7 @@ class PingPongKeepUpEnv:
         self.action_low = -self.action_high.copy()
         self.action_size = int(self.action_high.shape[0])
         # observation layout은 옵션 플래그와 action_mode를 기준으로 PPO 입력 벡터의 slice 계약을 만든다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/envs/observation_layout.py:1
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/observation_layout.py:1
         self._observation_components, self._observation_slices, self.observation_size = build_observation_layout(
             self.action_mode,
             self.include_velocity_domain_observation,
@@ -1383,7 +1383,7 @@ class PingPongKeepUpEnv:
 
     def observation(self) -> np.ndarray:
         # 기본 관측은 robot/racket/ball 상태와 예측 intercept를 담고, 옵션별 context를 뒤에 덧붙인다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/envs/observation_layout.py:1
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/observation_layout.py:1
         ball_relative_position = self.sim.ball_position - self.sim.racket_position
         predicted_intercept_time = self._predicted_intercept_time()
         predicted_intercept_relative_xy = (
@@ -1447,7 +1447,7 @@ class PingPongKeepUpEnv:
         ball_xy_offset: Sequence[float] | None = None,
     ) -> tuple[np.ndarray, dict[str, object]]:
         # reset 분포에서 공 위치/속도를 뽑고 episode-local contact/reward 상태를 모두 초기화한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/training/curriculum.py:114
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/curriculum.py:114
         spawn_height = self._sample_reset_ball_height() if ball_height is None else float(ball_height)
         spawn_velocity = self._sample_reset_velocity() if ball_velocity is None else np.asarray(ball_velocity, dtype=float)
         spawn_angular_velocity = (
@@ -1508,7 +1508,7 @@ class PingPongKeepUpEnv:
 
     def step(self, action: Sequence[float]) -> tuple[np.ndarray, float, bool, bool, dict[str, object]]:
         # policy action을 action_mode별 target/residual 명령으로 해석하고 limit 안으로 클립한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:155
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:155
         action_array = np.asarray(action, dtype=float)
         if action_array.shape != (self.action_size,):
             raise ValueError(f"EE delta action must have shape ({self.action_size},), got {action_array.shape}.")
@@ -1566,7 +1566,7 @@ class PingPongKeepUpEnv:
             )
             self.controller.set_target_tilt(next_target_tilt)
         # controller guard/velocity/clearance를 적용한 joint target으로 MuJoCo를 한 control step 진행한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/envs/pingpong_sim.py:365
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/pingpong_sim.py:365
         safe_target_position = self._guarded_target_position(requested_target_position)
         contact_frame_intercept_velocity_target = self._contact_frame_intercept_velocity_target(safe_target_position)
         contact_frame_lateral_brake_velocity = self._contact_frame_lateral_brake_velocity(safe_target_position)
@@ -1634,7 +1634,7 @@ class PingPongKeepUpEnv:
         phase_name = self._phase_name()
 
         # reward_terms는 분석과 디버깅을 위해 항목별로 보존하고, 실제 reward는 단순 합으로 반환한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/analysis/rebound_summary.py:7
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/analysis/rebound_summary.py:7
         reward_terms = self._reward_terms(
             failure_reason,
             success_reason,
@@ -1657,7 +1657,7 @@ class PingPongKeepUpEnv:
         if truncated and self.successful_bounce_count > 0:
             episode_success_reason = "keepup_time_limit"
         # info에는 reward 원인, contact trace, planner/controller state를 모두 담아 분석 스크립트가 재사용한다.
-        # LINK: pingpong_rl2/scripts/run_ppo_rebound_analysis.py:271
+        # LINK: mujoco/pingpong_rl2/scripts/run_ppo_rebound_analysis.py:271
         info: dict[str, object] = {
             "failure_reason": failure_reason,
             "robot_body_contact_name": robot_body_contact_name,
@@ -1877,7 +1877,7 @@ class PingPongKeepUpEnv:
 
     def training_config(self) -> dict[str, object]:
         # 학습 당시 env 설정을 JSON-friendly 형태로 저장해 평가/분석에서 같은 환경을 복원한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:186
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:186
         return {
             "scene_path": self.scene_path,
             "action_mode": self.action_mode,
@@ -2084,7 +2084,7 @@ class PingPongKeepUpEnv:
         reset_ball_angular_velocity_range: float | None = None,
     ) -> dict[str, object]:
         # curriculum callback이 학습 중 reset 난이도만 바꿀 수 있게 reset 관련 field만 업데이트한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/training/curriculum.py:114
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/curriculum.py:114
         if reset_xy_range is not None:
             parsed_xy_range = float(reset_xy_range)
             if parsed_xy_range < 0.0:

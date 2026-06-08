@@ -12,7 +12,7 @@ from pingpong_rl2.utils.paths import SCENE_XML_PATH, resolve_input_path
 
 class PingPongSim:
     # MuJoCo scene을 로드하고 KeepUp env가 자주 쓰는 body/site/geom id와 home state를 캐시한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
     def __init__(self, scene_path: Path | str | None = None, control_dt: float = DEFAULT_CONTROL_DT) -> None:
         scene_file = resolve_input_path(Path(scene_path)) if scene_path is not None else SCENE_XML_PATH
         self.scene_path = scene_file.resolve()
@@ -217,7 +217,7 @@ class PingPongSim:
     @classmethod
     def _empty_contact_trace(cls) -> dict[str, object]:
         # contact가 없었던 step도 같은 CSV schema를 갖도록 모든 trace field를 None으로 초기화한다.
-        # LINK: pingpong_rl2/scripts/run_ppo_rebound_analysis.py:297
+        # LINK: mujoco/pingpong_rl2/scripts/run_ppo_rebound_analysis.py:297
         contact_trace: dict[str, object] = {
             "contact_observed": False,
             "contact_active_at_step_start": False,
@@ -370,7 +370,7 @@ class PingPongSim:
         contact_geoms: tuple[str, str] = ("ball_geom", "racket_head"),
     ) -> dict[str, object]:
         # substep마다 접촉을 추적해 접촉 직전/직후 속도와 MuJoCo contact normal을 분석용으로 남긴다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:1509
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:1509
         if joint_targets is not None:
             self.set_arm_joint_targets(joint_targets, gripper_target)
 

@@ -29,7 +29,7 @@ def solve_ballistic_times(
     max_time: float,
 ) -> list[float]:
     # 등가속도 z축 운동 방정식을 풀어 target_z를 통과하는 양의 시간 후보를 구한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2562
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2562
     quadratic_a = 0.5 * gravity_z
     quadratic_b = velocity_z
     quadratic_c = start_z - target_z
@@ -61,7 +61,7 @@ def compute_next_intercept_metrics(
     strike_zone_xy_radius: float,
 ) -> dict[str, object]:
     # contact 직후 속도로 다음 descending strike plane 교차점과 easy-next-ball 점수를 추정한다.
-    # LINK: pingpong_rl2/scripts/run_ppo_rebound_analysis.py:245
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_rebound_analysis.py:245
     metrics: dict[str, object] = {
         "next_intercept_target_z": None,
         "next_intercept_time": None,
@@ -164,7 +164,7 @@ def compute_contact_quality_metrics(
     racket_face_normal: np.ndarray | None,
 ) -> dict[str, object]:
     # racket face normal 기준 상대속도를 normal/tangential 성분으로 나눠 접촉 품질을 본다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/pingpong_sim.py:365
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/pingpong_sim.py:365
     metrics: dict[str, object] = {
         "contact_relative_speed_norm": None,
         "contact_normal_relative_speed": None,
@@ -203,7 +203,7 @@ def apex_target_xy_candidates(
     racket_position_xy: np.ndarray,
 ) -> dict[str, np.ndarray]:
     # projected apex XY error를 여러 target 기준으로 비교할 수 있게 후보 좌표를 모은다.
-    # LINK: pingpong_rl2/scripts/run_ppo_rebound_analysis.py:297
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_rebound_analysis.py:297
     candidates: dict[str, np.ndarray] = {
         "racket_home": np.asarray(racket_home_xy, dtype=float)[:2],
         "racket_position": np.asarray(racket_position_xy, dtype=float)[:2],

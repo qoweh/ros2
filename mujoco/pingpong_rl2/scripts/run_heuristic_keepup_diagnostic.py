@@ -255,7 +255,7 @@ def write_csv(file_path: Path, rows: list[dict[str, object]]) -> None:
 
 def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
     # diagnostic CLI 옵션을 학습 env 생성자 kwargs로 바꿔 heuristic과 PPO env를 같은 계약으로 비교한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:96
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:96
     env_kwargs: dict[str, object] = {
         "action_mode": args.action_mode,
         "ball_height": args.ball_height,
@@ -335,8 +335,8 @@ def build_env_kwargs(args: argparse.Namespace) -> dict[str, object]:
 
 def main() -> None:
     # hand-coded heuristic baseline을 Gym env에서 실행해 PPO 없이 가능한 성능 상한/실패 원인을 본다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:17
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:17
     args = parse_args()
     output_dir = args.output_dir or (ROOT / "artifacts" / "benchmarks" / args.analysis_name)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -414,7 +414,7 @@ def main() -> None:
 
     try:
         # episode loop: heuristic action을 적용하고 contact event마다 outgoing/apex/intercept 지표를 축적한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
         for episode_index in range(args.episodes):
             observation, _ = env.reset(seed=args.seed + episode_index)
             del observation

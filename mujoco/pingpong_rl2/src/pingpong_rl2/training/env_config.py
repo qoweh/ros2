@@ -9,7 +9,7 @@ from pingpong_rl2.utils import resolve_input_path
 
 def apply_env_preset(args: argparse.Namespace) -> str:
     # preset 값은 사용자가 직접 바꾼 CLI 값과 충돌하지 않을 때만 args에 주입한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/presets.py:1
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/presets.py:1
     if args.preset is None:
         return "manual"
     if args.preset not in _ENV_PRESETS:
@@ -32,7 +32,7 @@ def apply_env_preset(args: argparse.Namespace) -> str:
 
 def resolve_tilt_profile(args: argparse.Namespace) -> str:
     # tilt action이 없는 mode는 tilt 관련 CLI 옵션을 비활성 프로필로 고정한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/action_modes.py:1
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/action_modes.py:1
     if args.action_mode not in (
         "position_tilt",
         "position_strike_tilt",
@@ -55,7 +55,7 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
         return profile_name
 
     # named profile은 action limit, target tilt limit, tilt regularization 기본값을 함께 채운다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/presets.py:213
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/presets.py:213
     profile = _TILT_PROFILES[profile_name]
     if args.tilt_action_limit is None:
         args.tilt_action_limit = float(profile["tilt_action_limit"])
@@ -72,7 +72,7 @@ def resolve_tilt_profile(args: argparse.Namespace) -> str:
 
 def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
     # policy log_std 스케일링에서 tilt action limit과 실제 target tilt limit의 비율을 참고한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/policy_init.py:31
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/policy_init.py:31
     if (
         args.action_mode
         not in (
@@ -95,7 +95,7 @@ def tilt_limit_ratio(args: argparse.Namespace) -> float | None:
 
 def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
     # 모든 환경이 공유하는 reset 분포, 목표 높이, action mode 기본 인자를 먼저 구성한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
     env_kwargs: dict[str, object] = {
         "action_mode": args.action_mode,
         "ball_height": args.ball_height,
@@ -177,7 +177,7 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
     if args.contact_frame_base_tilt_residual is not None:
         env_kwargs["contact_frame_base_tilt_residual"] = tuple(args.contact_frame_base_tilt_residual)
     # contact-frame 계열은 world delta 대신 접촉 좌표계/속도 residual로 policy action을 해석한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2144
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2144
     if args.contact_frame_apex_lift_gain is not None:
         env_kwargs["contact_frame_apex_lift_gain"] = args.contact_frame_apex_lift_gain
     if args.contact_frame_apex_lift_max is not None:
@@ -268,7 +268,7 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
     if args.contact_frame_tilt_ramp_time is not None:
         env_kwargs["contact_frame_tilt_ramp_time"] = args.contact_frame_tilt_ramp_time
     # controller override는 MuJoCo arm target을 실제 joint target으로 바꾸는 하위 제어기에 전달된다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/controllers/ee_pose_controller.py:1
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/controllers/ee_pose_controller.py:1
     if args.controller_orientation_gain is not None:
         env_kwargs["controller_orientation_gain"] = args.controller_orientation_gain
     if args.controller_max_orientation_step is not None:
@@ -306,7 +306,7 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
     if args.contact_frame_action_penalty_weight is not None:
         env_kwargs["contact_frame_action_penalty_weight"] = args.contact_frame_action_penalty_weight
     # 접촉 품질/다음 인터셉트 보상은 분석 스크립트가 보는 contact row 지표와 이름을 맞춘다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/analysis/rebound_metrics.py:54
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/analysis/rebound_metrics.py:54
     if args.next_intercept_xy_error_penalty_weight is not None:
         env_kwargs["next_intercept_xy_error_penalty_weight"] = args.next_intercept_xy_error_penalty_weight
     if args.post_contact_lateral_velocity_penalty_weight is not None:
@@ -416,7 +416,7 @@ def env_kwargs_from_args(args: argparse.Namespace) -> dict[str, object]:
     if args.next_intercept_max_time is not None:
         env_kwargs["next_intercept_max_time"] = args.next_intercept_max_time
     # observation 확장 플래그는 observation_layout과 실제 observation 벡터 길이를 함께 바꾼다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/observation_layout.py:1
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/observation_layout.py:1
     if args.include_velocity_domain_observation:
         env_kwargs["include_velocity_domain_observation"] = True
     if args.include_task_phase_observation:

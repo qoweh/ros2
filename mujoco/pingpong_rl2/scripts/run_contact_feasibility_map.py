@@ -172,8 +172,8 @@ def evaluate_configuration(
     strike_time_horizon: float,
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
     # 각 후보 설정은 PPO가 아니라 HeuristicKeepUpPolicy로 먼저 feasibility를 검사한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:17
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:17
     env = PingPongKeepUpGymEnv(**env_kwargs)
     policy = HeuristicKeepUpPolicy(
         return_blend=return_blend,
@@ -455,7 +455,7 @@ def main() -> None:
 
     pass_row = best_finalist_row if best_finalist_row is not None else best_coarse_row
     # 결과는 summary JSON과 두 CSV(config별 요약, contact별 원자료)로 저장된다.
-    # LINK: pingpong_rl2/scripts/run_heuristic_keepup_diagnostic.py:242
+    # LINK: mujoco/pingpong_rl2/scripts/run_heuristic_keepup_diagnostic.py:242
     feasibility_summary = {
         "analysis_name": args.analysis_name,
         "grid": {

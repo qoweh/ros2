@@ -19,7 +19,7 @@ def collect_heuristic_bootstrap_dataset(
     sample_mode: str,
 ) -> dict[str, object]:
     # hand-coded policy rollout에서 충분히 성공한 episode만 모아 PPO actor 사전학습 샘플을 만든다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
     if episodes <= 0:
         return {
             "requested_episodes": episodes,
@@ -158,7 +158,7 @@ def bootstrap_actor_from_dataset(
     seed: int,
 ) -> dict[str, object]:
     # PPO rollout 전에 policy mean action을 heuristic action에 맞추는 supervised warm start다.
-    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:162
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:162
     if epochs <= 0 or observations.size == 0 or actions.size == 0:
         return {
             "epochs": epochs,

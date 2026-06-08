@@ -64,7 +64,7 @@ def explicit_cli_destinations(parser: argparse.ArgumentParser, argv: Sequence[st
 
 def load_training_config(path: Path) -> dict[str, object]:
     # 저장된 training_summary 전체 또는 args 객체만 담은 JSON을 모두 config 입력으로 허용한다.
-    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:258
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:258
     resolved_path = resolve_input_path(path)
     if not resolved_path.is_file():
         raise FileNotFoundError(f"Training config file not found: {resolved_path}")
@@ -123,10 +123,10 @@ def apply_config_overrides(args: argparse.Namespace, overrides: Sequence[str]) -
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     # 학습 스크립트가 쓰는 CLI 전체를 정의하고, 마지막에 config-file 값을 병합한다.
-    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:64
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:64
     parser = argparse.ArgumentParser(description="Train the minimal pingpong_rl2 PPO baseline.")
     # config/preset/run 경로 옵션은 실제 학습 설정이 확정되기 전 가장 먼저 해석된다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:10
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:10
     parser.add_argument(
         "--config-file",
         type=Path,
@@ -192,7 +192,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Optional MuJoCo scene XML. Presets may use this for geometry A/B variants.",
     )
     # heuristic bootstrap은 PPO 업데이트 전에 hand-coded policy를 모방해 actor를 warm start한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/bootstrap.py:12
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/bootstrap.py:12
     parser.add_argument(
         "--bootstrap-heuristic-episodes",
         type=int,
@@ -283,7 +283,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     # tilt profile은 tilt action mode의 limit/regularization 묶음을 편의상 한 번에 고른다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:33
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:33
     parser.add_argument(
         "--tilt-profile",
         type=str,
@@ -292,7 +292,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Convenience preset for position_tilt limits and regularization. 'auto' resolves to 'early'.",
     )
     # reset 분포와 curriculum 옵션은 vector env 전체에 같은 난이도 스케줄을 적용한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/curriculum.py:136
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/curriculum.py:136
     parser.add_argument("--ball-height", type=float, default=DEFAULT_BALL_HEIGHT)
     parser.add_argument("--reset-ball-height-range", type=float, default=DEFAULT_RESET_BALL_HEIGHT_RANGE)
     parser.add_argument(
@@ -403,7 +403,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Upper XYZ target clamp relative to the controller anchor.",
     )
     # tilt/strike 보정 옵션은 position 계열 action을 racket target과 face tilt로 확장한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:33
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:33
     parser.add_argument("--tracking-during-contact-scale", type=float, default=None)
     parser.add_argument("--useful-contact-outgoing-x-penalty-weight", type=float, default=None)
     parser.add_argument("--desired-outgoing-ball-velocity-x", type=float, default=None)
@@ -493,7 +493,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Optional extra follow-up lift boost applied only after the first useful bounce.",
     )
     # contact-frame 옵션은 policy action을 접촉 좌표계 residual과 속도 residual로 해석하게 만든다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2144
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2144
     parser.add_argument("--contact-frame-base-strike-z-boost", type=float, default=None)
     parser.add_argument("--contact-frame-base-strike-z-offset", type=float, default=None)
     parser.add_argument("--contact-frame-base-strike-time-horizon", type=float, default=None)
@@ -563,7 +563,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--contact-frame-trajectory-tilt-deadband", type=float, default=None)
     parser.add_argument("--contact-frame-tilt-ramp-time", type=float, default=None)
     # controller 옵션은 목표 end-effector pose를 MuJoCo joint target으로 바꾸는 내부 제어기를 조율한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/controllers/ee_pose_controller.py:1
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/controllers/ee_pose_controller.py:1
     parser.add_argument("--controller-orientation-gain", type=float, default=None)
     parser.add_argument("--controller-max-orientation-step", type=float, default=None)
     parser.add_argument("--controller-velocity-gain", type=float, default=None)
@@ -606,7 +606,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--contact-frame-centering-tilt-deadband", type=float, default=None)
     parser.add_argument("--contact-frame-action-penalty-weight", type=float, default=None)
     # 접촉 품질/반동 reward 옵션은 분석 CSV의 contact 지표와 같은 이름 계열을 공유한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/analysis/rebound_metrics.py:54
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/analysis/rebound_metrics.py:54
     parser.add_argument("--next-intercept-xy-error-penalty-weight", type=float, default=None)
     parser.add_argument("--post-contact-lateral-velocity-penalty-weight", type=float, default=None)
     parser.add_argument("--contact-xy-error-penalty-weight", type=float, default=None)
@@ -808,7 +808,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--next-intercept-max-time", type=float, default=None)
     # observation 확장 옵션은 policy 입력 벡터에 phase, contact, next-intercept 정보를 추가한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/observation_layout.py:1
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/observation_layout.py:1
     parser.add_argument(
         "--include-velocity-domain-observation",
         action="store_true",
@@ -843,7 +843,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--eval-episodes", type=int, default=5)
     # evaluation과 policy 초기화 옵션은 학습 종료 후 검증 및 residual action 탐색 폭을 제어한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/policy_init.py:63
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/policy_init.py:63
     parser.add_argument(
         "--evaluation-step-limit",
         type=int,

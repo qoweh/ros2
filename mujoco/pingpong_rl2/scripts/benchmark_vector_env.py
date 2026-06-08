@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     # 학습 전에 vector env step 처리량을 재서 n_envs/vector_mode 선택을 점검한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/vector_env.py:25
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/vector_env.py:25
     args = parse_args()
     vector_env = make_gym_vector_env(num_envs=args.n_envs, vector_mode=args.vector_mode)
     try:

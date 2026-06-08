@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 # rebound 분석에서 학습 summary의 env_config 위에 바로 덮어쓸 수 있는 단순 스칼라 옵션들이다.
-# LINK: pingpong_rl2/scripts/run_ppo_rebound_analysis.py:214
+# LINK: mujoco/pingpong_rl2/scripts/run_ppo_rebound_analysis.py:214
 DIRECT_ENV_OVERRIDE_FIELDS = (
     "min_easy_next_ball_score_for_success",
     "post_contact_return_z_offset",
@@ -80,7 +80,7 @@ def apply_rebound_env_overrides(
     env_kwargs: dict[str, object],
 ) -> dict[str, object]:
     # 분석 CLI에서 명시한 반동/접촉 관련 옵션만 저장 모델의 env_kwargs 위에 덧씌운다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:186
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:186
     for field_name in DIRECT_ENV_OVERRIDE_FIELDS:
         value = getattr(args, field_name)
         if value is not None:

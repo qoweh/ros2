@@ -40,7 +40,7 @@ from pingpong_rl2.utils.paths import PPO_RUNS_ROOT, resolve_input_path
 
 def default_run_name_for_action_mode(action_mode: str, smoke: bool = False) -> str:
     # action_mode와 smoke 여부만으로 학습 산출물 디렉터리의 기본 이름을 결정한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/defaults.py:32
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/defaults.py:32
     smoke_run_names = {
         "position": SMOKE_PPO_RUN_NAME,
         "position_strike": SMOKE_PPO_POSITION_STRIKE_RUN_NAME,
@@ -106,7 +106,7 @@ def resolve_requested_run_name(
     smoke: bool = False,
 ) -> str:
     # CLI에서 run_name을 생략하면 action_mode별 기본 이름을 쓰고, version suffix를 마지막에 붙인다.
-    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:86
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:86
     base_run_name = default_run_name_for_action_mode(action_mode, smoke=smoke) if run_name is None else run_name
     return compose_run_name(base_run_name, run_version)
 
@@ -148,7 +148,7 @@ def resolve_saved_model_path(
     prefer_best_model: bool = False,
 ) -> Path:
     # 분석/뷰어 스크립트의 모델 선택 규칙: 명시 경로, run_name, 기본 후보 순서로 좁힌다.
-    # LINK: pingpong_rl2/scripts/run_ppo_rebound_analysis.py:221
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_rebound_analysis.py:221
     if model_path is not None:
         return resolve_input_path(model_path)
     if run_name is not None:
@@ -172,7 +172,7 @@ def load_training_summary(summary_path: Path) -> dict[str, object] | None:
 
 def load_env_config_for_model(model_path: Path) -> dict[str, object] | None:
     # 학습 summary에 저장된 env_config가 있으면 평가/분석에서 학습 환경을 그대로 복원한다.
-    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:258
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:258
     for summary_path in training_summary_candidates_for_model(model_path):
         summary = load_training_summary(summary_path)
         if summary is None:
@@ -200,7 +200,7 @@ def resolve_env_kwargs_for_model(
     success_velocity_threshold: float | None = None,
 ) -> dict[str, object]:
     # 저장 모델의 env_config를 기준으로 깔고, 분석 CLI에서 명시한 값만 덮어쓴다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:96
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:96
     env_kwargs: dict[str, object] = {
         "action_mode": "position",
         "ball_height": DEFAULT_BALL_HEIGHT,

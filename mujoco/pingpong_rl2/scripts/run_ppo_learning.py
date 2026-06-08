@@ -59,14 +59,14 @@ from pingpong_rl2.utils import resolve_input_path, resolve_requested_run_name
 
 def main() -> None:
     # CLI -> preset -> config override 순서로 학습 설정을 확정한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/cli_config.py:124
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:10
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/cli_config.py:124
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:10
     args = parse_args()
     resolved_preset = apply_env_preset(args)
     apply_config_overrides(args, args.config_overrides)
     if args.smoke:
         # smoke 모드는 전체 파이프라인 확인용이라 시간/샘플 수만 작게 줄인다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/defaults.py:1
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/defaults.py:1
         args.total_timesteps = SMOKE_PPO_TOTAL_TIMESTEPS
         args.n_steps = SMOKE_PPO_N_STEPS
         args.batch_size = SMOKE_PPO_BATCH_SIZE
@@ -81,8 +81,8 @@ def main() -> None:
             args.bootstrap_followup_epochs = 1
 
     # 실행 이름, tilt profile, 배치 크기처럼 산출물과 SB3가 함께 참조하는 값을 검증한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:101
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:33
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:101
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:33
     resolved_run_name = resolve_requested_run_name(
         args.run_name,
         args.run_version,
@@ -95,9 +95,9 @@ def main() -> None:
         raise ValueError(f"batch-size must be <= n_steps * n_envs ({rollout_size}), got {args.batch_size}.")
 
     # run directory와 환경 kwargs를 만들고, 실제 Gym env에서 resolved training_config를 뽑아 기록한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/run_paths.py:7
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:96
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:17
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/run_paths.py:7
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:96
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/gym_env.py:17
     run_dir = build_run_dir(resolved_run_name, args.output_dir)
     training_mode, starting_model_path = resolve_starting_model(args, run_dir, resolved_run_name)
     env_kwargs = env_kwargs_from_args(args)
@@ -108,16 +108,16 @@ def main() -> None:
         config_env.close()
 
     # PPO 학습은 여러 환경을 병렬로 돌리고 VecMonitor가 episode reward/length 로그를 남긴다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/vector_env.py:183
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/curriculum.py:136
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/vector_env.py:183
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/curriculum.py:136
     vec_env = make_sb3_async_vector_env(num_envs=args.n_envs, env_kwargs=env_kwargs, seed=args.seed)
     monitor_path = build_session_monitor_path(run_dir)
     monitored_env = VecMonitor(venv=vec_env, filename=str(monitor_path))
     reset_xy_curriculum_callback = build_reset_xy_curriculum_callback(args)
 
     # 새 학습이면 PPO를 생성하고, resume이면 저장된 policy를 로드해 새 monitored env에 붙인다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/policy_init.py:63
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/run_paths.py:22
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/policy_init.py:63
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/run_paths.py:22
     scaled_log_std_summary: dict[str, object] | None = None
     if starting_model_path is None:
         policy_kwargs = None if args.log_std_init is None else {"log_std_init": float(args.log_std_init)}
@@ -157,8 +157,8 @@ def main() -> None:
     bootstrap_summary: dict[str, object] | None = None
     try:
         # 선택적 heuristic bootstrap: PPO 자체가 아니라 hand-coded policy로 actor를 사전 모방학습한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/training/bootstrap.py:12
-        # LINK: pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/bootstrap.py:12
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/controllers/heuristic_keepup.py:49
         if starting_model_path is None and args.bootstrap_heuristic_episodes > 0 and args.bootstrap_epochs > 0:
             bootstrap_dataset = collect_heuristic_bootstrap_dataset(
                 env_kwargs=env_kwargs,
@@ -233,8 +233,8 @@ def main() -> None:
                 bootstrap_summary["followup"] = None
 
         # 여기서 실제 PPO 업데이트가 진행되고, 끝난 뒤 모델 저장과 deterministic 평가를 수행한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/training/policy_init.py:10
-        # LINK: pingpong_rl2/src/pingpong_rl2/training/evaluation.py:12
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/policy_init.py:10
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/evaluation.py:12
         completed_timesteps = learn_model(
             model=model,
             total_timesteps=args.total_timesteps,
@@ -254,7 +254,7 @@ def main() -> None:
         monitored_env.close()
 
     # 이후 평가/분석 스크립트가 재사용할 수 있도록 config, env_config, evaluation을 JSON으로 보존한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:186
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:186
     summary = {
         "run_name": resolved_run_name,
         "training_mode": training_mode,

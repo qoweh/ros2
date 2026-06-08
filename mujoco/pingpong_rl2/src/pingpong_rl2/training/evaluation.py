@@ -17,7 +17,7 @@ def evaluate_model(
     evaluation_step_limit: int | None = None,
 ) -> dict[str, object]:
     # 학습 직후 deterministic policy를 별도 env에서 굴려 summary JSON에 들어갈 성공률 지표를 만든다.
-    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:238
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:238
     env = PingPongKeepUpGymEnv(**env_kwargs)
     if evaluation_step_limit is None:
         # env episode가 무제한이면 평가가 멈추도록 별도 safety cap을 둔다.

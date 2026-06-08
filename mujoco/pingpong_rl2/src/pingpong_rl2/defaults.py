@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 # MuJoCo 제어 주기와 KeepUp 환경의 기본 물리/종료 기준을 한곳에 둔다.
-# LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
+# LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
 DEFAULT_CONTROL_DT = 0.02
 DEFAULT_BALL_HEIGHT = 0.50
 DEFAULT_ACTION_LIMIT = 0.04
@@ -11,7 +11,7 @@ DEFAULT_MAX_EPISODE_STEPS = 600
 DEFAULT_SUCCESS_VELOCITY_THRESHOLD = 0.5
 
 # reset 분포 기본값은 CLI, curriculum, 재현 평가가 같은 초기 조건을 공유하도록 맞춘다.
-# LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:96
+# LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:96
 DEFAULT_RESET_XY_RANGE = 0.06
 DEFAULT_RESET_BALL_HEIGHT_RANGE = 0.0
 DEFAULT_RESET_VELOCITY_XY_RANGE = 0.01
@@ -30,7 +30,7 @@ DEFAULT_BOUNCE_EPISODES = 5
 DEFAULT_BOUNCE_MAX_STEPS = 1200
 
 # PPO 기본 하이퍼파라미터와 action_mode별 run 이름은 경로/요약 파일 이름의 기준이 된다.
-# LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:41
+# LINK: mujoco/pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:41
 DEFAULT_PPO_TOTAL_TIMESTEPS = 20_000
 DEFAULT_PPO_N_STEPS = 256
 DEFAULT_PPO_BATCH_SIZE = 256
@@ -49,7 +49,7 @@ DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_RESIDUAL_RUN_NAME 
 DEFAULT_PPO_POSITION_CONTACT_FRAME_VELOCITY_TILT_LATERAL_APEX_TRACKING_RESIDUAL_RUN_NAME = "pmk_cfvtlatr"
 
 # smoke run은 전체 파이프라인 검사용이라 이름과 rollout 크기를 작게 분리한다.
-# LINK: pingpong_rl2/scripts/run_ppo_learning.py:70
+# LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:70
 SMOKE_PPO_TOTAL_TIMESTEPS = 1_024
 SMOKE_PPO_N_STEPS = 64
 SMOKE_PPO_BATCH_SIZE = 64
@@ -75,7 +75,7 @@ LEGACY_PPO_RUN_NAMES = (
 
 def default_ppo_model_candidates(ppo_runs_root: Path) -> list[Path]:
     # 명시 모델이 없을 때 최신 기본 action_mode 이름부터 legacy 이름까지 순서대로 탐색한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:144
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:144
     candidate_names = (
         DEFAULT_PPO_RUN_NAME,
         DEFAULT_PPO_POSITION_STRIKE_RUN_NAME,

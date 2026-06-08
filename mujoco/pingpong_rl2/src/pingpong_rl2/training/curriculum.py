@@ -8,7 +8,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 class ResetDistributionCurriculumCallback(BaseCallback):
     # PPO 학습 진행률에 맞춰 reset 분포를 좁은 시작 범위에서 목표 난이도까지 선형 확장한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2075
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:2075
     def __init__(
         self,
         *,
@@ -113,7 +113,7 @@ class ResetDistributionCurriculumCallback(BaseCallback):
 
     def _apply_distribution(self, distribution: dict[str, object]) -> None:
         # 동일 분포는 재적용하지 않고, VecEnv env_method로 모든 worker env에 동시에 전달한다.
-        # LINK: pingpong_rl2/src/pingpong_rl2/training/vector_env.py:167
+        # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/vector_env.py:167
         if self._last_applied_distribution is not None and self._same_distribution(
             distribution,
             self._last_applied_distribution,
@@ -135,7 +135,7 @@ class ResetDistributionCurriculumCallback(BaseCallback):
 
 def build_reset_xy_curriculum_callback(args: argparse.Namespace) -> ResetDistributionCurriculumCallback | None:
     # CLI에서 start/end를 생략한 축은 현재 최종 reset 값과 동일하게 두어 그 축은 고정한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/cli_config.py:330
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/cli_config.py:330
     if not args.reset_xy_curriculum_enabled:
         return None
     start_xy_range = args.reset_xy_range if args.reset_xy_curriculum_start is None else args.reset_xy_curriculum_start

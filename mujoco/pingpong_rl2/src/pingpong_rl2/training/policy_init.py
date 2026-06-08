@@ -15,7 +15,7 @@ def learn_model(
     callback: BaseCallback | None = None,
 ) -> int:
     # smoke/eval-only 실행도 같은 경로를 타도록 total_timesteps=0이면 learn을 건너뛴다.
-    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:238
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:238
     if total_timesteps < 0:
         raise ValueError(f"total_timesteps must be non-negative, got {total_timesteps}.")
     if total_timesteps > 0:
@@ -36,7 +36,7 @@ def scaled_action_log_std(
     max_std: float | None,
 ) -> np.ndarray:
     # action space limit의 일정 비율을 Gaussian std로 삼아 residual action 탐색 폭을 맞춘다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/env_config.py:73
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/env_config.py:73
     if ratio <= 0.0:
         raise ValueError(f"action-std-limit-ratio must be positive, got {ratio}.")
     if min_std is not None and min_std <= 0.0:
@@ -68,7 +68,7 @@ def initialize_scaled_policy_log_std(
     max_std: float | None,
 ) -> dict[str, object]:
     # SB3 policy의 log_std 파라미터를 action dimension별 limit 기반 값으로 직접 초기화한다.
-    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:141
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:141
     resolved_ratio = 0.35 if ratio is None else float(ratio)
     log_std = scaled_action_log_std(
         action_high=model.action_space.high,

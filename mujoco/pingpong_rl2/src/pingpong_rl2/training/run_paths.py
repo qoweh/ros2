@@ -6,7 +6,7 @@ from pingpong_rl2.utils import PPO_RUNS_ROOT, resolve_input_path, resolve_output
 
 def build_run_dir(run_name: str, output_dir: Path | None) -> Path:
     # output_dir가 없으면 표준 PPO runs root 아래에 run_name별 디렉터리를 만든다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:101
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/utils/ppo_runs.py:101
     if output_dir is None:
         run_dir = PPO_RUNS_ROOT / run_name
     else:
@@ -21,7 +21,7 @@ def default_model_path(run_dir: Path, run_name: str) -> Path:
 
 def resolve_starting_model(args: argparse.Namespace, run_dir: Path, resolved_run_name: str) -> tuple[str, Path | None]:
     # reset/resume/자동 이어학습 규칙을 한곳에서 결정해 main 학습 흐름을 단순하게 유지한다.
-    # LINK: pingpong_rl2/scripts/run_ppo_learning.py:122
+    # LINK: mujoco/pingpong_rl2/scripts/run_ppo_learning.py:122
     if args.reset_model and args.resume_from is not None:
         raise ValueError("--reset-model and --resume-from cannot be used together.")
 

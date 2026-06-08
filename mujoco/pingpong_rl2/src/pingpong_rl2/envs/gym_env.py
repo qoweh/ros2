@@ -9,14 +9,14 @@ from pingpong_rl2.envs.keepup_env import PingPongKeepUpEnv
 
 def _vector_safe_info(info: dict[str, object]) -> dict[str, object]:
     # Gymnasium vector env는 optional info에 mask를 붙이므로 None 값은 넘기기 전에 제거한다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/training/vector_env.py:66
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/training/vector_env.py:66
     """Drop absent optional values so Gymnasium vector env can mask them."""
     return {key: value for key, value in info.items() if value is not None}
 
 
 class PingPongKeepUpGymEnv(gym.Env[np.ndarray, np.ndarray]):
     # SB3/Gymnasium이 요구하는 observation/action space를 순수 KeepUp env 주변에 얇게 입힌다.
-    # LINK: pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
+    # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
     metadata = {"render_modes": []}
 
     def __init__(self, **env_kwargs: object) -> None:
