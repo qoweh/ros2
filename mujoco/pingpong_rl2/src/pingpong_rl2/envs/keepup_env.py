@@ -1341,6 +1341,8 @@ class PingPongKeepUpEnv:
         self.action_low = -self.action_high.copy()
         self.action_size = int(self.action_high.shape[0])
         # observation layout은 옵션 플래그와 action_mode를 기준으로 PPO 입력 벡터의 slice 계약을 만든다.
+        # slice 계약은 "flat observation vector에서 각 의미 있는 component가 어느 구간을 차지하는지"의 고정 약속이다.
+        # 저장된 policy는 이 순서와 길이를 기준으로 학습되므로 action_mode/관측 옵션을 바꾸면 호환성이 깨질 수 있다.
         # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/observation_layout.py:1
         self._observation_components, self._observation_slices, self.observation_size = build_observation_layout(
             self.action_mode,
@@ -1352,6 +1354,8 @@ class PingPongKeepUpEnv:
         )
         self._rng = np.random.default_rng()
         # reset 전에도 속성 접근이 가능하도록 episode-local counters와 residual action 상태를 초기화한다.
+        # Gym/SB3 wrapper, model catalog, training_config(), observation_slices 같은 코드가 첫 reset 전에도 env 속성을 읽는다.
+        # 여기서는 AttributeError를 막는 기본 0 상태만 만들고, 실제 episode 시작 상태는 reset()에서 다시 설정한다.
         self._spawn_ball_height_above_racket = self.ball_height
         self.step_count = 0
         self.contact_count = 0
@@ -1378,6 +1382,8 @@ class PingPongKeepUpEnv:
         return dict(self._observation_slices)
 
     def seed(self, seed: int | None = None) -> int | None:
+        # reset 분포와 노이즈를 재현 가능하게 만드는 RNG seed다.
+        # policy가 rollouts에서 reward를 보고 action을 학습하는 구조는 그대로라서 강화학습 성격이 사라지는 것은 아니다.
         self._rng = np.random.default_rng(seed)
         return seed
 

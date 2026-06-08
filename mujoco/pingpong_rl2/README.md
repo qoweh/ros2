@@ -100,6 +100,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
 
 ## 읽을 문서
 
+- `docs/control_flow_and_terms.md`: CLI 인자부터 로봇팔 제어까지의 흐름, 용어, action mode 시각화
 - `docs/report/00_index.md`: 전체 실험 보고서 인덱스
 - `docs/report/54_v32_17d_transfer_finetune_report.md`: 17D action transfer 기준점
 - `docs/model_evolution_to_v39.md`: v39까지 모델 진화 흐름

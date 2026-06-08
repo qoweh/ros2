@@ -9,6 +9,8 @@ from pingpong_rl2.envs.pingpong_sim import PingPongSim
 
 
 class RacketCartesianController:
+    # 라켓의 Cartesian 목표(position + face normal)를 7개 관절 목표값으로 바꾸는 differential IK controller.
+    # MuJoCo site Jacobian으로 "작은 관절 변화(delta_q)가 라켓 위치/자세를 얼마나 움직이는지"를 계산한다.
     def __init__(
         self,
         sim: PingPongSim,
@@ -310,6 +312,7 @@ class RacketCartesianController:
         return self._clip_vector_norm(clearance_delta, self._body_clearance_max_step)
 
     def compute_joint_targets(self) -> np.ndarray:
+        # 1) Cartesian task error: 라켓 site가 목표 위치/면 방향으로 가야 하는 작은 이동량을 만든다.
         current_position = self._sim.racket_position
         position_error = self._target_position - current_position
         error_norm = np.linalg.norm(position_error)
@@ -334,6 +337,8 @@ class RacketCartesianController:
         if orientation_error_norm > self._max_orientation_step:
             orientation_error = orientation_error * (self._max_orientation_step / orientation_error_norm)
 
+        # 2) Site Jacobian: MuJoCo가 현재 자세에서 라켓 site 기준의 position/rotation Jacobian을 채운다.
+        #    아래 6x7 행렬은 arm 7관절만 남긴 task Jacobian이고, 해는 damped least-squares로 구한다.
         mujoco.mj_jacSite(
             self._sim.model,
             self._sim.data,
@@ -353,10 +358,13 @@ class RacketCartesianController:
                 self._orientation_gain * orientation_error,
             ]
         )
+        # 3) delta_q = J^T (J J^T + lambda I)^-1 error.
+        #    엄밀한 analytic IK가 아니라 매 control step마다 작은 관절 변화량을 푸는 Jacobian 기반 IK다.
         task_metric = task_jacobian @ task_jacobian.T + self._damping * np.eye(6)
         task_inverse_left = np.linalg.solve(task_metric, task_jacobian)
         delta_q = task_jacobian.T @ np.linalg.solve(task_metric, task_error)
         nullspace_projector = np.eye(7) - task_jacobian.T @ task_inverse_left
+        # 4) nullspace 보정은 라켓 task를 최대한 유지하면서 posture/ball-body clearance를 보조로 맞춘다.
         delta_q = (
             delta_q
             + self._posture_nullspace_delta(nullspace_projector)

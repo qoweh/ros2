@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# action_mode는 PPO가 내는 flat action vector를 어떻게 해석할지 정하는 schema다.
+# 뒤쪽으로 갈수록 hand-coded contact-frame planner가 만든 기본 목표에 policy residual 슬롯을 더 많이 붙인다.
+# 자세한 슬롯/흐름 설명은 docs/control_flow_and_terms.md를 참조한다.
+
 ACTION_MODES = (
     "position",
     "position_strike",
