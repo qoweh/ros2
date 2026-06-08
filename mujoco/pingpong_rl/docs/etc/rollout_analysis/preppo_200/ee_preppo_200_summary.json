@@ -1,0 +1,110 @@
+{
+  "config": {
+    "episodes": 200,
+    "max_episode_steps": 300,
+    "ball_height": 0.22,
+    "ball_velocity": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "action": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "success_velocity_threshold": 0.5
+  },
+  "episode_counts": {
+    "episodes": 200,
+    "terminated": 200,
+    "truncated": 0,
+    "successes": 0,
+    "failures": 200,
+    "contacts": 1400
+  },
+  "success_reason_counts": {},
+  "failure_reason_counts": {
+    "ball_out_of_bounds": 200
+  },
+  "reward_sum_stats": {
+    "reward_total_sum": {
+      "count": 200,
+      "p50": 3.0837057033020714,
+      "p75": 3.0837057033020714,
+      "p90": 3.0837057033020714,
+      "max": 3.0837057033020714
+    },
+    "reward_height_sum": {
+      "count": 200,
+      "p50": 3.3337057033020714,
+      "p75": 3.3337057033020714,
+      "p90": 3.3337057033020714,
+      "max": 3.3337057033020714
+    },
+    "reward_distance_sum": {
+      "count": 200,
+      "p50": 0.0,
+      "p75": 0.0,
+      "p90": 0.0,
+      "max": 0.0
+    },
+    "reward_contact_sum": {
+      "count": 200,
+      "p50": 0.0,
+      "p75": 0.0,
+      "p90": 0.0,
+      "max": 0.0
+    },
+    "reward_success_sum": {
+      "count": 200,
+      "p50": 0.0,
+      "p75": 0.0,
+      "p90": 0.0,
+      "max": 0.0
+    },
+    "reward_failure_sum": {
+      "count": 200,
+      "p50": -0.25,
+      "p75": -0.25,
+      "p90": -0.25,
+      "max": -0.25
+    }
+  },
+  "reward_dominance": {
+    "zero_contact_reward_episodes": 200,
+    "zero_success_reward_episodes": 200,
+    "height_dominant_episodes": 200,
+    "survival_without_success_episodes": 200
+  },
+  "contact_velocity_stats": {
+    "ball_velocity_x": {
+      "count": 1400,
+      "p50": 0.13783191549004495,
+      "p75": 0.1753337349914655,
+      "p90": 0.333040868236283,
+      "max": 0.333040868236283
+    },
+    "ball_velocity_y": {
+      "count": 1400,
+      "p50": -0.012459521030233192,
+      "p75": -0.005466593735534214,
+      "p90": -0.00047059962587689343,
+      "max": -0.00047059962587689343
+    },
+    "ball_velocity_z": {
+      "count": 1400,
+      "p50": 0.46872525893852945,
+      "p75": 0.6444938380234448,
+      "p90": 1.7414758212813946,
+      "max": 1.7414758212813946
+    },
+    "ball_speed_norm": {
+      "count": 1400,
+      "p50": 0.50090880434211,
+      "p75": 0.6517848649397437,
+      "p90": 1.7424088983830077,
+      "max": 1.7424088983830077
+    }
+  }
+}

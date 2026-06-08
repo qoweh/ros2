@@ -1,0 +1,8 @@
+using device: cpu
+training...
+epoch: 1,   loss: 37162.4892
+epoch: 2,   loss: 4521.2212
+epoch: 3,   loss: 4702.8849
+epoch: 4,   loss: 3410.5488
+epoch: 5,   loss: 2298.7546
+runtime: 105.91 seconds

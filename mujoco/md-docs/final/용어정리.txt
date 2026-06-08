@@ -1,0 +1,409 @@
+문서에서 발표 때 설명이 필요한 생소한 용어들을 추려서 정리해볼게. 특히 MDP는 거의 반드시 질문이 나오는 핵심 개념이라 깊게 설명하겠다. (문서 기준 정리)  ￼
+
+1. MDP (Markov Decision Process)
+
+발표에서 가장 중요한 RL 용어.
+
+강화학습 문제를 수학적으로 정의하는 틀이다.
+
+구성요소:
+
+용어	의미	이 프로젝트
+State	현재 환경의 실제 상태	MuJoCo 내부 물리 상태 전체
+Observation	에이전트가 보는 정보	55D 입력 벡터
+Action	에이전트 행동	17D residual action
+Reward	행동에 대한 점수	keep-up 성공 정도
+Transition	상태 변화 규칙	MuJoCo 물리 시뮬레이션
+Policy	행동 결정 함수	PPO로 학습된 신경망
+Episode	한 번의 게임	공을 계속 치는 시도
+
+발표용 한 줄:
+
+“MDP는 로봇이 현재 상태를 보고 행동을 선택하고, 그 결과 보상을 받으며 다음 상태로 이동하는 과정을 정의한 모델입니다.”
+
+⸻
+
+2. PPO (Proximal Policy Optimization)
+
+강화학습 알고리즘.
+
+문서에서 강조한 것처럼:
+
+* PPO = 학습 방법
+* Policy Network = 실제로 학습된 것
+
+많은 사람이 헷갈린다.
+
+발표에서:
+
+❌ PPO가 공을 친다
+
+⭕ PPO로 학습된 Policy가 공을 친다
+
+⸻
+
+3. Policy
+
+정책 함수.
+
+입력:
+
+55D Observation
+
+출력:
+
+17D Action
+
+즉
+
+관측 → 행동
+
+으로 바꾸는 신경망.
+
+⸻
+
+4. Actor-Critic
+
+PPO에서 사용하는 구조.
+
+두 개의 네트워크가 있다.
+
+Actor
+
+실제 행동 생성
+
+Observation → Action
+
+Critic
+
+현재 상태가 얼마나 좋은지 평가
+
+Observation → Value
+
+발표용:
+
+“Actor는 행동을 만들고 Critic은 그 행동이 얼마나 좋았는지 평가합니다.”
+
+⸻
+
+5. Residual Action
+
+문서에서 매우 중요한 개념.  ￼
+
+정책이 직접 로봇을 움직이는 게 아니다.
+
+원래:
+
+Controller
+↓
+대충 좋은 동작 생성
+
+Policy는
+
++ 조금 수정
+
+만 한다.
+
+예:
+
+원래 위치
+(0.3, 0.1, 0.5)
+Policy
+(+0.01, -0.02, +0.03)
+최종 위치
+(0.31, 0.08, 0.53)
+
+이런 보정값을 residual이라고 한다.
+
+⸻
+
+6. Observation
+
+에이전트 입력.
+
+55차원 벡터.
+
+예:
+
+* 관절 위치
+* 관절 속도
+* 공 위치
+* 공 속도
+* 라켓 위치
+* 예상 충돌 위치
+
+등.
+
+발표용:
+
+“Observation은 로봇이 현재 상황을 이해하기 위해 보는 센서 정보 묶음입니다.”
+
+⸻
+
+7. Action Space
+
+에이전트 출력.
+
+17차원.
+
+중요:
+
+관절 토크가 아니다.
+
+대신
+
+* 라켓 위치
+* 라켓 기울기
+* 타격 속도
+* 예상 최고점
+
+같은 고수준 명령.
+
+⸻
+
+8. Contact Frame
+
+발표에서 가장 생소하게 들릴 가능성 높음.
+
+공과 라켓이 만나는 순간을 기준으로 만든 좌표계.
+
+일반 좌표계:
+
+X Y Z
+
+대신
+
+Radial
+Tangent
+Strike
+
+방향으로 행동을 표현.
+
+이렇게 하면 학습이 쉬워진다.
+
+⸻
+
+9. Cartesian Controller
+
+Cartesian = 직교좌표계 공간
+
+역할:
+
+라켓 목표 위치
+↓
+관절 각도 계산
+
+예:
+
+라켓을
+(0.5,0.2,0.8)
+로 보내고 싶다
+
+↓
+
+7개 관절을
+어떻게 움직일지 계산
+
+⸻
+
+10. Jacobian
+
+Controller 설명할 때 나오는 수학 용어.
+
+로봇공학 핵심 개념.
+
+관절 변화
+↓
+끝단(라켓) 움직임
+
+관계를 나타내는 행렬.
+
+발표에서는 깊게 설명 안 해도 됨.
+
+한 줄:
+
+“관절 움직임과 라켓 움직임의 관계를 나타내는 수학적 모델”
+
+⸻
+
+11. End Effector
+
+로봇 끝부분.
+
+이 프로젝트에서는
+
+라켓
+
+이 End Effector 역할.
+
+⸻
+
+12. Rollout
+
+PPO 설명에서 등장.
+
+관측
+→ 행동
+→ 보상
+→ 다음 상태
+
+를 여러 step 모은 데이터.
+
+PPO는 Rollout을 수집한 뒤 학습한다.
+
+⸻
+
+13. Advantage
+
+PPO 핵심 용어.
+
+직관적으로:
+
+생각보다 잘했는가?
+
+를 나타내는 값.
+
+예:
+
+예상 점수 = 10
+실제 점수 = 15
+Advantage = +5
+
+⸻
+
+14. GAE (Generalized Advantage Estimation)
+
+Advantage를 더 안정적으로 계산하는 방법.
+
+발표에서는:
+
+“Advantage를 계산하는 기법”
+
+정도만 알아도 충분.
+
+⸻
+
+15. Clip Range
+
+PPO 핵심 하이퍼파라미터.
+
+Policy가 한 번에 너무 많이 변하는 걸 막는다.
+
+문서:
+
+clip range = 0.01
+
+매우 보수적 설정.
+
+⸻
+
+16. Deterministic Policy
+
+같은 입력
+→ 항상 같은 행동
+
+발표 데모에서는 이 모드 사용.
+
+반대는
+
+Stochastic Policy
+
+(확률적으로 행동)
+
+⸻
+
+17. Vector Environment
+
+여러 환경을 동시에 돌리는 것.
+
+문서:
+
+n_envs = 4
+
+즉
+
+4개의 탁구 환경
+
+을 병렬로 학습.
+
+⸻
+
+18. MuJoCo
+
+(Multi-Joint dynamics with Contact)
+
+로봇 물리 엔진.
+
+계산:
+
+* 중력
+* 충돌
+* 마찰
+* 관절 운동
+
+등.
+
+발표용:
+
+“로봇 물리를 계산하는 시뮬레이터”
+
+⸻
+
+19. WASM (WebAssembly)
+
+브라우저에서 MuJoCo를 실행하기 위한 기술.
+
+문서의 핵심:
+
+브라우저가 RL을 하는 게 아니다.
+
+서버
+→ 실제 시뮬레이션
+브라우저
+→ 시각화
+
+⸻
+
+20. Authoritative Simulation
+
+발표에서 자주 쓰는 표현.
+
+의미:
+
+진짜 상태를 결정하는 곳
+
+현재는
+
+서버
+
+가 authoritative.
+
+브라우저는 구경만 한다.
+
+⸻
+
+발표에서 꼭 설명할 5개
+
+시간이 부족하면 아래만 정확히 설명해도 충분하다.
+
+1. MDP
+2. PPO
+3. Policy
+4. Residual Action
+5. Cartesian Controller
+
+이 5개를 이해하면 청중은
+
+55D Observation
+↓
+Policy(PPO로 학습)
+↓
+17D Residual Action
+↓
+Cartesian Controller
+↓
+MuJoCo
+↓
+Reward
+
+전체 파이프라인을 이해할 수 있다.  ￼

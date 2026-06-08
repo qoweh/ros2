@@ -1,0 +1,8 @@
+using device: mlx
+training...
+epoch: 1,   loss: 38586.8953
+epoch: 2,   loss: 5992.4277
+epoch: 3,   loss: 2492.6482
+epoch: 4,   loss: 1160.5062
+epoch: 5,   loss: 551.4502
+runtime: 39.52 seconds

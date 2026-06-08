@@ -1,0 +1,8 @@
+using device: mps
+training...
+epoch: 1,   loss: 36700.7107
+epoch: 2,   loss: 4475.3714
+epoch: 3,   loss: 4641.5561
+epoch: 4,   loss: 3525.8126
+epoch: 5,   loss: 2409.6096
+runtime: 28.31 seconds
