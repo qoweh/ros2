@@ -62,6 +62,16 @@ flowchart TD
     N --> O["contact trace / reward / done"]
 ```
 
+## 렌더링 없이 학습할 때
+
+렌더링을 끄고 학습해도 물리 계산은 그대로 돈다. 차이는 화면에 그리지 않을 뿐이다. SB3 PPO가 `PingPongKeepUpGymEnv.step()`을 반복 호출하면, wrapper가 `PingPongKeepUpEnv.step()`으로 action을 넘기고, env는 controller가 만든 `joint_targets`를 `PingPongSim.step_with_contact_trace()`에 넘긴다.
+
+코드에서 실제로 다음 상태를 만드는 위치는 `src/pingpong_rl2/envs/pingpong_sim.py`의 `step_with_contact_trace()`다. 이 함수는 `step_count = self.n_substeps`만큼 반복하면서 `mujoco.mj_step(self.model, self.data)`를 호출한다. `mj_step()`이 현재 `MjData` 안의 위치, 속도, 힘, 접촉을 기준으로 MuJoCo timestep만큼 물리를 적분해서 다음 상태를 만든다.
+
+현재 기본값 기준으로는 `assets/scene.xml`의 MuJoCo timestep이 `0.002`초이고, `DEFAULT_CONTROL_DT`는 `0.02`초다. 그래서 action 하나, 즉 env step 하나마다 `n_substeps = round(0.02 / 0.002) = 10`번 `mj_step()`을 실행한다. policy 입장에서는 observation 하나를 보고 action 하나를 냈을 뿐이지만, 그 action이 유지되는 동안 물리엔진은 10번 작게 적분한다.
+
+렌더링은 이 적분 결과를 화면에 보여주는 별도 작업이다. 학습에서는 보통 화면이 필요 없으므로 render call 없이 `MjModel`과 `MjData`만으로 상태를 업데이트하고, 다음 observation/reward/done/info를 만든다.
+
 ## Cartesian, Jacobian, IK
 
 | 용어 | 뜻 | 여기서의 역할 |
