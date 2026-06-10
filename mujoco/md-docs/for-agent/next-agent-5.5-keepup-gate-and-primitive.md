@@ -4,7 +4,7 @@
 
 Project root:
 
-`/Users/pilt/project-collection/ros2/mujoco/pingpong_rl2`
+`mujoco/pingpong_rl2`
 
 Final goal:
 

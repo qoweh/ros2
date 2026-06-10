@@ -226,7 +226,7 @@ contact quality metric은 해석 가치가 있다.
 학습:
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
   --preset final_candidate \
   --run-name <run_name> \

@@ -18,7 +18,7 @@
 작업 디렉토리:
 
 ```bash
-/Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+mujoco/pingpong_rl2
 ```
 
 사용 환경:

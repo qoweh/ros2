@@ -28,7 +28,7 @@
 ## 설치와 검증
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 conda activate mujoco_env
 python -m pip install -e .
 ```
@@ -104,9 +104,10 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
 - `docs/report/00_index.md`: 전체 실험 보고서 인덱스
 - `docs/report/54_v32_17d_transfer_finetune_report.md`: 17D action transfer 기준점
 - `docs/model_evolution_to_v39.md`: v39까지 모델 진화 흐름
+- `../../model_training_process_story.md`: 모델 학습 과정을 처음부터 v39까지 서술형으로 정리
 - `docs/script_entrypoints/README.md`: 실행 파일별 역할
 - `docs/rl_presentation_pack/README.md`: 발표 자료 패키지
 
 ## 웹 프로젝트와의 관계
 
-웹 시연 저장소 `/Users/pilt/project-collection/pingpong`는 이 패키지를 vendoring해서 사용한다. 웹 런타임에서는 모델 이름을 `keep_v39_17d`로 짧게 복사해 두지만, 원본 학습 계보는 이 디렉터리의 `keep1_v39_17d_mid_curriculum_fixed`이다.
+웹 시연 저장소는 저장소 루트 기준 sibling 경로 `../pingpong`에 있고, 이 패키지를 vendoring해서 사용한다. 웹 런타임에서는 모델 이름을 `keep_v39_17d`로 짧게 복사해 두지만, 원본 학습 계보는 이 디렉터리의 `keep1_v39_17d_mid_curriculum_fixed`이다.

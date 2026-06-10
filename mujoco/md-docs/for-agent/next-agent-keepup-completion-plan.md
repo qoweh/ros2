@@ -261,7 +261,7 @@ if contact_event and contact_ball_velocity_z > 0:
 현재 후보 학습:
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 python scripts/run_ppo_learning.py \
   --preset final_candidate \
   --run-name <run_name> \

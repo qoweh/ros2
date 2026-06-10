@@ -221,7 +221,7 @@ PYTHONPATH=src conda run -n mujoco_env python -m unittest \
 XML 물성, reward 구조, checkpoint 기준이 바뀌었으므로 v12를 resume하지 않는다. 새 버전으로 reset 학습한다.
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 conda activate mujoco_env
 python scripts/run_ppo_learning.py \
   --preset contact_frame_self_rally_candidate \

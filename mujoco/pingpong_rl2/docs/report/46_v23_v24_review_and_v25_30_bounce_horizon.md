@@ -189,7 +189,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_rebound_analysis.p
 v25는 이미 완료됐다. 같은 실험을 재현할 때는 아래 설정파일 경로가 더 짧다. 단, 그대로 실행하면 `pmk_cf_self_rally_v25` run directory에 다시 쓸 수 있으므로 새 실험은 `run_version`을 `v26`처럼 바꾼다.
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
   --config-file configs/pmk_cf_self_rally_v25_long_horizon_30_bounce.json
@@ -198,7 +198,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
 같은 의미의 긴 CLI:
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
   --preset contact_frame_self_rally_v25_long_horizon_30_bounce \
@@ -211,7 +211,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
 학습 후 분석:
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_rebound_analysis.py \
   --run-name pmk_cf_self_rally \

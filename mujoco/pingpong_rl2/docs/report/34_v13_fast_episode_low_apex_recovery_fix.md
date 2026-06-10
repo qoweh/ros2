@@ -260,7 +260,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_rebound_analysis.p
 v13은 termination curriculum 자체가 바뀌었으므로 resume하지 않는다. v14는 새 run으로 reset 학습한다.
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 conda activate mujoco_env
 python scripts/run_ppo_learning.py \
   --preset contact_frame_self_rally_candidate \

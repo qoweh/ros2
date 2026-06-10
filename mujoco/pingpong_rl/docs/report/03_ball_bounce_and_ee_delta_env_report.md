@@ -60,7 +60,7 @@
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python -m unittest discover -s pingpong_rl/tests -p 'test_scene_load.py'
 ```
 

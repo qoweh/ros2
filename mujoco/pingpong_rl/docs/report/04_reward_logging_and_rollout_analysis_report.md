@@ -73,7 +73,7 @@
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python -m unittest discover -s pingpong_rl/tests -p 'test_scene_load.py'
 ```
 
@@ -85,7 +85,7 @@ python -m unittest discover -s pingpong_rl/tests -p 'test_scene_load.py'
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python pingpong_rl/scripts/run_ee_rollout_analysis.py \
   --episodes 1 \
   --max-episode-steps 80 \

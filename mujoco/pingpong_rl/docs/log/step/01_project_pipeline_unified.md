@@ -65,14 +65,14 @@
 ### 3.1 기본 테스트
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python -m unittest discover -s pingpong_rl/tests -p 'test_scene_load.py'
 ```
 
 ### 3.2 Viewer 실행
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 pingpong-rl-viewer --demo-joint 4
 ```
 
@@ -84,7 +84,7 @@ pingpong-rl-viewer --demo-joint 4
 ### 3.3 Headless baseline 실행
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python pingpong_rl/scripts/run_bounce_baseline.py --episodes 3 --max-steps 900
 ```
 

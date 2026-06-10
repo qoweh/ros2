@@ -155,7 +155,7 @@ MuJoCo viewer에는 크게 두 가지 실행 방식이 있다.
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python -m pip install -e .
 ```
 

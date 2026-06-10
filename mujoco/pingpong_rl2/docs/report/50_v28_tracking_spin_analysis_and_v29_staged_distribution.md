@@ -98,7 +98,7 @@ contact 기준:
 ## 다음 학습 명령
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 conda activate mujoco_env
 python scripts/run_ppo_learning.py --config-file configs/pmk_cf_self_rally_v29_racket_tracking_staged_distribution.json
 ```

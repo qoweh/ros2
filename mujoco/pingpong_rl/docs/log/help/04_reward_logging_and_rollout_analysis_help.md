@@ -77,7 +77,7 @@ env 한 step은 MuJoCo physics substep 여러 개를 묶는다.
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python pingpong_rl/scripts/run_ee_rollout_analysis.py --episodes 10 --max-episode-steps 300
 ```
 

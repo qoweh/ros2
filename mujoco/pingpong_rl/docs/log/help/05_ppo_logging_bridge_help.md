@@ -38,7 +38,7 @@
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python pingpong_rl/scripts/run_ppo_baseline.py --total-timesteps 2048 --run-name ppo_baseline
 ```
 
@@ -117,7 +117,7 @@ reason은 categorical이라 다음처럼 별도 scalar로 찍는다.
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python pingpong_rl/scripts/run_ppo_baseline.py \
   --total-timesteps 256 \
   --n-steps 64 \

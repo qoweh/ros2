@@ -103,7 +103,7 @@ git diff --check
 v17은 action dimension이 8D에서 11D로 바뀌었으므로 v16 checkpoint를 이어받지 않는다. 새 모델로 시작한다.
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 conda activate mujoco_env
 python scripts/run_ppo_learning.py \
   --preset contact_frame_self_rally_v17_candidate \

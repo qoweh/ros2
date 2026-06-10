@@ -10,7 +10,7 @@
 | `mujoco/pingpong_rl2/` | 현재 기준 핵심 강화학습 코드와 v26~v40 실험 artifacts |
 | `mujoco/md-docs/` | 발표, handoff, 초기 제안서, 최종 정리 문서 |
 
-웹 시연/배포 코드는 sibling 저장소인 `/Users/pilt/project-collection/pingpong`에서 관리한다.
+웹 시연/배포 코드는 저장소 루트 기준 sibling 경로인 `../pingpong`에서 관리한다.
 
 ## 현재 기준
 
@@ -23,7 +23,7 @@
 ## 빠른 시작
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 conda activate mujoco_env
 python -m pip install -e .
 ```
@@ -55,6 +55,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_rebound_analysis.p
 ## 주요 문서
 
 - `mujoco/pingpong_rl2/README.md`: 현재 학습 패키지 실행과 구조
+- `model_training_process_story.md`: 시행착오와 모델 학습 과정을 서술형으로 정리
 - `mujoco/pingpong_rl2/docs/report/00_index.md`: 실험 보고서 인덱스
 - `mujoco/pingpong_rl2/docs/rl_presentation_pack/README.md`: 발표용 자료 묶음
 - `mujoco/pingpong_rl2/docs/script_entrypoints/README.md`: 실행 스크립트별 역할
@@ -69,4 +70,4 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_rebound_analysis.p
 - Python 파일 compile
 - sibling `pingpong` 저장소의 backend preflight와 frontend build
 
-생성물 경로는 가능한 한 패키지 루트 기준 상대경로를 사용한다. 절대경로가 필요한 기록성 파일에서는 `/Users/pilt/project-collection/ros2/mujoco/...` 기준을 사용한다.
+문서와 실행 예시는 가능한 한 저장소 루트 기준 상대경로를 사용한다. 과거 산출물이나 외부 도구 manifest의 절대경로는 당시 실행 환경을 기록하는 용도로만 남길 수 있다.

@@ -14,7 +14,7 @@
 ## 검증
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl
+cd mujoco/pingpong_rl
 PYTHONPATH=src conda run -n mujoco_env python -m unittest discover -s tests
 ```
 

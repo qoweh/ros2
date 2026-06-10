@@ -298,7 +298,7 @@ v16용 action layout:
 1M 먼저 권장한다. v15처럼 2M까지 그냥 미는 것보다, 8D residual이 방향/높이 문제를 잡는지 1M에서 확인하는 것이 빠르다.
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 conda activate mujoco_env
 python scripts/run_ppo_learning.py \
   --preset contact_frame_self_rally_candidate \

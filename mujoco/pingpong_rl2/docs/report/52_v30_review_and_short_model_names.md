@@ -86,7 +86,7 @@ artifacts/ppo_runs/keep1_v26/keep1_v26_model.zip
 viewer:
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 conda activate mujoco_env
 mjpython scripts/run_viewer.py \
   --model-path artifacts/ppo_runs/keep1_v30/keep1_v30_model.zip \

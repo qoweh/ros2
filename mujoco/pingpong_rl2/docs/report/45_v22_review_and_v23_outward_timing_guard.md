@@ -267,7 +267,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_rebound_analysis.p
 v23은 v22와 같은 15D action mode라서 v22 model에서 resume한다.
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
   --preset contact_frame_self_rally_v23_outward_timing_guard \
@@ -280,7 +280,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
 학습 후 분석:
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_rebound_analysis.py \
   --run-name pmk_cf_self_rally \

@@ -10,7 +10,7 @@ macOS에서 ROS 2와 Gazebo 계열 도구를 쓰기 위한 두 가지 경로를 
 ## 권장 경로
 
 ```bash
-cd /Users/pilt/project-collection/ros2/gazebo-ros2/setup/mac/conda
+cd gazebo-ros2/setup/mac/conda
 bash 10_create_ros_env.sh
 bash 20_install_ros_jazzy_and_gz.sh
 bash 30_verify_talker.sh

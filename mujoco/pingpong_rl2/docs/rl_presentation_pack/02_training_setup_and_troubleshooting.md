@@ -119,7 +119,7 @@ v33에서 low-apex failure가 많았다. 하지만 useful 기준까지 낮추면
 conda 환경을 이미 활성화했다는 전제:
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 
 PYTHONPATH=src python -u scripts/run_ppo_learning.py \
   --config-file configs/keep1_v32_17d_transfer.json \

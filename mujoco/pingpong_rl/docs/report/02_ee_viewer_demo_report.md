@@ -4,7 +4,7 @@
 
 이번 작업의 목표는 두 가지였다.
 
-- `mjpython /Users/pilt/project-collection/ros2/mujoco/pingpong_rl/scripts/run_viewer.py` 경로에서 grip/pause 동작을 정상화
+- `mjpython mujoco/pingpong_rl/scripts/run_viewer.py` 경로에서 grip/pause 동작을 정상화
 - 같은 viewer 경로에서 EE(task-space) 제어 데모를 바로 확인할 수 있게 만들기
 
 ## 2. 이번 작업에서 구현한 내용
@@ -34,7 +34,7 @@
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python -m unittest discover -s pingpong_rl/tests -p 'test_scene_load.py'
 ```
 

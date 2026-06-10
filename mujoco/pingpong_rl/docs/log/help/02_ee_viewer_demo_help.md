@@ -1,6 +1,6 @@
 # EE Viewer Demo 도움말
 
-이 문서는 `mjpython /Users/pilt/project-collection/ros2/mujoco/pingpong_rl/scripts/run_viewer.py` 경로에서 EE(task-space) 데모를 어떻게 쓰는지와, 왜 현재 구조를 이렇게 잡았는지를 짧게 정리한다.
+이 문서는 `mjpython mujoco/pingpong_rl/scripts/run_viewer.py` 경로에서 EE(task-space) 데모를 어떻게 쓰는지와, 왜 현재 구조를 이렇게 잡았는지를 짧게 정리한다.
 
 ## 1. 왜 기본 실행은 그대로 두고 EE demo를 옵션으로 분리했는가
 
@@ -52,13 +52,13 @@
 기본 실행:
 
 ```bash
-mjpython /Users/pilt/project-collection/ros2/mujoco/pingpong_rl/scripts/run_viewer.py
+mjpython mujoco/pingpong_rl/scripts/run_viewer.py
 ```
 
 EE demo 실행 예시:
 
 ```bash
-mjpython /Users/pilt/project-collection/ros2/mujoco/pingpong_rl/scripts/run_viewer.py --demo-controller ee --ee-axis z --demo-amplitude 0.03 --demo-frequency 0.5
+mjpython mujoco/pingpong_rl/scripts/run_viewer.py --demo-controller ee --ee-axis z --demo-amplitude 0.03 --demo-frequency 0.5
 ```
 
 의미:
@@ -70,7 +70,7 @@ mjpython /Users/pilt/project-collection/ros2/mujoco/pingpong_rl/scripts/run_view
 joint demo가 필요하면 기존처럼 아래를 쓰면 된다.
 
 ```bash
-mjpython /Users/pilt/project-collection/ros2/mujoco/pingpong_rl/scripts/run_viewer.py --demo-controller joint --demo-joint 4
+mjpython mujoco/pingpong_rl/scripts/run_viewer.py --demo-controller joint --demo-joint 4
 ```
 
 ## 5. 왜 이제 space pause가 동작하는가

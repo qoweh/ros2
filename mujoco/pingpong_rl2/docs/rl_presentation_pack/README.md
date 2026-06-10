@@ -41,7 +41,7 @@
 ## 재생성
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 PYTHONPATH=src conda run -n mujoco_env python docs/rl_presentation_pack/scripts/generate_visuals.py
 ```
 

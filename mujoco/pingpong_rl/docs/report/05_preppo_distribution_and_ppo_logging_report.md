@@ -19,7 +19,7 @@
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python pingpong_rl/scripts/run_ee_rollout_analysis.py \
   --episodes 200 \
   --output-dir docs/etc/rollout_analysis/preppo_200 \
@@ -121,7 +121,7 @@ dominance count:
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python pingpong_rl/scripts/run_ppo_baseline.py \
   --total-timesteps 256 \
   --n-steps 64 \

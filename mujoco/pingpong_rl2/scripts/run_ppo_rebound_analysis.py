@@ -269,7 +269,14 @@ def main() -> None:
         # episode loop: 매 step policy action을 적용하고 contact event가 발생한 순간만 상세 row로 남긴다.
         # LINK: mujoco/pingpong_rl2/src/pingpong_rl2/envs/keepup_env.py:53
         for episode in range(1, args.episodes + 1):
-            observation, _ = env.reset(seed=args.seed + episode - 1)
+            observation, reset_info = env.reset(seed=args.seed + episode - 1)
+            spawn_ball_position = np.asarray(reset_info.get("spawn_ball_position", np.full(3, np.nan)), dtype=float)
+            spawn_ball_velocity = np.asarray(reset_info.get("spawn_ball_velocity", np.full(3, np.nan)), dtype=float)
+            spawn_ball_angular_velocity = np.asarray(
+                reset_info.get("spawn_ball_angular_velocity", np.full(3, np.nan)),
+                dtype=float,
+            )
+            spawn_ball_xy_offset = np.asarray(reset_info.get("spawn_ball_xy_offset", np.full(2, np.nan)), dtype=float)
             racket_home_xy = np.asarray(env.base_env.sim.racket_position[:2], dtype=float)
             episode_return = 0.0
             step_count = 0
@@ -745,6 +752,21 @@ def main() -> None:
                     "stable_cycles": stable_cycle_count,
                     "failure_reason": failure_reason,
                     "robot_body_contact_name": robot_body_contact_name,
+                    "spawn_ball_x": float(spawn_ball_position[0]),
+                    "spawn_ball_y": float(spawn_ball_position[1]),
+                    "spawn_ball_z": float(spawn_ball_position[2]),
+                    "spawn_ball_height_above_racket": reset_info.get("spawn_ball_height_above_racket"),
+                    "spawn_ball_vx": float(spawn_ball_velocity[0]),
+                    "spawn_ball_vy": float(spawn_ball_velocity[1]),
+                    "spawn_ball_vz": float(spawn_ball_velocity[2]),
+                    "spawn_ball_speed_xy": float(np.linalg.norm(spawn_ball_velocity[:2])),
+                    "spawn_ball_speed": float(np.linalg.norm(spawn_ball_velocity)),
+                    "spawn_ball_angular_vx": float(spawn_ball_angular_velocity[0]),
+                    "spawn_ball_angular_vy": float(spawn_ball_angular_velocity[1]),
+                    "spawn_ball_angular_vz": float(spawn_ball_angular_velocity[2]),
+                    "spawn_ball_xy_offset_x": float(spawn_ball_xy_offset[0]),
+                    "spawn_ball_xy_offset_y": float(spawn_ball_xy_offset[1]),
+                    "spawn_ball_xy_radius": float(np.linalg.norm(spawn_ball_xy_offset)),
                 }
             )
             print(

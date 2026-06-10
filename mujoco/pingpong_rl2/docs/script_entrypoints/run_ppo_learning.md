@@ -84,6 +84,91 @@ run_ppo_learning.py
   -> training/evaluation.py          # 학습 후 평가
 ```
 
+## 호출을 계속 파고 들어가면 보이는 구조
+
+이 파일을 읽을 때 가장 중요한 점은 `run_ppo_learning.py`가 로봇팔을 직접 움직이는 파일이 아니라는 점이다. 이 파일은 학습 설정을 확정하고 SB3 PPO에게 환경을 넘긴다. 실제 물리 step은 PPO 내부 rollout 중 `env.step(action)`이 호출될 때 아래로 내려간다.
+
+```text
+run_ppo_learning.py
+  -> model.learn()
+    -> SB3 rollout 수집
+      -> VecMonitor.step()
+        -> SB3AsyncVectorEnvAdapter.step_wait()
+          -> PingPongKeepUpGymEnv.step(action)
+            -> PingPongKeepUpEnv.step(action)
+              -> action_mode별 residual action 해석
+              -> RacketCartesianController.compute_joint_targets()
+              -> PingPongSim.step_with_contact_trace(joint_targets)
+                -> data.ctrl[:7] = joint_targets
+                -> mujoco.mj_step()
+```
+
+즉 터미널에서 이 파일을 실행하면 겉으로는 학습 스크립트 하나가 도는 것처럼 보이지만, 실제로는 `training/` 모듈이 설정과 vector env를 만들고, `envs/keepup_env.py`가 MDP의 step/reward/termination을 정의하고, `controllers/ee_pose_controller.py`가 라켓 목표를 7개 관절 목표로 바꾸며, `envs/pingpong_sim.py`가 MuJoCo에 actuator 값을 넣고 물리를 진행한다.
+
+## main()을 코드 순서대로 풀어보기
+
+첫 부분의 `parse_args()`는 argparse 설정을 읽는 단계다. 다만 이 프로젝트에서는 CLI 값만 쓰지 않는다. `apply_env_preset(args)`가 preset을 먼저 적용하고, 그 다음 `apply_config_overrides(args, args.config_overrides)`가 `--set key=value` 같은 최종 덮어쓰기를 반영한다. 그래서 같은 명령이라도 `--preset`, `--config-file`, `--set`이 어떤 순서로 섞였는지에 따라 최종 환경이 달라질 수 있다. 최종적으로 믿어야 하는 값은 콘솔에 찍힌 일부 값이 아니라 `<run_name>_training_summary.json` 안의 `config`와 `env_config`다.
+
+그 다음 smoke mode가 처리된다. smoke mode는 알고리즘을 바꾸는 옵션이 아니라 전체 파이프라인이 깨지지 않는지 확인하기 위해 timestep, rollout 크기, bootstrap episode 수, 평가 episode 수를 작게 줄이는 실행 모드다. 발표나 결과 분석용 모델을 만들기 위한 모드가 아니라 빠른 검증용이다.
+
+`resolve_requested_run_name()`은 `--run-name`, `--run-version`, `action_mode`, smoke 여부를 묶어서 artifact 이름을 만든다. 이 이름은 단순 표시용이 아니라 모델 zip, monitor CSV, summary JSON 경로에 직접 연결된다. 이어서 `resolve_tilt_profile(args)`는 tilt profile 이름을 실제 pitch/roll 제한값으로 해석한다. `batch_size <= n_steps * n_envs` 검사는 SB3 PPO가 rollout buffer에서 batch를 잘라 학습할 수 있는지 확인하는 방어 코드다.
+
+환경 설정은 `env_kwargs_from_args(args)`에서 만들어진다. 이 dict가 결국 `PingPongKeepUpGymEnv(**env_kwargs)`로 들어간다. 여기서 한 번 `config_env`를 만들어 `training_config()`를 읽는 이유는, CLI와 preset으로부터 나온 값을 환경 생성자가 내부 기본값/검증/파생값까지 반영한 뒤의 최종 환경 설정을 저장하기 위해서다.
+
+PPO 학습용 환경은 단일 env가 아니라 `make_sb3_async_vector_env()`로 만든 vector env다. `n_envs`가 여러 개면 PPO는 동시에 여러 episode 조각을 모은다. 그 위에 `VecMonitor`를 씌워 episode return과 length를 monitor CSV로 남긴다. reset curriculum이 켜져 있으면 `build_reset_xy_curriculum_callback(args)`가 만든 callback이 학습 진행률에 따라 reset 분포를 바꾼다.
+
+모델 생성 분기는 `starting_model_path is None`인지로 갈린다. 새 학습이면 `PPO("MlpPolicy", monitored_env, ...)`를 만든다. resume이면 `PPO.load(..., env=monitored_env)`로 기존 policy parameter를 불러오고 현재 실행에서 새로 만든 env를 붙인다. 그래서 resume은 이전 모델의 network를 이어 쓰지만, rollout은 현재 `env_kwargs`로 만든 환경에서 다시 수집된다.
+
+새 학습에서만 policy 초기화 옵션이 적용된다. `initialize_scaled_policy_log_std()`는 action limit에 맞춰 Gaussian policy의 초기 표준편차를 조절한다. `zero_init_action_mean`은 actor의 action mean head를 0으로 초기화한다. 둘 다 로봇팔을 직접 움직이는 로직이 아니라 PPO policy의 초기 action 분포를 안정적으로 잡는 장치다.
+
+## heuristic bootstrap이 정확히 하는 일
+
+heuristic bootstrap은 PPO 알고리즘 자체가 아니다. 조건은 다음과 같다.
+
+```text
+starting_model_path is None
+and bootstrap_heuristic_episodes > 0
+and bootstrap_epochs > 0
+```
+
+이 조건 때문에 resume run에서는 bootstrap을 타지 않는다. 최종 발표 기준 v39는 summary상 `training_mode=resume`, `bootstrap=null`이라 이 블록을 직접 실행하지 않았다.
+
+bootstrap이 켜진 새 run에서는 먼저 `collect_heuristic_bootstrap_dataset()`가 별도의 `PingPongKeepUpGymEnv`를 만들고 `HeuristicKeepUpPolicy`로 episode를 실행한다. 이때 저장되는 것은 `observation`과 heuristic이 낸 `action` 쌍이다. sample mode에 따라 전체 episode sample을 쓰거나, 유효 타격 이후 sample만 쓰거나, 다음 intercept가 reachable인 sample만 고른다.
+
+그 다음 `bootstrap_actor_from_dataset()`가 PPO policy network를 supervised learning으로 맞춘다. 코드적으로는 observation batch를 policy에 넣고, deterministic action을 꺼낸 뒤, heuristic action과의 MSE loss를 줄인다.
+
+```text
+observation batch
+  -> model.policy.get_distribution(obs)
+  -> deterministic predicted_action
+  -> MSE(predicted_action, heuristic_action)
+  -> actor parameter update
+```
+
+이 과정은 reward를 보고 배우는 PPO update가 아니다. 랜덤 policy가 공을 거의 맞히지 못해 학습 초반 signal이 희박해지는 문제를 줄이기 위한 actor warm start다. 쉽게 말하면 "처음부터 말도 안 되는 residual action을 내지 말고, hand-coded policy가 하던 근처에서 시작하라"는 초기화다.
+
+## PPO 학습 중 로봇팔이 움직이는 순간
+
+`learn_model()`은 얇은 wrapper이고, 실질적인 학습은 `model.learn()` 안에서 일어난다. SB3는 rollout을 모으기 위해 계속 `env.step(action)`을 호출한다. 여기서 action은 관절각이나 torque가 아니다. 최종 17D action mode에서는 위치, tilt, velocity, apex, strike plane, tracking residual처럼 "기본 타격 계획을 보정하는 값"이다.
+
+`PingPongKeepUpEnv.step()`은 이 residual action을 읽어 목표 라켓 위치와 속도, 라켓 기울기를 계산한다. 그 다음 `RacketCartesianController.compute_joint_targets()`가 Cartesian 목표를 7개 joint target으로 바꾼다. 이 controller는 MuJoCo site Jacobian을 사용한다.
+
+```text
+라켓 목표 위치/방향 오차 e
+  -> Jacobian J(q)
+  -> dq = J^T (J J^T + lambda I)^-1 e
+  -> 현재 관절값 + dq
+  -> joint_targets
+```
+
+마지막으로 `PingPongSim.step_with_contact_trace()`가 `data.ctrl[:7]`에 joint target을 넣고 `mujoco.mj_step()`을 여러 substep 실행한다. 그러면 물리엔진이 관절, 라켓, 공, 접촉, 속도, 위치의 다음 상태를 적분해서 만든다. 그 결과로 reward, terminated/truncated, info가 만들어지고 PPO가 그 경험을 학습에 사용한다.
+
+## summary JSON이 중요한 이유
+
+학습이 끝나면 이 파일은 모델만 저장하지 않는다. `summary` dict 안에 실행 당시 config, resolved env config, bootstrap summary, evaluation summary, model path, monitor path를 같이 저장한다. 이후 `run_ppo_evaluation.py`, `run_ppo_rebound_analysis.py`, `run_viewer.py`는 이 summary를 읽어 당시 환경 설정을 복원한다.
+
+따라서 "이 모델은 어떤 action mode로 학습했나?", "bootstrap을 썼나?", "reset 분포가 뭐였나?", "학습 직후 평가 결과가 어땠나?" 같은 질문은 코드의 기본값만 보면 안 되고, 해당 run의 training summary JSON을 확인해야 한다.
+
 ## 발표 때 설명 포인트
 
 - PPO가 직접 보는 것은 `PingPongKeepUpGymEnv`의 observation이고, 출력은 action space에 맞는 residual/action vector다.

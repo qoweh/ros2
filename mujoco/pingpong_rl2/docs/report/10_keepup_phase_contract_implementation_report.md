@@ -64,7 +64,7 @@
 ### 4.1 heuristic diagnostic
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_heuristic_keepup_diagnostic.py \
   --episodes 20 \
   --analysis-name heuristic_keepup_diag_v1
@@ -73,7 +73,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_heuristic_keepup_diagn
 ### 4.2 heuristic viewer
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_viewer.py \
   --mode heuristic \
   --episodes 3
@@ -82,7 +82,7 @@ PYTHONPATH=src conda run -n mujoco_env python scripts/run_viewer.py \
 ### 4.3 새 PPO preset smoke / short run
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 PYTHONPATH=src conda run -n mujoco_env python scripts/run_ppo_learning.py \
   --preset phase_contract_candidate \
   --run-name phase_contract \

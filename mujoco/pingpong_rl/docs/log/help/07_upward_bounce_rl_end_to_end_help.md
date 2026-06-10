@@ -190,7 +190,7 @@ MPS가 담당하는 것은 주로
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python -m mujoco.viewer --mjcf=pingpong_rl/assets/scene.xml
 ```
 
@@ -211,7 +211,7 @@ macOS에서 중요:
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 mjpython pingpong_rl/scripts/run_viewer.py --mode passive --demo-controller ee --ee-axis z --demo-amplitude 0.03 --demo-frequency 0.5
 ```
 
@@ -226,7 +226,7 @@ mjpython pingpong_rl/scripts/run_viewer.py --mode passive --demo-controller ee -
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python pingpong_rl/scripts/run_ppo_baseline.py --total-timesteps 10000 --device cpu
 ```
 
@@ -247,7 +247,7 @@ python pingpong_rl/scripts/run_ppo_baseline.py --total-timesteps 10000 --device 
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 mjpython pingpong_rl/scripts/run_ppo_render.py --model-path docs/etc/ppo_runs/ppo_smoke/ppo_smoke_model.zip --episodes 3
 ```
 
@@ -627,7 +627,7 @@ MuJoCo 과제 전에 아래 둘 중 하나를 먼저 해보면 좋다.
 
 ```bash
 conda activate mujoco_env
-cd /Users/pilt/project-collection/ros2/mujoco
+cd mujoco
 python -m pip install -e .
 ```
 
@@ -664,7 +664,7 @@ mjpython pingpong_rl/scripts/run_ppo_render.py --model-path docs/etc/ppo_runs/pp
 ### 16.6 TensorBoard 보기
 
 ```bash
-tensorboard --logdir /Users/pilt/project-collection/ros2/mujoco/pingpong_rl/docs/etc/ppo_runs
+tensorboard --logdir mujoco/pingpong_rl/docs/etc/ppo_runs
 ```
 
 ## 17. 자주 생기는 오해 정리

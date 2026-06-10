@@ -17,7 +17,7 @@
 ## 실행
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl
+cd mujoco/pingpong_rl
 conda activate mujoco_env
 PYTHONPATH=src python -m unittest discover -s tests
 ```

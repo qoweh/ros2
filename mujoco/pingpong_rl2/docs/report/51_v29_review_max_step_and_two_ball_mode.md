@@ -122,7 +122,7 @@ v30 설정:
 ## 5. v30 학습 명령
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 conda activate mujoco_env
 python scripts/run_ppo_learning.py --config-file configs/keep1_v30.json
 ```

@@ -13,7 +13,7 @@ Linux Mint 20.x 또는 Ubuntu 20.04에서 ROS 2 Foxy와 Gazebo 11을 설치하�
 ## 실행 순서
 
 ```bash
-cd /Users/pilt/project-collection/ros2/gazebo-ros2/setup/linux
+cd gazebo-ros2/setup/linux
 bash 10_add_ros2_repository.sh
 bash 20_install_ros2_foxy.sh
 bash 40_install_dev_tools.sh

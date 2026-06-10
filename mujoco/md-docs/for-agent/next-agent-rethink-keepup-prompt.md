@@ -5,13 +5,13 @@
 작업 루트:
 
 ```bash
-/Users/pilt/project-collection/ros2/mujoco
+mujoco
 ```
 
 실제 패키지:
 
 ```bash
-/Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+mujoco/pingpong_rl2
 ```
 
 ## 1. 최종 목표

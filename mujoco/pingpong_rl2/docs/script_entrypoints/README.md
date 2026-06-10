@@ -1,6 +1,6 @@
 # Script Entrypoints
 
-이 디렉터리는 `pingpong_rl2/scripts/`와 발표 자료 생성 스크립트를 실행 파일 단위로 설명한다. 현재 기준 핵심 모델은 `keep1_v39_17d_mid_curriculum_fixed`이고, 후속 확인 대상은 `keep1_v40_17d_v39_polish`다.
+이 디렉터리는 `pingpong_rl2/scripts/`와 발표 자료 생성 스크립트를 실행 파일 단위로 설명한다. 최종 발표 기준 핵심 모델은 `keep1_v39_17d_mid_curriculum_fixed`다.
 
 ## 전체 흐름
 
@@ -29,6 +29,31 @@
 7. `docs/rl_presentation_pack/scripts/generate_visuals.py`
    - 발표용 그래프와 CSV를 재생성한다.
 
+## 읽는 순서
+
+코드를 처음 따라갈 때는 `run_ppo_learning.md`를 먼저 읽는다. 이 문서가 CLI 설정, preset/config, vector env, PPO, heuristic bootstrap, 실제 `env.step()` 아래의 Cartesian/Jacobian controller 흐름까지 가장 넓게 설명한다.
+
+그 다음에는 `run_ppo_evaluation.md`와 `run_ppo_rebound_analysis.md`를 같이 읽는다. evaluation은 저장된 policy를 headless로 재생해 episode-level 성능을 요약하고, rebound analysis는 contact event마다 물리량과 action 사용량을 CSV로 남긴다.
+
+viewer나 sanity 파일은 그 뒤에 보면 된다. `run_viewer.md`는 같은 policy를 눈으로 확인하는 실행 흐름이고, `run_bounce_sanity.md`, `run_material_sanity.md`, `benchmark_vector_env.md`는 학습 결과가 아니라 물리/인프라 검증 파일이다.
+
+## 공통 실행 계층
+
+PPO policy를 실제로 실행하는 파일들은 결국 같은 환경 step 구조를 탄다.
+
+```text
+terminal entrypoint
+  -> PingPongKeepUpGymEnv
+  -> PingPongKeepUpEnv.step(action)
+  -> action_mode별 residual 해석
+  -> RacketCartesianController.compute_joint_targets()
+  -> PingPongSim.step_with_contact_trace()
+  -> MuJoCo actuator ctrl[:7]
+  -> mujoco.mj_step()
+```
+
+반대로 `expand_ppo_action_space.py`, `benchmark_vector_env.py`, `run_bounce_sanity.py`, `run_material_sanity.py`, `generate_visuals.py`는 목적이 다르다. 이들은 policy rollout을 학습하거나 평가하는 파일이 아니라, transfer checkpoint 생성, vector env 처리량 측정, 순수 물리 sanity check, 발표 그래프 생성처럼 보조 작업을 담당한다.
+
 ## 문서 목록
 
 | 실행 파일 | 문서 | 용도 |
@@ -47,4 +72,4 @@
 
 ## 현재 결론
 
-`HeuristicKeepUpPolicy`는 PPO policy가 아니라 hand-coded teacher/baseline이다. v39/v40 학습 경로에서는 bootstrap이 꺼져 있으며, 최종 모델의 성능 판단은 저장된 PPO 모델과 rebound/evaluation 결과를 기준으로 한다.
+`HeuristicKeepUpPolicy`는 PPO policy가 아니라 hand-coded teacher/baseline이다. v39 학습 경로에서는 bootstrap이 꺼져 있으며, 최종 모델의 성능 판단은 저장된 PPO 모델과 rebound/evaluation 결과를 기준으로 한다.

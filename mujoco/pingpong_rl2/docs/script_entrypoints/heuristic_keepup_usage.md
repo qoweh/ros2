@@ -49,6 +49,40 @@ and args.bootstrap_epochs > 0
 
 즉 bootstrap은 “PPO 학습 전에 actor를 따뜻하게 시작하는 과정”이지, PPO rollout policy 자체가 heuristic으로 바뀌는 것은 아니다.
 
+코드 흐름으로 쓰면 다음과 같다.
+
+```text
+run_ppo_learning.py
+  -> 새 학습이고 bootstrap 옵션이 켜져 있는지 확인
+  -> collect_heuristic_bootstrap_dataset()
+       -> PingPongKeepUpGymEnv 생성
+       -> HeuristicKeepUpPolicy.predict(env.base_env)
+       -> env.step(action)
+       -> observation/action sample 저장
+  -> bootstrap_actor_from_dataset()
+       -> model.policy.get_distribution(obs)
+       -> deterministic predicted action
+       -> MSE(predicted action, heuristic action)
+       -> actor parameter update
+  -> model.learn()으로 PPO 시작
+```
+
+이 단계에서 heuristic은 teacher 역할을 한다. 하지만 PPO 학습이 시작된 뒤 rollout action을 매번 대신 만들어 주지는 않는다. PPO rollout에서는 neural policy가 observation을 보고 action을 낸다.
+
+## diagnostic과 bootstrap의 차이
+
+`scripts/run_heuristic_keepup_diagnostic.py`와 `scripts/run_contact_feasibility_map.py`도 같은 heuristic policy를 쓰지만 목적이 다르다. 이 파일들은 PPO actor를 사전학습시키지 않고, hand-coded policy 자체의 baseline 성능이나 contact primitive 가능성을 측정한다.
+
+```text
+diagnostic/feasibility
+  -> heuristic action을 직접 env에 넣고 결과를 CSV/JSON으로 분석
+
+bootstrap
+  -> heuristic action을 dataset으로 모아 PPO actor 초기값을 맞춤
+```
+
+따라서 발표에서 "heuristic을 썼다"고 말할 때는 어떤 의미인지 구분해야 한다. 최종 v39 run 자체는 bootstrap을 직접 실행하지 않았고, diagnostic script 결과도 PPO 최종 성능이 아니라 baseline/검증 결과다.
+
 ## v39에서 쓰였는가?
 
 v39 summary 기준으로는 쓰이지 않았다.

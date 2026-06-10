@@ -7,7 +7,7 @@
         eval "$(register-python-argcomplete colcon)"
 }`가 실행되게 해놨어. `conda list -n ros_env`로 설치된 패키지들을 확인하면 돼. 버전 충돌 안 일어나게 조심하고, 고려해야 할 것이 있으면 나한테 물어봐.
 
-- 현재 ROS 2/Gazebo 작업은 `/Users/pilt/project-collection/ros2/gazebo-ros2`에서 진행하고, MuJoCo 강화학습 작업은 `/Users/pilt/project-collection/ros2/mujoco`에서 진행해.
+- 현재 ROS 2/Gazebo 작업은 `gazebo-ros2`에서 진행하고, MuJoCo 강화학습 작업은 `mujoco`에서 진행해.
 
 <!-- - 필요한 것들을 적절히 활용해서 so-101를 gazebo에서 실행시켜서 로봇팔을 움직이게 해보고 싶어. 어떤 식으로 개발할 지 방법이 다양하잖아? 여러 후보군들을 claude-proposa.md로 만들어. -->
 

@@ -228,7 +228,7 @@ git diff --check
 v18은 action dimension이 13D로 바뀌었고 action std 초기화도 다르다. v17 checkpoint를 이어받지 않는다.
 
 ```bash
-cd /Users/pilt/project-collection/ros2/mujoco/pingpong_rl2
+cd mujoco/pingpong_rl2
 conda activate mujoco_env
 python scripts/run_ppo_learning.py \
   --preset contact_frame_self_rally_v18_candidate \

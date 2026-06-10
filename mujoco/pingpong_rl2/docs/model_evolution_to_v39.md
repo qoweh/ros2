@@ -3,6 +3,8 @@
 작성 기준: 2026-06-07 로컬 저장소와 저장 artifact 기준.
 여기서 `pingpong_rl 초기 모델`은 저장소 디렉토리상 `pingpong_rl`을 말한다. 최종 발표 기준 모델은 `pingpong_rl2/artifacts/ppo_runs/keep1_v39_17d_mid_curriculum_fixed`다. 사용자 지시 기준으로 `pingpong_rl3`와 `keep1_v40` 이후 artifact는 제외했다.
 
+서술형으로 "왜 그 다음 단계로 넘어갔는지"까지 읽고 싶으면 [model_training_process_story.md](../../../model_training_process_story.md)를 본다.
+
 ## 한 줄 요약
 
 처음에는 end-effector delta를 PPO가 직접 밀어 보는 단순 keep-up 문제였다. 이후 실패 원인을 보상 부족이 아니라 contact/control feasibility와 action ownership 문제로 다시 정의했고, contact-frame primitive 위에 PPO residual action을 얹는 구조로 바꾸었다. heuristic은 초기에 baseline, gate, actor bootstrap으로 탐색 공간을 잡아주는 역할을 했지만, 최종 v39 학습 자체에는 직접 들어가지 않았다.
